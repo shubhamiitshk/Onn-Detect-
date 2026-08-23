@@ -1,0 +1,17 @@
+ai-edge-torch
+tensorflow
+librosa
+soundfile
+opencv-python
+albumentations
+xgboost
+scikit-learn
+datasets
+huggingface-hub
+wandb
+hydra-core
+omegaconf
+tqdm
+pytest
+jupyter
+matplotlib

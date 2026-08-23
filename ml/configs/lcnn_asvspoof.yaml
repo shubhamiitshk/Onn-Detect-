@@ -1,0 +1,39 @@
+model:
+  name: LCNNMFMAudio
+  input_size: [400, 40] # LFCC frames, n_lfcc
+  num_classes: 1
+
+data:
+  dataset: asvspoof2019
+  root_dir: ../datasets/asvspoof2019
+  max_duration: 4.0
+  sample_rate: 16000
+
+training:
+  epochs: 30
+  batch_size: 64         # Audio takes slightly more memory
+  num_workers: 8
+  prefetch_factor: 4
+  amp: true
+  precision: fp16
+  gradient_clip: 1.0
+
+optimizer:
+  name: AdamW
+  lr: 0.0001             # Lower LR for audio sensitivity
+  weight_decay: 0.0001
+
+scheduler:
+  name: CosineAnnealing
+  warmup_epochs: 5
+  T_max: 30
+  eta_min: 0.0000001
+
+early_stopping:
+  patience: 7
+  metric: val_eer
+  mode: min              # For EER, lower is better!
+
+logging:
+  log_dir: ../ml/logs
+  save_interval: 5

@@ -1,0 +1,25 @@
+{
+  "visual": {
+    "model": "srm_forensic_cnn",
+    "split": "genimage/val",
+    "n": 4000,
+    "auc": 0.9560192500000001,
+    "accuracy": 0.889,
+    "eer": 0.11025000000000001
+  },
+  "audio": {
+    "model": "lcnn_mfm_audio",
+    "split": "asvspoof2019/test",
+    "n": 280,
+    "auc": 0.9760204081632653,
+    "eer": 0.050000000000000024
+  },
+  "meta": {
+    "model": "xgboost_meta",
+    "split": "held-out features",
+    "n": 1000,
+    "auc": 0.9617606233824418,
+    "accuracy": 0.893
+  },
+  "generated_with": "real held-out evaluations"
+}

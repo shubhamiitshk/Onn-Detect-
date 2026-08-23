@@ -1,0 +1,8 @@
+{
+  "model": "lcnn_mfm_audio",
+  "eer": 0.050000000000000024,
+  "auc": 0.9760204081632653,
+  "threshold_at_eer": 0.44237589836120605,
+  "n_eval": 280,
+  "note": "score >= threshold => flagged synthetic"
+}

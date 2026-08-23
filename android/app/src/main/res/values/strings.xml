@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ONN-DETECT</string>
+    <string name="home_title">ONN-DETECT</string>
+    <string name="home_subtitle">Offline AI-media forensics</string>
+    <string name="scan_media">Scan Media</string>
+    <string name="history">Scan History</string>
+    <string name="verdict_real">Likely Authentic</string>
+    <string name="verdict_fake">Likely AI-Generated</string>
+    <string name="scanning">Analyzing media on-device…</string>
+</resources>

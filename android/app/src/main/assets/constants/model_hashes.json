@@ -1,0 +1,7 @@
+{
+  "algorithm": "sha256",
+  "models": {
+    "lcnn_audio_int8.tflite": "69f9632b21f8f8e7234ffb29be0615446938e2be1dd96aaaf5abadad3ec225ad",
+    "srm_forensic_cnn_int8.tflite": "4010329614e5f57be36acc3f0ea6612075e1d28137f815df7a57b2f3fd81e53c"
+  }
+}

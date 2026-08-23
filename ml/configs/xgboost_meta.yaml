@@ -1,0 +1,20 @@
+model:
+  name: XGBoostMetaClassifier
+  type: xgboost
+
+training:
+  n_estimators: 40        # Small enough for fast transpiled if/else inference on Android
+  max_depth: 3            # Shallow trees prevent overfitting and limit Kotlin size
+  learning_rate: 0.1
+  subsample: 0.8
+  colsample_bytree: 0.8
+  eval_metric: auc
+  early_stopping_rounds: 5
+
+data:
+  train_samples_per_class: 2500   # from datasets/genimage/val (real features)
+  test_samples_per_class: 1500    # held-out portion of the same pull
+  force_recompute: false          # true -> ignore meta_features_cache.npz
+
+logging:
+  output_dir: exported   # resolved against ml/

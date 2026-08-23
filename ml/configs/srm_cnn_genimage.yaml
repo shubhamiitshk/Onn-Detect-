@@ -1,0 +1,39 @@
+model:
+  name: SRMForensicCNN
+  input_size: 224
+  num_classes: 1
+
+data:
+  dataset: genimage
+  root_dir: ../datasets/genimage
+  img_size: 224
+  cache_in_memory: true  # For 128GB RAM systems
+
+training:
+  epochs: 20
+  batch_size: 128        # RTX A4000 16GB can handle this
+  num_workers: 8
+  prefetch_factor: 4
+  amp: true
+  precision: fp16
+  gradient_clip: 1.0
+
+optimizer:
+  name: AdamW
+  lr: 0.001
+  weight_decay: 0.0001
+
+scheduler:
+  name: CosineAnnealing
+  warmup_epochs: 3
+  T_max: 20
+  eta_min: 0.000001
+
+early_stopping:
+  patience: 5
+  metric: val_auc
+  mode: max
+
+logging:
+  log_dir: ../ml/logs
+  save_interval: 5       # Save checkpoint every N epochs

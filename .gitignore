@@ -1,0 +1,13 @@
+# Python
+venv/
+# Android
+build/
+# ML
+ml/checkpoints/
+ml/exported/
+
+.venv/
+datasets/
+__pycache__/
+.idea/
+*.pyc

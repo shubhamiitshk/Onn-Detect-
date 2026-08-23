@@ -1,0 +1,16 @@
+{
+  "features": [
+    "srm_score",
+    "fft_score",
+    "kl_score",
+    "flatness_score",
+    "resolution_norm",
+    "is_compressed"
+  ],
+  "decision_threshold": 0.6079295873641968,
+  "test_auc": 0.9617606233824418,
+  "test_accuracy": 0.893,
+  "base_margin_intercept": 0.002999937643588302,
+  "n_trees": 25,
+  "note": "feature order is a cross-platform contract with XGBoostMetaClassifier.kt"
+}
