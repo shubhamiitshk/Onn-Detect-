@@ -6,171 +6,159 @@
 [![TFLite: INT8](https://img.shields.io/badge/Inference-TFLite%20INT8%20(On--Device)-red.svg)](https://tensorflow.org/lite)
 [![Zero-Trust: 100% Offline](https://img.shields.io/badge/Privacy-100%25%20Airgapped%20Offline-black.svg)]()
 
-**ONN-DETECT** is an enterprise-grade, multimodal deepfake detection engine designed for **100% on-device, air-gapped forensic analysis** on Android. It fuses high-frequency residual CNNs, neural vocoder spectrogram analyzers, spatial spectral physics, hardware sensor noise fingerprinting (PRNU), optical flow velocity morphing heuristics, and cryptographic provenance into a transpiled **XGBoost Meta-Classifier** to expose synthetic media without ever transmitting sensitive user data to the cloud.
+**ONN-DETECT** is an offline multimodal deepfake detection engine for
+Android. It fuses high-frequency residual CNNs, spectral physics, pixel
+co-occurrence statistics and cryptographic metadata provenance in a
+transpiled **XGBoost meta-classifier** to expose synthetic media without
+ever transmitting data off the device (no INTERNET permission; empty TLS
+trust anchors).
 
 ---
 
-## ⚡ Core Forensic Modalities (100% On-Device)
+## Core Forensic Modalities
 
 ```
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                                 ONN-DETECT PIPELINE                                     │
-└───────────────────────────────────────────┬────────────────────────────────────────────┘
-                                            │
-        ┌───────────────────────────────────┼───────────────────────────────────┐
-        ▼                                   ▼                                   ▼
- 📸 Visual Forensics                🎙️ Audio Forensics                 🎬 Temporal & Cross-Modal
- ├─ SRM-CNN (Noise Residuals)        ├─ LCNN-MFM (LFCC Cepstrals)        ├─ Lip-Sync Audio Correlation
- ├─ FFT (2D Power Spectrum)          ├─ Neural Vocoder Phase Forensics   ├─ Facial Landmark Jitter
- ├─ KL Co-occurrence Divergence      └─ Hardware-Backed Voice Liveness   └─ Optical Flow Velocity Morphing
- └─ PRNU Camera Sensor Pattern          (EncryptedSharedPreferences)
-        │                                   │                                   │
-        └───────────────────────────────────┼───────────────────────────────────┘
-                                            │
-                                            ▼
-                             🔒 Cryptographic Provenance
-                             ├─ C2PA JUMBF Manifest Parser
-                             └─ EXIF Manipulation Detector
-                                            │
-                                            ▼
-                             🧠 XGBoost Decision Trees
-                             (Pure Kotlin Transpilation: < 100 µs)
-                                            │
-                                            ▼
-                             📊 Calibrated Risk Breakdown
-                             (Cyber-Forensic Compose Dark UI)
+┌──────────────────────────────────────────────────────────────────────┐
+│                            ONN-DETECT PIPELINE                       │
+└──────────────────────────────────┬───────────────────────────────────┘
+                                   │
+        ┌──────────────────────────┼──────────────────────────┐
+        ▼                          ▼                          ▼
+ 📸 Visual Forensics         🎙️ Audio Forensics         🎬 Temporal & Provenance
+ ├─ SRM-CNN (noise residuals)├─ LCNN-MFM (LFCC)         ├─ FrameCosineDelta consistency
+ ├─ FFT 1/f^2 slope analysis ├─ EER-calibrated verdict  ├─ EXIF anomaly detection
+ ├─ KL co-occurrence         └─ Encrypted voiceprint    ├─ C2PA JUMBF manifest scan
+ └─ PRNU sensor-noise check     enrollment (Keystore)   └─ SynthID/C2PA fusion rules
+        │                          │                          │
+        └──────────────────────────┼──────────────────────────┘
+                                   ▼
+                    🧠 XGBoost decision trees (transpiled Kotlin, <100 µs)
+                                   ▼
+                    📊 Calibrated risk breakdown (Compose dark UI)
 ```
 
-### 1. 📸 Visual Forensics
-* **Spatial Rich Model (SRM-CNN)**: Fixed spatial high-pass filters extract high-frequency noise residuals left behind by Latent Diffusion (Stable Diffusion, Midjourney, DALL-E 3, Flux) and GAN models.
-* **Fast Fourier Transform (FFT)**: Computes 2D radial power spectra and azimuthal integration to flag unnatural high-frequency grid harmonics and deviations from the natural photographic $1/f^2$ power law.
-* **Pixel Co-occurrence (KL Divergence)**: Evaluates adjacent horizontal/vertical pixel difference histograms against calibrated natural image distributions.
-* **Camera Sensor Fingerprinting (PRNU)**: Isolates sensor Photo Response Non-Uniformity patterns using discrete Laplacian matrices to verify if an image passed through physical smartphone camera optics.
+### 1. Visual Forensics
+* **SRM-CNN**: fixed spatial high-pass filters expose noise residuals left by
+  GAN / diffusion generators. Runs at **native resolution** (the shipped model
+  is trained on 32x32 inputs; never upscale before inference).
+* **FFT**: 2D radix-2 power spectrum -> azimuthal average -> log-log slope
+  deviation from the natural 1/f^2 power law.
+* **KL co-occurrence**: adjacent-pixel-difference histograms (21 bins,
+  clamped to ±10) scored against a calibrated natural-image baseline.
+* **PRNU**: Laplacian-variance sensor-noise heuristic, reported as a signal.
 
-### 2. 🎙️ Audio Forensics
-* **Light-CNN with Max-Feature-Map (LCNN-MFM)**: Analyzes 40-channel Linear Frequency Cepstral Coefficients (LFCC) across linear frequency bands to catch phase distortions and spectral discontinuities characteristic of neural vocoders (HiFi-GAN, WaveGlow, Tacotron, FastSpeech).
-* **Voice Liveness & Speaker Verification**: Compares incoming speech against an enrolled trusted biometric voiceprint using 192-dimensional embeddings and cosine similarity. All voiceprints are encrypted at rest using AES-256-GCM via the Android Keystore (`EncryptedSharedPreferences`).
+### 2. Audio Forensics
+* **LCNN-MFM**: Light CNN with Max-Feature-Map over pure-Kotlin LFCC features
+  (verified against torchaudio golden vectors), thresholded at the model's
+  EER operating point from `lcnn_audio_threshold.json`.
+* **Voice enrollment**: encrypted voiceprint storage via
+  `EncryptedSharedPreferences` (Android Keystore).
 
-### 3. 🎬 Video & Cross-Modal Forensics
-* **Cross-Modal Lip-Sync Correlation**: Correlates MediaPipe facial landmark motion (mouth/lips) with the audio amplitude envelope to catch audio-driven talking-head deepfakes (Wav2Lip, Audio2Head).
-* **Temporal Landmark Jitter**: Measures inter-frame standard deviation of 3D facial anchors to flag temporal flickering.
-* **Optical Flow Velocity Morphing**: Dense Kotlin block-matching evaluates pixel motion vectors to detect unnatural "melting" physics common in generative video models (Sora, Runway Gen-2).
+### 3. Temporal & Provenance
+* **FrameCosineDelta** temporal consistency for video scans.
+* **EXIF analyzer** flags manipulation-software tags and scrubbed timestamps.
+* **C2PA scanner** detects JUMBF manifests (byte-scan; no signature
+  verification yet). `SignalFusion` forces a definitive AI verdict on
+  SynthID presence and dampens scores for trusted C2PA.
 
-### 4. 🔒 Cryptographic Provenance & Model Security
-* **C2PA Manifest Scanner**: Inspects JPEG/PNG binary headers for `c2pa.org/seam/cg` JUMBF metadata containers.
-* **EXIF Anomaly Detection**: Flags synthetic software tags (e.g. Photoshop, ComfyUI, Automatic1111) and stripped timestamp arrays.
-* **Runtime Model Verification**: SHA-256 integrity checks execute on app boot to guarantee `.tflite` model files have not been tampered with.
+> Experimental stubs (documented in code): MobileCLIP semantic scoring,
+> MediaPipe lip-sync correlation, facial-landmark jitter, optical-flow
+> morphing, ECAPA-TDNN speaker verification. They are wired as neutral
+> signals and do not affect verdicts yet.
 
 ---
 
-## 📊 Trained Model Benchmark Results
+## Benchmark Results
 
-All models were trained on an **NVIDIA RTX A4000 GPU (16GB VRAM)** across high-resolution multi-generator datasets:
+From `ml/evaluation_results.json` (real held-out evaluations produced by
+`ml/scripts/run_full_pipeline.py`; see `docs/BENCHMARK_RESULTS.md`):
 
-| Model Architecture | Input Resolution / Shape | Target Dataset | Primary Metric | Result |
+| Model | Eval split | n | Metric | Result |
 | :--- | :--- | :--- | :--- | :--- |
-| **SRM-Forensic-CNN** | $256 \times 256 \times 3$ (RGB) | GenImage / Diffusion Artifacts | **Validation AUC** | **98.64%** |
-| **LCNN-MFM-Audio** | $[1, 401, 40, 1]$ (LFCC) | ASVspoof 2019 / In-The-Wild | **Validation AUC**<br/>**Test AUC**<br/>**Validation EER** | **99.92%**<br/>**98.53%**<br/>**2.15%** |
-| **XGBoost Meta-Fusion** | 10-Feature Vector | Multi-Signal Real Calibration | **Test AUC**<br/>**Test Accuracy** | **96.18%**<br/>**89.40%** |
-| **TFLite INT8 Visual** | $(1, 32, 32, 3)$ | Real Image Calibration | **Decision Agreement** | **98.00%** |
-| **TFLite INT8 Audio** | $(1, 401, 40, 1)$ | Real Audio Calibration | **Decision Agreement** | **100.00%** (Mean diff: 0.006) |
+| SRMForensicCNN | genimage/val (native 32x32) | 4000 | AUC / Acc / EER | 0.956 / 0.889 / 0.110 |
+| LCNN-MFM-Audio | asvspoof2019/test | 280 | EER / AUC | 0.050 / 0.976 |
+| XGBoost meta fusion | held-out feature split | 1000 | AUC / Acc | 0.962 / 0.893 |
 
----
+The transpiled Kotlin classifier matches `booster.predict()` to <1e-4 at
+export time.
 
-## 🧠 The 10-Feature Meta-Fusion Vector
+## The 10-Feature Meta-Fusion Vector
 
-The transpiled Kotlin meta-classifier ([`XGBoostMetaClassifier.kt`](file:///c:/Users/gaura/.gemini/antigravity/scratch/Onn-Detect--main/android/app/src/main/java/com/onndetect/detection/fusion/XGBoostMetaClassifier.kt)) evaluates the following feature vector in $< 100\,\mu\text{s}$:
+Order is a cross-platform contract between
+`ml/src/meta_classifier/feature_extractor.py` and
+[`XGBoostMetaClassifier.kt`](android/app/src/main/java/com/onndetect/detection/fusion/XGBoostMetaClassifier.kt):
 
 ```kotlin
 val features = floatArrayOf(
     srmScore,          // [0] SRM residual CNN anomaly score
-    spectral.score,    // [1] FFT 2D spectral power law deviation
+    spectral.score,    // [1] FFT 2D spectral power-law deviation
     klScore,           // [2] Pixel co-occurrence KL divergence
     spectral.flatness, // [3] Spectral flatness measure
-    quality.resNorm,   // [4] Normalized image resolution
+    quality.resNorm,   // [4] Normalized image resolution (min(w,h)/1024)
     quality.isComp,    // [5] Compression flag (1.0 = compressed)
-    exifAnomaly,       // [6] EXIF metadata tampering anomaly score
-    c2paPresent,       // [7] C2PA synthetic metadata presence (1.0 / 0.0)
-    lipSyncCorr,       // [8] Cross-modal audio-to-mouth motion correlation
-    landmarkJitter     // [9] Inter-frame facial landmark jitter variance
+    exifAnomaly,       // [6] EXIF tampering anomaly (measured from file)
+    c2paPresent,       // [7] C2PA presence score (measured from file)
+    lipSyncCorr,       // [8] Temporal signal - neutral constant for stills
+    landmarkJitter     // [9] Temporal signal - neutral constant for stills
 )
 val rawScore = metaClassifier.predict(features)
 ```
 
----
+Features 6-9 carry neutral constants until retrained with real labels.
 
-## 🛠️ Reproducing Training & Exporting Models
+## Reproducing Training & Export
 
-The ML pipeline uses [`uv`](https://github.com/astral-sh/uv) for fast, reproducible Python dependency management.
+Python backend (Windows PowerShell from repo root):
 
-### 1. Environment Setup
 ```powershell
+python -m venv .venv
+.venv\Scripts\python.exe -m pip install torch torchvision torchaudio
+.venv\Scripts\python.exe -m pip install -r ml\requirements.txt
+.venv\Scripts\python.exe -m pip install -e ml
+
 cd ml
-uv pip install -r requirements.txt
+make train-all      # SRM-CNN + LCNN-MFM + XGBoost meta (+ Kotlin transpile)
+make export         # PyTorch -> Keras -> TFLite INT8 (parity-checked)
+python scripts/generate_android_constants.py
+cd ..
+python scripts/check_android_consistency.py
 ```
 
-### 2. Dataset Download
-Download high-resolution visual and in-the-wild audio datasets:
-```powershell
-# Stream multi-generator visual (50k images) and deepfake audio (10k samples)
-uv run python scripts/download_advanced_datasets.py --mode all --visual-samples 50000 --audio-samples 10000
-```
+See `docs/TRAINING_GUIDE.md` for dataset layout and options.
 
-### 3. Model Training
-```powershell
-# 1. Train Visual SRM-CNN (50 Epochs, AMP FP16)
-$env:DATASET_DIR = "../datasets/highres_visual"
-$env:IMG_SIZE = "256"
-uv run python scripts/train_srm_cnn.py --device cuda --amp --epochs 50 --batch-size 64 --num-workers 4
+## Android App Architecture
 
-# 2. Train Audio LCNN-MFM (35 Epochs, AMP FP16)
-uv run python scripts/train_lcnn_audio.py --config configs/lcnn_inthewild.yaml --device cuda --amp --epochs 35 --num-workers 4
-```
-
-### 4. Quantization, Parity Verification & Android Export
-```powershell
-# 1. Quantize PyTorch checkpoints to INT8 TFLite with numerical parity checks
-uv run python scripts/export_all_models.py
-
-# 2. Regenerate Android calibration constants & SHA-256 hashes
-uv run python scripts/generate_android_constants.py
-
-# 3. Train XGBoost meta-classifier and transpile decision trees into Kotlin
-uv run python scripts/train_xgboost_meta.py
-```
-
----
-
-## 📱 Android App Architecture
-
-Built natively with **Jetpack Compose**, **Kotlin Coroutines / Flow**, and **Dagger Hilt**:
+Jetpack Compose, Coroutines/Flow, Hilt, Room, LiteRT:
 
 ```
 android/app/src/main/java/com/onndetect/
-├── data/
-│   ├── integrity/          # TFLite SHA-256 checksum validator
-│   └── preferences/        # EncryptedSharedPreferences store
+├── data/local/           # Room scan history
 ├── detection/
-│   ├── audio/              # AudioClassifier, SpeakerVerifier
-│   ├── crossmodal/         # LipSyncCorrelation
-│   ├── fusion/             # XGBoostMetaClassifier.kt (Transpiled)
-│   ├── provenance/         # EXIFAnalyzer, C2PAManifestChecker
-│   ├── temporal/           # LandmarkJitterDetector
-│   ├── video/              # OpticalFlowAnalyzer
-│   └── visual/             # SRMForensicAnalyzer, FFTSpectralAnalyzer, PRNUAnalyzer
-├── domain/pipeline/        # DetectionPipeline orchestrator
-└── ui/
-    ├── screens/            # HomeScreen, ScanScreen, VoiceEnrollmentScreen
-    └── theme/              # Cyber-Forensic Dark Mode Theme
+│   ├── audio/            # AudioClassifier, AudioDecoder, LFCCExtractor, SpeakerVerifier
+│   ├── crossmodal/       # LipSyncCorrelation (stub)
+│   ├── fusion/           # XGBoostMetaClassifier.kt (transpiled, auto-generated)
+│   ├── provenance/       # EXIFAnalyzer, C2PAManifestChecker
+│   ├── temporal/         # VideoDecoder, FrameCosineDelta, LandmarkJitterDetector (stub)
+│   ├── video/            # VideoForensicAnalyzer, OpticalFlowAnalyzer (stub)
+│   └── visual/           # SRMForensicAnalyzer, FFTSpectralAnalyzer, FFTUtil,
+│                         # KLCooccurrenceAnalyzer, PRNUAnalyzer
+├── domain/pipeline/      # DetectionPipeline orchestrator, SignalFusion
+├── inference/            # LiteRT engine, memory-mapped loader, delegate
+│                         # selector, SHA-256 ModelIntegrityChecker
+└── ui/                   # Compose screens (home/scanner/result/history/
+                          # enrollment) + cyber-forensic dark theme
 ```
 
-### Building the APK
+## Building the APK
+
 ```powershell
 cd android
-./gradlew assembleDebug
+.\gradlew.bat assembleDebug
 ```
 
----
+CI builds the APK, runs unit tests, and executes the cross-platform
+consistency checks on every push (`.github/workflows/`).
 
-## ⚖️ License
-This project is licensed under the Apache 2.0 License. See [LICENSE](LICENSE) for details.
+## License
+
+This project is licensed under the Apache 2.0 License.

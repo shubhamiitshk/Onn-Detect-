@@ -46,7 +46,7 @@ class ModelCheckpoint:
 
     def __call__(self, metric_value: float, model: torch.nn.Module, optimizer: torch.optim.Optimizer, epoch: int):
         if self.best_score is None or self.is_better(metric_value, self.best_score):
-            print(f"\\n🌟 Metric improved from {self.best_score} to {metric_value:.5f}. Saving checkpoint...")
+            print(f"\n🌟 Metric improved from {self.best_score} to {metric_value:.5f}. Saving checkpoint...")
             self.best_score = metric_value
             
             save_path = os.path.join(self.save_dir, f"{self.model_name}_best.pth")

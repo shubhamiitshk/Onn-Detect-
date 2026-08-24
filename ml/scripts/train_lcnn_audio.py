@@ -96,9 +96,8 @@ def main():
     config['early_stopping']['mode'] = 'min'
     config['early_stopping']['metric'] = 'val_eer'
     
-    trainer = Trainer(model=model, train_loader=train_loader, val_loader=val_loader, config=config)
-    trainer.device = device
-    trainer.model = trainer.model.to(device)
+    trainer = Trainer(model=model, train_loader=train_loader,
+                      val_loader=val_loader, config=config, device=device)
     
     # Overwrite trainer callbacks to use EER minimization
     from training.callbacks import EarlyStopping, ModelCheckpoint

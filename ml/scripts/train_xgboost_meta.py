@@ -1,14 +1,15 @@
 """Train the XGBoost meta-classifier on REAL extracted forensic features.
 
-Replaces the previous mock-data training (random Beta draws) with genuine
-per-image features extracted from the GenImage validation split:
+Trains on genuine per-image features extracted from the GenImage validation
+split. Canonical 10-feature contract (shared with XGBoostMetaClassifier.kt):
 
-    0: srm_score        - trained SRMForensicCNN (native 32x32 input)
-    1: fft_score        - spectral slope deviation (mirrors FFTSpectralAnalyzer.kt)
-    2: kl_score         - pixel-diff histogram KL divergence (mirrors KLCooccurrenceAnalyzer.kt)
-    3: flatness_score   - Wiener spectral entropy
-    4: resolution_norm  - min(w,h)/1024 clamped to [0,1]
-    5: is_compressed    - JPEG flag
+    0: srm_score        1: fft_score      2: kl_score       3: flatness_score
+    4: resolution_norm  5: is_compressed  6: exif_anomaly   7: c2pa_present
+    8: lip_sync_corr    9: landmark_jitter
+
+Features 6-9 default to the neutral authentic-side constants shared with the
+Android pipeline; supply measured values via extract_visual_features()
+``provenance`` once real per-file labels are available.
 
 Also fixes the Kotlin exporter: the old version contained literal '\\n'
 escaping bugs that corrupted XGBoostMetaClassifier.kt. The regenerated
@@ -118,6 +119,19 @@ def export_to_kotlin(booster: xgb.Booster, feature_names: list[str], output_path
     dumps = booster.get_dump(dump_format="json")  # full-precision JSON, one per tree
     n_features = len(feature_names)
 
+    # Feature doc wrapped at ~72 columns for readability.
+    tokens = [f"{i} {name}" for i, name in enumerate(feature_names)]
+    doc_lines, cur = [], ""
+    for tok in tokens:
+        piece = (tok if not cur else f", {tok}")
+        if len(cur) + len(piece) > 68:
+            doc_lines.append(f" *   {cur}" if cur else "")
+            cur = tok
+        else:
+            cur += piece
+    if cur:
+        doc_lines.append(f" *   {cur}")
+
     lines = [
         "package com.onndetect.detection.fusion",
         "",
@@ -126,8 +140,7 @@ def export_to_kotlin(booster: xgb.Booster, feature_names: list[str], output_path
         f" * Transpiled XGBoost meta-classifier ({len(dumps)} trees, "
         f"{n_features} features).",
         " * Feature order:",
-        " *   0 srm_score, 1 fft_score, 2 kl_score, 3 flatness_score,",
-        " *   4 resolution_norm, 5 is_compressed",
+    ] + doc_lines + [
         " */",
         "class XGBoostMetaClassifier {",
         "",

@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.onndetect.ui.components.ConfidenceMeter
+import com.onndetect.data.local.SignalBreakdownJson
 import com.onndetect.domain.models.SignalBreakdown
 import com.onndetect.ui.components.HeatmapViewer
 import com.onndetect.ui.components.SignalBreakdownCard
@@ -70,9 +71,12 @@ fun ResultScreen(
                 Spacer(Modifier.height(12.dp))
                 ConfidenceMeter(score = e.score, isAiGenerated = e.isAiGenerated)
 
-                // Historical rows store the fused score only; per-signal values
-                // live on the transient ScanResult of the just-finished scan.
-                SignalBreakdownCard(signals = placeholderSignals(e.score))
+                // Rows recorded since v2 persist the full per-signal
+                // breakdown; legacy rows fall back to an unavailable view.
+                SignalBreakdownCard(
+                    signals = SignalBreakdownJson.decode(e.signalsJson)
+                        ?: unavailableSignals(e.score),
+                )
                 HeatmapViewer(heatmap = null)
 
                 Text(
@@ -89,7 +93,8 @@ fun ResultScreen(
     }
 }
 
-private fun placeholderSignals(fused: Float): SignalBreakdown =
+/** Breakdown view for rows recorded before signals were persisted. */
+private fun unavailableSignals(fused: Float): SignalBreakdown =
     SignalBreakdown(
         mobileClipScore = -1f, srmForensicScore = -1f, fftSpectralScore = -1f,
         klDivergenceScore = -1f, perturbationScore = -1f, audioDspScore = 0f,

@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.amp import autocast, GradScaler
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from tqdm import tqdm
 import time
 
@@ -16,9 +16,13 @@ class Trainer:
     Reusable PyTorch Training Engine optimized for RTX A4000 (16GB VRAM).
     Features Automatic Mixed Precision (AMP), Gradient Accumulation, and EMA.
     """
-    def __init__(self, model: nn.Module, train_loader: DataLoader, val_loader: DataLoader, config: Dict[str, Any]):
+    def __init__(self, model: nn.Module, train_loader: DataLoader,
+                 val_loader: DataLoader, config: Dict[str, Any],
+                 device: Optional[torch.device] = None):
         self.config = config
-        self.device = get_device()
+        # Explicit device wins; otherwise autodetect once and keep it for
+        # model, inputs and AMP context alike.
+        self.device = device if device is not None else get_device()
         self.model = model.to(self.device)
         self.train_loader = train_loader
         self.val_loader = val_loader

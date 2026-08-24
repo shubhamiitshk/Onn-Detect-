@@ -2,6 +2,7 @@ package com.onndetect.data.repository
 
 import com.onndetect.data.local.ScanHistoryDao
 import com.onndetect.data.local.ScanHistoryEntity
+import com.onndetect.data.local.SignalBreakdownJson
 import com.onndetect.domain.models.ScanResult
 import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
@@ -25,6 +26,7 @@ class ScanHistoryRepository @Inject constructor(
                 isAiGenerated = result.isAiGenerated,
                 confidence = result.confidence,
                 durationMs = result.scanDurationMs,
+                signalsJson = SignalBreakdownJson.encode(result.signals),
             )
         )
     }

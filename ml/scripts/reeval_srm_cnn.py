@@ -1,8 +1,9 @@
 """Re-evaluate trained SRM-CNN checkpoints on a held-out subset of genimage/val.
 
-The previous results JSON reported AUC 0.5 because datasets/genimage/test is
-EMPTY (0 files). This script evaluates honestly on the val split and writes
-a fresh results file.
+Uses the SAME forensics-preserving preprocessing as training and the Android
+runtime: native 32x32 input, ToTensor only - NO resize, NO ImageNet
+normalization. (The original 224x224 + Normalize pipeline interpolated away
+the noise statistics and produced the historical chance-level AUC 0.5.)
 """
 import os
 import sys
@@ -30,16 +31,13 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Device: {device}")
 
-    val_transform = transforms.Compose([
-        transforms.Resize((224, 224)),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-    ])
+    # Native resolution, no normalization - identical to train/eval pipeline.
+    val_transform = transforms.Compose([transforms.ToTensor()])
 
     dataset = CIFAKEDataset(
         root_dir=os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'datasets', 'genimage')),
         split='val',
-        img_size=224,
+        img_size=32,
         transform=val_transform,
         cache_in_memory=False,
     )
@@ -75,7 +73,7 @@ def main():
     acc = compute_accuracy(labels, preds)
 
     print("=" * 40)
-    print("SRM-CNN honest re-evaluation (genimage/val subset)")
+    print("SRM-CNN honest re-evaluation (genimage/val subset, native 32x32)")
     print(f"Samples: {len(labels)} | AUC: {auc:.4f} | Acc: {acc:.4f}")
     print("=" * 40)
 
@@ -83,8 +81,9 @@ def main():
         json.dump({
             'test_auc': float(auc),
             'test_accuracy': float(acc),
-            'eval_split': 'val',
+            'eval_split': 'val_subset_native_res_32',
             'eval_samples': len(labels),
+            'input_size': 32,
             'checkpoint_val_auc': float(best_auc_seen) if best_auc_seen is not None else None,
             'model_name': 'srm_cnn_genimage',
         }, f, indent=4)

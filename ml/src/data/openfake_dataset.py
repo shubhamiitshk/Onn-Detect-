@@ -33,7 +33,7 @@ class OpenFakeDataset(Dataset):
         self.cache_in_memory = cache_in_memory and split == 'train'
         
         self.samples: List[Tuple[Path, int]] = []
-        self.image_cache: Dict[int, torch.Tensor] = {}
+        self.image_cache: Dict[int, Image.Image] = {}
         
         # Forensics-preserving transforms by default
         if transform is not None:
@@ -56,8 +56,14 @@ class OpenFakeDataset(Dataset):
         
         if self.cache_in_memory and self.samples:
             print(f"[CACHE] Caching {len(self.samples)} images into RAM...")
+            # Raw PIL cache - transforms run per __getitem__ so random
+            # augmentations stay live across epochs.
             for idx in tqdm(range(len(self.samples)), desc=f"Caching {split}"):
-                self.image_cache[idx] = self._load_image_tensor(idx)
+                path, _ = self.samples[idx]
+                try:
+                    self.image_cache[idx] = Image.open(str(path)).convert('RGB')
+                except Exception:
+                    self.image_cache[idx] = Image.new('RGB', (self.img_size, self.img_size))
                 
         dist = self.get_class_distribution()
         print(f"[OK] Init OpenFakeDataset ('{split}') - Total: {len(self.samples)} | Real (0): {dist['real']} | Fake (1): {dist['fake']}")
@@ -115,7 +121,10 @@ class OpenFakeDataset(Dataset):
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, int]:
         if self.cache_in_memory and idx in self.image_cache:
-            return self.image_cache[idx], self.samples[idx][1]
-        
+            img = self.image_cache[idx].copy()
+            tensor = self.transform(img) if self.transform else \
+                torch.zeros(3, self.img_size, self.img_size)
+            return tensor, self.samples[idx][1]
+
         tensor = self._load_image_tensor(idx)
         return tensor, self.samples[idx][1]

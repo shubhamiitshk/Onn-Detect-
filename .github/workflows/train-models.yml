@@ -1,0 +1,61 @@
+name: train-models
+
+# Manual dispatch: full training requires the GenImage + ASVspoof datasets
+# and (for sane wall-times) a CUDA GPU. The job fails fast with a clear
+# message when the expected dataset layout is missing.
+#
+# Expected layout:
+#   datasets/genimage/{train,val}/{real,fake}/*.png|jpg   (native 32x32)
+#   datasets/asvspoof2019/{train,val,test}/{real,fake}/*.flac
+on:
+  workflow_dispatch:
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify datasets present
+        run: |
+          test -d datasets/genimage/train || {
+            echo "::error::datasets/genimage missing - download it first (see docs/TRAINING_GUIDE.md)"; exit 1; }
+          test -d datasets/asvspoof2019/test || {
+            echo "::error::datasets/asvspoof2019 missing - download it first (see docs/TRAINING_GUIDE.md)"; exit 1; }
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install backend deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+          python -m pip install -r ml/requirements.txt
+          python -m pip install -e ml
+
+      - name: Train visual SRM-CNN (native resolution!)
+        working-directory: ml
+        run: python scripts/train_srm_cnn.py --device cuda --epochs 12 --batch-size 512
+
+      - name: Train audio LCNN-MFM
+        working-directory: ml
+        run: python scripts/train_lcnn_audio.py --config configs/lcnn_asvspoof.yaml --device cuda
+
+      - name: Train XGBoost meta-fusion + transpile to Kotlin
+        working-directory: ml
+        run: python scripts/train_xgboost_meta.py
+
+      - name: Export TFLite + Android constants
+        working-directory: ml
+        run: |
+          python scripts/export_all_models.py
+          python scripts/generate_android_constants.py
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: trained-artifacts
+          path: |
+            ml/evaluation_results.json
+            android/app/src/main/assets/models/*.tflite

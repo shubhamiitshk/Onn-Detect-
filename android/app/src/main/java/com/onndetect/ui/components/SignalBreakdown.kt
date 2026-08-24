@@ -24,6 +24,7 @@ private val SignalBreakdown.available: List<Pair<String, Float?>>
         "Audio model (LCNN)" to audioModelScore.takeIf { it != 0f },
         "Audio DSP" to audioDspScore.takeIf { it != 0f },
         "Temporal consistency" to temporalScore.takeIf { it != 0f },
+        "PRNU sensor noise" to prnuScore.takeIf { it >= 0f },
     )
 
 /** Per-signal readout; signals marked unavailable are hidden or dashed. */

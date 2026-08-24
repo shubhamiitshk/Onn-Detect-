@@ -30,7 +30,9 @@ data class SignalBreakdown(
     val audioDspScore: Float,
     val audioModelScore: Float,
     val temporalScore: Float,
-    val provenanceScore: Float
+    val provenanceScore: Float,
+    /** PRNU sensor-noise anomaly; -1 = not measured. */
+    val prnuScore: Float = -1f
 )
 
 data class ProvenanceInfo(

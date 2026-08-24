@@ -3,6 +3,7 @@ package com.onndetect.detection.video
 import android.content.Context
 import com.onndetect.detection.audio.AudioClassifier
 import com.onndetect.detection.fusion.XGBoostMetaClassifier
+import com.onndetect.domain.pipeline.DetectionPipeline
 import com.onndetect.detection.temporal.FrameCosineDelta
 import com.onndetect.detection.temporal.VideoDecoder
 import com.onndetect.detection.visual.FFTSpectralAnalyzer
@@ -80,9 +81,20 @@ class VideoForensicAnalyzer @Inject constructor(
         val temporal = FrameCosineDelta.anomalyScore(sims)
 
         onStage("Fusing signals (XGBoost meta-classifier)…")
-        val resNorm = min(video.width, video.height) / 1024f
+        val resNorm = (min(video.width, video.height) / 1024f).coerceIn(0f, 1f)
         // Video containers are re-encoded/compressed by nature.
-        val features = floatArrayOf(srm, fft, kl, flat, resNorm, 1f)
+        // 10-feature contract (must match XGBoostMetaClassifier.kt): the six
+        // visual features are frame-averaged; provenance/temporal slots use
+        // the same neutral authentic-side constants as the image pipeline
+        // because per-file EXIF/C2PA and landmark signals are not extracted
+        // for decoded frames yet.
+        val features = floatArrayOf(
+            srm, fft, kl, flat, resNorm, 1f,
+            DetectionPipeline.NEUTRAL_EXIF,
+            DetectionPipeline.NEUTRAL_C2PA,
+            DetectionPipeline.NEUTRAL_LIP_SYNC,
+            DetectionPipeline.NEUTRAL_JITTER,
+        )
         val metaScore = metaClassifier.predict(features).coerceIn(0f, 1f)
 
         var audioScore = -1f

@@ -7,7 +7,11 @@ import androidx.room.RoomDatabase
 
 // SQLCipher hardening (net.zetetic:android-database-sqlcipher) can be layered
 // in later by supplying an openHelperFactory; the schema is unaffected.
-@Database(entities = [ScanHistoryEntity::class], version = 1, exportSchema = false)
+//
+// v2: added scan_history.signals_json. Scan history is ephemeral triage data,
+// so schema changes use destructive migration rather than carrying ALTER
+// scripts for a table users can clear with one tap.
+@Database(entities = [ScanHistoryEntity::class], version = 2, exportSchema = false)
 abstract class ScanHistoryDatabase : RoomDatabase() {
     abstract fun scanHistoryDao(): ScanHistoryDao
 
@@ -21,7 +25,7 @@ abstract class ScanHistoryDatabase : RoomDatabase() {
                     context,
                     ScanHistoryDatabase::class.java,
                     "onn_db"
-                ).build().also { instance = it }
+                ).fallbackToDestructiveMigration().build().also { instance = it }
             }
     }
 }

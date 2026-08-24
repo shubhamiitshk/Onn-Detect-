@@ -130,6 +130,16 @@ fun HomeScreen(
         ) {
             Text("Forensic Log", letterSpacing = 1.dp)
         }
+
+        Spacer(Modifier.height(12.dp))
+
+        OutlinedButton(
+            onClick = { navController.navigate("enrollment") },
+            modifier = Modifier.fillMaxWidth().height(56.dp),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Text("Voice Liveness Enrollment", letterSpacing = 1.dp)
+        }
     }
 }
 

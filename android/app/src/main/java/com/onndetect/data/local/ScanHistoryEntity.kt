@@ -17,4 +17,6 @@ data class ScanHistoryEntity(
     @ColumnInfo(name = "is_ai_generated") val isAiGenerated: Boolean,
     @ColumnInfo(name = "confidence") val confidence: Float,
     @ColumnInfo(name = "duration_ms") val durationMs: Long,
+    /** JSON-encoded [com.onndetect.domain.models.SignalBreakdown]; null for legacy rows. */
+    @ColumnInfo(name = "signals_json") val signalsJson: String? = null,
 )

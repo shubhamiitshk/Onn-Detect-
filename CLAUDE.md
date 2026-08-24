@@ -14,7 +14,8 @@ compact detectors; the Android app runs them fully on-device via TFLite
 
 All numbers come from `ml/evaluation_results.json`, produced by real
 evaluations (`ml/scripts/run_full_pipeline.py`). The transpiled Kotlin
-meta-classifier matches xgboost predictions to <1e-6.
+meta-classifier matches xgboost predictions to <1e-4 (export-time parity
+check).
 
 ## Layout
 
@@ -32,10 +33,16 @@ meta-classifier matches xgboost predictions to <1e-6.
 
 1. **Never resize the 32x32 dataset images up** before SRM-CNN inference or
    training. Native resolution is what makes it work (AUC 0.96 vs 0.50).
-2. Feature contract shared by Python and Kotlin (order matters):
+2. Feature contract shared by Python and Kotlin (order matters), 10 slots:
    `[srm_score, fft_score, kl_score, flatness_score, resolution_norm,
-   is_compressed]` - defined in `ml/src/meta_classifier/feature_extractor.py`,
+   is_compressed, exif_anomaly, c2pa_present, lip_sync_corr,
+   landmark_jitter]` - defined in `ml/src/meta_classifier/feature_extractor.py`,
    consumed by `android/.../detection/fusion/XGBoostMetaClassifier.kt`.
+   Slots 6-7 are measured from real file metadata on-device; slots 8-9 are
+   temporal signals that use the neutral constants in
+   `DetectionPipeline.Companion.NEUTRAL_*` (= feature_extractor NEUTRAL_*)
+   for still images. NEVER synthesize these features from the SRM score
+   during training - that leaks the label and inflates meta AUC.
 3. KL histogram semantics must stay identical on both platforms: diffs are
    CLAMPED to [-10,10] into 21 bins, epsilon 1e-6, renormalized.
 4. Model hashes in `assets/constants/model_hashes.json` are generated at

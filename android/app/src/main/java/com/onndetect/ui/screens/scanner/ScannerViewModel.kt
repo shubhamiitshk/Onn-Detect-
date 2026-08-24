@@ -62,7 +62,14 @@ class ScannerViewModel @Inject constructor(
                         return@launch
                     }
 
-                pipeline.analyzeMedia(bitmap, ScanMode.IMAGE_ONLY).collect { progress ->
+                val isCompressed = appContext.contentResolver
+                    .getType(uri)?.contains("jpeg", ignoreCase = true) == true
+                pipeline.analyzeMedia(
+                    bitmap,
+                    ScanMode.IMAGE_ONLY,
+                    sourceUri = uri,
+                    isCompressed = isCompressed,
+                ).collect { progress ->
                     val result = progress.result
                     if (result != null) {
                         historyRepository.record(result)
@@ -153,13 +160,13 @@ class ScannerViewModel @Inject constructor(
 
         viewModelScope.launch {
             try {
+                val started = android.os.SystemClock.elapsedRealtime()
                 val verdict = withContext(Dispatchers.Default) {
                     audioClassifier.analyze(uri) { stage ->
                         _state.update { it.copy(stage = stage, indeterminate = true) }
                     }
                 }
 
-                val started = android.os.SystemClock.elapsedRealtime()
                 val result = ScanResult(
                     id = java.util.UUID.randomUUID().toString(),
                     scanMode = ScanMode.AUDIO_ONLY,

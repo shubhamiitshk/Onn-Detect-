@@ -5,13 +5,11 @@ permission** and the network security config blocks all cleartext/HTTPS.
 
 ## Build
 
-```bash
-# one-time: generate the gradle wrapper jar (Android Studio does this
-# automatically when opening the project)
-gradle wrapper            # from this directory, needs a local gradle install
+The Gradle wrapper is committed - no local Gradle install needed:
 
-.\gradlew assembleDebug    # build
-.\gradlew test             # unit tests (FFT, KL fusion math)
+```bash
+.\gradlew.bat assembleDebug     # build
+.\gradlew.bat testDebugUnitTest # unit tests (FFT, KL fusion math)
 ```
 
 ## Architecture
@@ -23,7 +21,8 @@ MainActivity (permissions -> Compose)
             SRMForensicAnalyzer   (srm_forensic_cnn_int8.tflite, 32x32 RGB [0,1])
             FFTSpectralAnalyzer   (radix-2 FFT -> log-log slope deviation)
             KLCooccurrenceAnalyzer(21-bin diff histogram vs calibrated baseline)
-                 ↓ feature vector [srm, fft, kl, flatness, res_norm, compressed]
+                 ↓ feature vector [srm, fft, kl, flatness, res_norm, compressed,
+                    exif, c2pa, lip_sync*, jitter*]  (* neutral for stills)
             XGBoostMetaClassifier (AUTO-GENERATED transpiled trees)
                  ↓
             SignalFusion.fuse()   (SynthID/C2PA provenance override)

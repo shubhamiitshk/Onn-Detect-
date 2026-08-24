@@ -6,6 +6,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.onndetect.ui.screens.enrollment.VoiceEnrollmentScreen
 import com.onndetect.ui.screens.history.HistoryScreen
 import com.onndetect.ui.screens.home.HomeScreen
 import com.onndetect.ui.screens.result.ResultScreen
@@ -16,6 +17,7 @@ object Routes {
     const val SCANNER = "scanner?uri={uri}&mode={mode}"
     const val RESULT = "result/{scanId}"
     const val HISTORY = "history"
+    const val ENROLLMENT = "enrollment"
 }
 
 @Composable
@@ -54,5 +56,7 @@ fun ONNNavGraph(navController: NavHostController) {
         }
 
         composable(Routes.HISTORY) { HistoryScreen(navController) }
+
+        composable(Routes.ENROLLMENT) { VoiceEnrollmentScreen(navController) }
     }
 }

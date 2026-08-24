@@ -2,12 +2,17 @@
 venv/
 # Android
 build/
+.gradle/
+**/local.properties
+captures/
 # ML
 ml/checkpoints/
 ml/exported/
+ml/logs/
 
 .venv/
 datasets/
 __pycache__/
 .idea/
+*.iml
 *.pyc

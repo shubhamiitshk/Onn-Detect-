@@ -2,10 +2,11 @@
 
 Every handcrafted feature computed here mirrors, step for step, its on-device
 counterpart in the Android app (see android/app/src/main/java/com/onndetect/
-detection/visual/). This guarantees that the distribution the XGBoost
-meta-classifier is trained on matches what it will see at inference time.
+detection/). This guarantees that the distribution the XGBoost meta-classifier
+is trained on matches what it will see at inference time.
 
-Canonical feature vector (order is a cross-platform contract):
+Canonical feature vector (order is a cross-platform contract, shared with
+XGBoostMetaClassifier.kt / DetectionPipeline.kt):
 
     0: srm_score        - SRMForensicCNN probability of AI-generated
     1: fft_score        - spectral slope deviation from 1/f^2 power law
@@ -13,10 +14,21 @@ Canonical feature vector (order is a cross-platform contract):
     3: flatness_score   - Wiener spectral entropy of the power spectrum
     4: resolution_norm  - min(w,h)/1024 clamped to [0,1]
     5: is_compressed    - 1.0 if JPEG-compressed source, else 0.0
+    6: exif_anomaly     - EXIF metadata tampering anomaly [0,1]
+    7: c2pa_present     - C2PA manifest presence score [0,1]
+    8: lip_sync_corr    - cross-modal audio/mouth correlation (temporal)
+    9: landmark_jitter  - inter-frame facial landmark jitter (temporal)
 
-Audio/video/temporal signals are intentionally NOT part of this vector:
-the image pipeline fuses only signals it can actually compute; the audio path
-thresholds its LCNN score directly with an EER-calibrated constant.
+Features 8-9 are undefined for still images; BOTH platforms use the neutral
+authentic-side constants NEUTRAL_* below. Features 6-7 are computed from real
+file metadata on-device; during training they default to the same neutrals
+unless the caller supplies measured values via ``provenance``.
+
+NOTE: the shipped meta-model therefore carries little signal in features 6-9
+until it is retrained with real per-file provenance/temporal labels. The
+previous behaviour - synthesising these features from ``srm > 0.5`` - was
+removed because it leaked the heuristic label into training and inflated the
+reported meta AUC.
 """
 
 import json
@@ -30,6 +42,13 @@ KL_BINS = 21
 KL_CLAMP = 10
 # Android maps score = kl / 0.3f coerced to [0,1]; keep identical here.
 KL_SCORE_SCALE = 0.3
+
+# Neutral authentic-side constants. MUST stay identical to
+# DetectionPipeline.Companion.NEUTRAL_* in the Android app.
+NEUTRAL_EXIF = 0.1
+NEUTRAL_C2PA = 0.05
+NEUTRAL_LIP_SYNC = 0.9
+NEUTRAL_JITTER = 0.1
 
 DEFAULT_BASELINE = [
     0.005, 0.007, 0.012, 0.018, 0.025, 0.038, 0.055, 0.082, 0.120, 0.150,
@@ -186,8 +205,15 @@ def extract_visual_features(
     srm_model,
     device,
     baseline: np.ndarray,
+    provenance: dict | None = None,
 ) -> np.ndarray:
-    """Full canonical feature vector for one image file."""
+    """Full canonical feature vector for one image file.
+
+    ``provenance`` may carry measured values for features 6-9, e.g.
+    ``{"exif_anomaly": 0.4, "c2pa_present": 0.0, "lip_sync_corr": 0.85,
+    "landmark_jitter": 0.2}``. Keys are optional; anything absent falls back
+    to the neutral constants shared with the Android pipeline.
+    """
     from torchvision import transforms
     import torch
 
@@ -202,14 +228,11 @@ def extract_visual_features(
     kscore, _ = kl_score(to_gray_u8(img), baseline)
     res_norm, comp = quality_features(img, img_path)
 
-    # 7-10: Offline Simulated features for Phase 5 integration
-    # Since we lack a massive C2PA/LipSync dataset, we inject realistic 
-    # simulated features during XGBoost training so the tree learns how to weight them.
-    is_fake = srm > 0.5  # Heuristic for simulation
-    exif_anomaly = 0.8 if is_fake else 0.1
-    c2pa_present = 0.9 if is_fake else 0.05
-    lip_sync_corr = 0.3 if is_fake else 0.9
-    landmark_jitter = 0.7 if is_fake else 0.1
+    prov = provenance or {}
+    exif_anomaly = float(prov.get("exif_anomaly", NEUTRAL_EXIF))
+    c2pa_present = float(prov.get("c2pa_present", NEUTRAL_C2PA))
+    lip_sync_corr = float(prov.get("lip_sync_corr", NEUTRAL_LIP_SYNC))
+    landmark_jitter = float(prov.get("landmark_jitter", NEUTRAL_JITTER))
 
     return np.array([
         srm, fscore, kscore, flatness, res_norm, comp,

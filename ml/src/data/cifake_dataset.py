@@ -53,16 +53,15 @@ class CIFAKEDataset(Dataset):
         random.shuffle(combined)
         self.samples, self.labels = zip(*combined) if combined else ([], [])
         
-        # Cache in memory if requested
+        # Cache in memory if requested. Raw PIL images are cached WITHOUT the
+        # transform applied - transforms run per __getitem__ so random
+        # augmentations stay live across epochs (matches GenImageDataset).
         self.image_cache = {}
         if self.cache_in_memory and self.samples:
             print(f"[CACHE] Caching {len(self.samples)} images in memory...")
             for idx, img_path in enumerate(tqdm(self.samples, desc="Loading")):
                 try:
-                    img = Image.open(img_path).convert('RGB')
-                    if self.transform:
-                        img = self.transform(img)
-                    self.image_cache[idx] = img
+                    self.image_cache[idx] = Image.open(img_path).convert('RGB')
                 except Exception as e:
                     print(f"[ERROR] Error loading {img_path}: {e}")
         
@@ -73,9 +72,12 @@ class CIFAKEDataset(Dataset):
         return len(self.samples)
     
     def __getitem__(self, idx):
-        # Return cached image if available
+        # Return cached image if available (transform applied fresh each call)
         if self.cache_in_memory and idx in self.image_cache:
-            return self.image_cache[idx], self.labels[idx]
+            img = self.image_cache[idx].copy()
+            if self.transform:
+                img = self.transform(img)
+            return img, self.labels[idx]
         
         # Load from disk
         img_path = self.samples[idx]

@@ -3,9 +3,11 @@ package com.onndetect.detection.fusion
 /**
  * AUTO-GENERATED FILE - DO NOT EDIT MANUALLY.
  * Transpiled XGBoost meta-classifier (19 trees, 10 features).
+ * Regenerate with: python ml/scripts/train_xgboost_meta.py
  * Feature order:
  *   0 srm_score, 1 fft_score, 2 kl_score, 3 flatness_score,
- *   4 resolution_norm, 5 is_compressed
+ *   4 resolution_norm, 5 is_compressed, 6 exif_anomaly, 7 c2pa_present,
+ *   8 lip_sync_corr, 9 landmark_jitter
  */
 class XGBoostMetaClassifier {
 

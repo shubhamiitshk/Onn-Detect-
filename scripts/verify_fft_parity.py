@@ -13,7 +13,7 @@ import sys
 import numpy as np
 from PIL import Image
 
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(os.path.join(ROOT, "ml", "src"))
 sys.path.append(os.path.join(ROOT, "ml"))
 
@@ -116,14 +116,41 @@ def android_chain(img_path, size=256):
     return score, flatness
 
 val_dir = os.path.join(ROOT, "datasets", "genimage", "val", "real")
-files = sorted(os.listdir(val_dir))[:5]
+if os.path.exists(val_dir) and os.listdir(val_dir):
+    files = [os.path.join(val_dir, f) for f in sorted(os.listdir(val_dir))[:5]]
+else:
+    print("\nNo local dataset found in datasets/genimage/val/real; testing with synthetic images.")
+    # Create temporary in-memory PIL images for verification
+    files = []
+    np.random.seed(42)
+    for i in range(5):
+        arr = (np.random.rand(128, 128, 3) * 255).astype(np.uint8)
+        img = Image.fromarray(arr)
+        files.append(img)
+
 max_ds, max_df = 0.0, 0.0
-for f in files:
-    p = os.path.join(val_dir, f)
-    py_score, py_flat = fft_features(Image.open(p))
-    kt_score, kt_flat = android_chain(p)
+for i, item in enumerate(files):
+    if isinstance(item, str):
+        py_score, py_flat = fft_features(Image.open(item))
+        kt_score, kt_flat = android_chain(item)
+        name = os.path.basename(item)
+    else:
+        py_score, py_flat = fft_features(item)
+        # In-memory android chain
+        scaled = item.resize((256, 256), Image.BILINEAR)
+        gray01 = np.asarray(scaled, dtype=np.float64)
+        g = (gray01[..., 0] * 299 + gray01[..., 1] * 587 + gray01[..., 2] * 114) / 1000.0
+        g = np.clip(g, 0, 255) / 255.0
+        ps = kt_power_spectrum(g.ravel(), 256).reshape(256, 256)
+        radial = azimuthal_average(ps)
+        slope = power_law_slope(radial)
+        kt_score = min(abs(slope + 2.0) / 2.0, 1.0)
+        kt_flat = wiener_entropy(ps)
+        py_score, py_flat = fft_features(item)
+        name = f"synthetic_img_{i+1}.png"
+
     max_ds = max(max_ds, abs(py_score - kt_score))
     max_df = max(max_df, abs(py_flat - kt_flat))
-    print(f"{f}: python(score={py_score:.6f}, flat={py_flat:.6e}) "
+    print(f"{name}: python(score={py_score:.6f}, flat={py_flat:.6e}) "
           f"android(score={kt_score:.6f}, flat={kt_flat:.6e})")
 print(f"\nMax delta  score: {max_ds:.2e} | flatness: {max_df:.2e}")

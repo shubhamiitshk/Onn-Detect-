@@ -34,12 +34,18 @@ enum class DegradationLevel {
 }
 
 /**
- * End-to-end image scan: quality gate -> tier-aware parallel analyzers ->
- * XGBoost meta-fusion (transpiled trees) -> provenance override.
+ * End-to-end image scan: hardware gate -> tier-aware analyzers ->
+ * XGBoost meta-fusion (transpiled trees) -> provenance adjustment.
  *
  * Feature contract with the exported classifier (order matters!):
  *   0 srm_score, 1 fft_score, 2 kl_score, 3 flatness_score,
- *   4 resolution_norm, 5 is_compressed
+ *   4 resolution_norm, 5 is_compressed, 6 exif_anomaly, 7 c2pa_present,
+ *   8 lip_sync_corr, 9 landmark_jitter
+ *
+ * Features 6-7 are computed from the source file when its Uri is supplied;
+ * features 8-9 are temporal signals that do not apply to still images and
+ * use the documented neutral (authentic-side) constants 0.9 / 0.1 - the
+ * same values the meta-model was calibrated with for authentic media.
  */
 @Singleton
 class DetectionPipeline @Inject constructor(
@@ -51,18 +57,24 @@ class DetectionPipeline @Inject constructor(
     private val metaClassifier: XGBoostMetaClassifier,
     private val exifAnalyzer: com.onndetect.detection.provenance.EXIFAnalyzer,
     private val c2paChecker: com.onndetect.detection.provenance.C2PAManifestChecker,
-    private val lipSync: com.onndetect.detection.crossmodal.LipSyncCorrelation,
-    private val jitterDetector: com.onndetect.detection.temporal.LandmarkJitterDetector,
     private val prnuAnalyzer: com.onndetect.detection.visual.PRNUAnalyzer,
-    private val opticalFlow: com.onndetect.detection.video.OpticalFlowAnalyzer,
-    private val speakerVerifier: com.onndetect.detection.audio.SpeakerVerifier,
     @ApplicationContext private val appContext: Context,
 ) {
+
+    companion object {
+        /** Neutral (authentic-side) values for signals undefined on stills. */
+        const val NEUTRAL_LIP_SYNC = 0.9f
+        const val NEUTRAL_JITTER = 0.1f
+        const val NEUTRAL_EXIF = 0.1f
+        const val NEUTRAL_C2PA = 0.05f
+    }
 
     suspend fun analyzeMedia(
         bitmap: Bitmap,
         mode: ScanMode,
         provenance: ProvenanceInfo? = null,
+        sourceUri: android.net.Uri? = null,
+        isCompressed: Boolean = false,
     ): Flow<ScanProgress> = flow {
         val started = SystemClock.elapsedRealtime()
         emit(ScanProgress("Input validation…", 5f))
@@ -70,7 +82,8 @@ class DetectionPipeline @Inject constructor(
         if (mode != ScanMode.IMAGE_ONLY && mode != ScanMode.VIDEO_WITH_AUDIO &&
             mode != ScanMode.CROSS_MODAL
         ) {
-            // Audio-only path is handled by AnalyzeAudioUseCase; abstain here.
+            // Audio-only scans are handled by AudioClassifier via
+            // ScannerViewModel; abstain here.
             emit(aborted(mode))
             return@flow
         }
@@ -104,33 +117,31 @@ class DetectionPipeline @Inject constructor(
         emit(ScanProgress("Fusing signals (XGBoost meta-classifier)…", 80f))
 
         val quality = qualityInfo(bitmap)
+        val exifAnomaly = sourceUri?.let { exifAnalyzer.analyze(appContext, it) }
+            ?: NEUTRAL_EXIF
+        val c2paPresent = sourceUri?.let { c2paChecker.analyze(appContext, it) }
+            ?: NEUTRAL_C2PA
+        val compressed = isCompressed || quality.isCompressed
         val features = floatArrayOf(
             srmScore,
             spectral.score,
             klScore,
             spectral.spectralFlatness,
-            quality.resolution / 1024f,
-            if (quality.isCompressed) 1f else 0f,
-            // New Offline features - passing safe defaults for Image scan mode
-            0.1f, // exif_anomaly
-            0.05f, // c2pa_present 
-            0.9f, // lip_sync_corr
-            0.1f, // landmark_jitter
+            (quality.resolution / 1024f).coerceIn(0f, 1f),
+            if (compressed) 1f else 0f,
+            exifAnomaly,
+            c2paPresent,
+            NEUTRAL_LIP_SYNC,
+            NEUTRAL_JITTER,
         )
         val rawScore = metaClassifier.predict(features).coerceIn(0f, 1f)
-        
-        // --- ADVANCED OFFLINE FORENSICS (Phases 6-8) ---
-        emit(ScanProgress("Extracting PRNU Sensor Noise...", 85f))
+
+        // PRNU sensor-noise check: reported as a signal, never blended into
+        // the calibrated meta score.
+        emit(ScanProgress("Extracting PRNU sensor noise…", 85f))
         val prnuAnomaly = prnuAnalyzer.analyze(bitmap)
-        
-        // Simulating Optical Flow & Speaker Liveness (since we only have an Image here)
-        val opticalFlowAnomaly = 0.5f // Neutral for image
-        val voiceAnomaly = 0.5f // Neutral for image
-        
-        // Hard-override final score logic with Advanced Signals
-        val enhancedScore = ((rawScore * 0.6f) + (prnuAnomaly * 0.4f)).coerceIn(0f, 1f)
-        
-        val finalScore = signalFusion.fuse(enhancedScore, provenance)
+
+        val finalScore = signalFusion.fuse(rawScore, provenance)
 
         val threshold = CalibrationStore.metaDecisionThreshold(appContext)
         val signals = SignalBreakdown(
@@ -143,6 +154,7 @@ class DetectionPipeline @Inject constructor(
             audioModelScore = 0f,
             temporalScore = 0f,
             provenanceScore = finalScore,
+            prnuScore = prnuAnomaly,
         )
 
         val result = ScanResult(
