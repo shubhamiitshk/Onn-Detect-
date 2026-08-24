@@ -2,7 +2,6 @@ package com.onndetect.detection.provenance
 
 import android.content.Context
 import android.net.Uri
-import java.io.InputStream
 import javax.inject.Inject
 
 class C2PAManifestChecker @Inject constructor() {
@@ -13,34 +12,38 @@ class C2PAManifestChecker @Inject constructor() {
      * this performs a basic offline byte-scan for the "c2pa" JUMBF (JPEG Universal Metadata Box Format) URI.
      */
     fun analyze(context: Context, imageUri: Uri): Float {
-        var c2paScore = 0.5f // 0.5 = Neutral (No C2PA manifest found)
-        
+        // 0.05 = the NEUTRAL_C2PA constant the meta-model was calibrated with
+        // (see DetectionPipeline.Companion and feature_extractor.py). The
+        // previous 0.5 "neutral" value was out-of-distribution for slot 7.
+        var c2paScore = 0.05f
+
         try {
-            val inputStream: InputStream? = context.contentResolver.openInputStream(imageUri)
-            if (inputStream != null) {
-                // Read the first 64KB of the file which contains the headers
+            context.contentResolver.openInputStream(imageUri)?.use { inputStream ->
+                // Read up to the first 64KB fully - a single read() may return
+                // fewer bytes than available and miss the JUMBF marker.
                 val buffer = ByteArray(65536)
-                val bytesRead = inputStream.read(buffer)
-                
-                if (bytesRead > 0) {
-                    val headerString = String(buffer, 0, bytesRead, Charsets.US_ASCII)
-                    
-                    // Look for the C2PA JUMBF marker: "http://c2pa.org/seam/cg/v1"
+                var offset = 0
+                while (offset < buffer.size) {
+                    val n = inputStream.read(buffer, offset, buffer.size - offset)
+                    if (n <= 0) break
+                    offset += n
+                }
+
+                if (offset > 0) {
+                    val headerString = String(buffer, 0, offset, Charsets.US_ASCII)
+
+                    // Look for the C2PA JUMBF marker: "http://c2pa.org/..."
                     if (headerString.contains("c2pa.org")) {
-                        // A C2PA manifest exists! 
+                        // A C2PA manifest exists!
                         // In a full implementation, we would cryptographically verify the signature here.
-                        // For now, presence of C2PA usually indicates AI Generation (DALL-E 3, Firefly) 
+                        // For now, presence of C2PA usually indicates AI Generation (DALL-E 3, Firefly)
                         // or a heavily edited image from a modern workflow.
-                        c2paScore = 0.8f 
-                    } else {
-                        // No C2PA manifest. 
-                        c2paScore = 0.5f
+                        c2paScore = 0.8f
                     }
                 }
-                inputStream.close()
             }
         } catch (e: Exception) {
-            c2paScore = 0.5f
+            c2paScore = 0.05f
         }
 
         return c2paScore

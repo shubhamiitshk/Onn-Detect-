@@ -23,10 +23,11 @@ class FFTSpectralAnalyzer {
         // 1. Resize to power of 2 for Radix-2 FFT (e.g., 256x256)
         val size = 256
         val scaledBitmap = Bitmap.createScaledBitmap(bitmap, size, size, true)
-        
+
         // 2. Extract grayscale pixels [0, 1]
         val pixels = IntArray(size * size)
         scaledBitmap.getPixels(pixels, 0, size, 0, 0, size, size)
+        if (scaledBitmap !== bitmap) scaledBitmap.recycle()
         
         val grayData = DoubleArray(size * size)
         for (i in pixels.indices) {

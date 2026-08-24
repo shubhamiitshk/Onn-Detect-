@@ -106,6 +106,7 @@ class ScannerViewModel @Inject constructor(
 
         viewModelScope.launch {
             try {
+                val started = android.os.SystemClock.elapsedRealtime()
                 val outcome = withContext(Dispatchers.Default) {
                     videoAnalyzer.analyze(uri) { stage ->
                         _state.update { it.copy(stage = stage, indeterminate = true) }
@@ -139,7 +140,7 @@ class ScannerViewModel @Inject constructor(
                         isBlurry = false,
                         isDark = false,
                     ),
-                    scanDurationMs = 0L,
+                    scanDurationMs = android.os.SystemClock.elapsedRealtime() - started,
                 )
                 historyRepository.record(result)
                 _state.update {

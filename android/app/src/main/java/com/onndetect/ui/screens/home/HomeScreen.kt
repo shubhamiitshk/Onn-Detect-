@@ -14,6 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.compose.runtime.collectAsState
 import androidx.navigation.NavController
@@ -63,14 +64,14 @@ fun HomeScreen(
             style = MaterialTheme.typography.headlineLarge,
             color = MaterialTheme.colorScheme.primary,
             fontWeight = FontWeight.Bold,
-            letterSpacing = 4.dp
+            letterSpacing = 4.sp
         )
         Spacer(Modifier.height(4.dp))
         Text(
             "Zero-Trust Offline Forensics",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            letterSpacing = 1.dp
+            letterSpacing = 1.sp
         )
 
         Row(
@@ -94,7 +95,7 @@ fun HomeScreen(
                     style = MaterialTheme.typography.labelMedium,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                     fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.dp
+                    letterSpacing = 1.sp
                 )
             }
         }
@@ -128,7 +129,7 @@ fun HomeScreen(
             modifier = Modifier.fillMaxWidth().height(56.dp),
             shape = RoundedCornerShape(12.dp)
         ) {
-            Text("Forensic Log", letterSpacing = 1.dp)
+            Text("Forensic Log", letterSpacing = 1.sp)
         }
 
         Spacer(Modifier.height(12.dp))
@@ -138,7 +139,7 @@ fun HomeScreen(
             modifier = Modifier.fillMaxWidth().height(56.dp),
             shape = RoundedCornerShape(12.dp)
         ) {
-            Text("Voice Liveness Enrollment", letterSpacing = 1.dp)
+            Text("Voice Liveness Enrollment", letterSpacing = 1.sp)
         }
     }
 }

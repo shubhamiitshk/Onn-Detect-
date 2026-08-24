@@ -98,23 +98,32 @@ class VideoForensicAnalyzer @Inject constructor(
         val metaScore = metaClassifier.predict(features).coerceIn(0f, 1f)
 
         var audioScore = -1f
+        var isAudioSynthetic = false
         if (video.hasAudioTrack) {
             try {
                 onStage("Scanning embedded audio…")
                 val verdict = audioClassifier.analyze(uri) { }
                 audioScore = verdict.score
+                isAudioSynthetic = verdict.isAiGenerated
             } catch (_: Exception) {
                 audioScore = -1f // silent / unsupported tracks are normal
             }
         }
 
-        val overall = if (audioScore >= 0f) (metaScore + audioScore) / 2f else metaScore
-        val threshold = com.onndetect.detection.visual.CalibrationStore
+        val visualThreshold = com.onndetect.detection.visual.CalibrationStore
             .metaDecisionThreshold(context)
+        val isVisualSynthetic = metaScore >= visualThreshold
+
+        // Multimodal threat model: if EITHER the embedded audio track (voice clone)
+        // or the visual track (generative frames/face swap) is synthetic, the container is flagged.
+        val isAiGenerated = isVisualSynthetic || isAudioSynthetic
+
+        // Overall risk score reflects the maximum anomaly across evaluated modalities.
+        val overall = if (audioScore >= 0f) maxOf(metaScore, audioScore) else metaScore
 
         return Outcome(
             overallScore = overall,
-            isAiGenerated = overall >= threshold,
+            isAiGenerated = isAiGenerated,
             confidence = abs(overall - 0.5f) * 2f,
             srmScore = srm,
             fftScore = fft,

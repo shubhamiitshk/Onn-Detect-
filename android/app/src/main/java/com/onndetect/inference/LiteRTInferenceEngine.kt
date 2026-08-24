@@ -20,7 +20,9 @@ class LiteRTInferenceEngine @Inject constructor(
 
     private data class LoadedInterpreter(
         val interpreter: Interpreter,
-        val holder: DelegateHolder
+        val holder: DelegateHolder,
+        /** Backing stream of the mmap'd flatbuffer; must outlive the interpreter. */
+        val closeable: AutoCloseable?
     )
 
     private val loaded = HashMap<String, LoadedInterpreter>()
@@ -37,7 +39,7 @@ class LiteRTInferenceEngine @Inject constructor(
             DelegateSelector.apply(options, DelegateSelector.preferred(), holder)
             val interpreter = Interpreter(mapped.buffer, options)
             Log.i(TAG, "Loaded $modelFile with ${DelegateSelector.preferred()} delegate")
-            loaded[modelFile] = LoadedInterpreter(interpreter, holder)
+            loaded[modelFile] = LoadedInterpreter(interpreter, holder, mapped.closeable)
             return interpreter
         }
     }
@@ -60,7 +62,10 @@ class LiteRTInferenceEngine @Inject constructor(
         synchronized(lock) {
             loaded.values.forEach {
                 runCatching { it.interpreter.close() }
+                // Close the delegate BEFORE the mmap backing stream, then the
+                // stream itself (previously leaked a file descriptor per model).
                 runCatching { it.holder.close() }
+                runCatching { it.closeable?.close() }
             }
             loaded.clear()
         }

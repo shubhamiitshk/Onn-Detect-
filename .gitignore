@@ -1,8 +1,8 @@
 # Python
 venv/
 # Android
-build/
-.gradle/
+**/build/
+**/.gradle/
 **/local.properties
 captures/
 # ML

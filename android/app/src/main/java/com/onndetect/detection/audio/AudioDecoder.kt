@@ -41,6 +41,7 @@ class AudioDecoder(private val context: Context) {
                 }
             }
             require(trackIndex >= 0) { "No audio track found" }
+            extractor.selectTrack(trackIndex)
 
             var rate = format!!.getInteger(MediaFormat.KEY_SAMPLE_RATE)
             var channels = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)

@@ -49,9 +49,13 @@ class SpeakerVerifier @Inject constructor() {
         if (audio.isNotEmpty()) {
             val mean = audio.average().toFloat()
             val max = audio.maxOrNull() ?: 0f
-            for (i in 0 until 192) {
-                embedding[i] = (mean * i) % max
+            if (max != 0f && !max.isNaN()) {
+                for (i in 0 until 192) {
+                    embedding[i] = (mean * i) % max
+                }
             }
+            // Digital silence / NaN input: leave a zero vector so downstream
+            // cosine similarity returns 0 instead of propagating NaN.
         }
         return normalize(embedding)
     }
