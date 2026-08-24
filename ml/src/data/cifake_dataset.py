@@ -56,7 +56,7 @@ class CIFAKEDataset(Dataset):
         # Cache in memory if requested
         self.image_cache = {}
         if self.cache_in_memory and self.samples:
-            print(f"💾 Caching {len(self.samples)} images in memory...")
+            print(f"[CACHE] Caching {len(self.samples)} images in memory...")
             for idx, img_path in enumerate(tqdm(self.samples, desc="Loading")):
                 try:
                     img = Image.open(img_path).convert('RGB')
@@ -64,9 +64,9 @@ class CIFAKEDataset(Dataset):
                         img = self.transform(img)
                     self.image_cache[idx] = img
                 except Exception as e:
-                    print(f"⚠️  Error loading {img_path}: {e}")
+                    print(f"[ERROR] Error loading {img_path}: {e}")
         
-        print(f"✅ Init CIFAKEDataset ('{split}') - Total: {len(self.samples)} | "
+        print(f"[OK] Init CIFAKEDataset ('{split}') - Total: {len(self.samples)} | "
               f"Real (0): {self.labels.count(0)} | Fake (1): {self.labels.count(1)}")
     
     def __len__(self):

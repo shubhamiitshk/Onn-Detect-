@@ -73,7 +73,7 @@ class GenImageDataset(Dataset):
 
         # Print statistics
         dist = self.get_class_distribution()
-        print(f"✅ Init GenImageDataset ('{split}') - Total: {len(self.samples)} | Real (0): {dist['real']} | Fake (1): {dist['fake']}")
+        print(f"[OK] Init GenImageDataset ('{split}') - Total: {len(self.samples)} | Real (0): {dist['real']} | Fake (1): {dist['fake']}")
 
     def get_class_distribution(self) -> Dict[str, int]:
         """Returns the counts per class."""

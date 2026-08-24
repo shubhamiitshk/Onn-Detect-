@@ -15,43 +15,51 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
-private val DarkColorScheme = darkColorScheme(
-    primary = LightGreen,
-    secondary = LightBlue,
-    tertiary = WarningYellow,
-    background = BackgroundDark,
-    surface = SurfaceDark,
-    error = DangerRed
-)
-
-private val LightColorScheme = lightColorScheme(
-    primary = DarkGreen,
-    secondary = DarkBlue,
-    tertiary = WarningYellow,
-    error = DangerRed
+// Enforce Dark Mode for the Cyber Forensic Aesthetic
+private val ForensicColorScheme = darkColorScheme(
+    primary = CyberCyan,
+    onPrimary = BackgroundObsidian,
+    primaryContainer = DeepIndigo,
+    onPrimaryContainer = TextPrimary,
+    
+    secondary = NeonPurple,
+    onSecondary = BackgroundObsidian,
+    
+    tertiary = AuthenticGreen,
+    onTertiary = BackgroundObsidian,
+    
+    error = FakeRed,
+    onError = TextPrimary,
+    errorContainer = FakeRed.copy(alpha = 0.2f),
+    
+    background = BackgroundObsidian,
+    onBackground = TextPrimary,
+    
+    surface = SurfaceSlate,
+    onSurface = TextPrimary,
+    
+    surfaceVariant = SurfaceVariantDark,
+    onSurfaceVariant = TextSecondary,
+    
+    outline = OutlineDark
 )
 
 @Composable
 fun OnnDetectTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = true,
+    darkTheme: Boolean = true, // Force dark theme for the forensic aesthetic
+    dynamicColor: Boolean = false, // Disable dynamic color to enforce our cyber palette
     content: @Composable () -> Unit
 ) {
-    val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        }
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
-    }
+    val colorScheme = ForensicColorScheme
     
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
             window.statusBarColor = colorScheme.background.toArgb()
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
+            window.navigationBarColor = colorScheme.background.toArgb()
+            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = false
+            WindowCompat.getInsetsController(window, view).isAppearanceLightNavigationBars = false
         }
     }
 

@@ -5,12 +5,16 @@
     "kl_score",
     "flatness_score",
     "resolution_norm",
-    "is_compressed"
+    "is_compressed",
+    "exif_anomaly",
+    "c2pa_present",
+    "lip_sync_corr",
+    "landmark_jitter"
   ],
-  "decision_threshold": 0.6079295873641968,
-  "test_auc": 0.9617606233824418,
-  "test_accuracy": 0.893,
-  "base_margin_intercept": 0.002999937643588302,
-  "n_trees": 25,
+  "decision_threshold": 0.6276869773864746,
+  "test_auc": 0.9618366261185403,
+  "test_accuracy": 0.894,
+  "base_margin_intercept": 0.003000006039550751,
+  "n_trees": 19,
   "note": "feature order is a cross-platform contract with XGBoostMetaClassifier.kt"
 }

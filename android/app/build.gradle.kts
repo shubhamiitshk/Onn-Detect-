@@ -104,6 +104,9 @@ dependencies {
     // MediaPipe Tasks
     implementation("com.google.mediapipe:tasks-vision:0.20230731")
 
+    // EXIF
+    implementation("androidx.exifinterface:exifinterface:1.3.7")
+
     // Image Loading
     implementation("io.coil-kt:coil-compose:2.5.0")
     

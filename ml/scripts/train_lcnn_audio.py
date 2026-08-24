@@ -13,6 +13,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 's
 
 from models.lcnn_mfm_audio import LCNNMFMAudio
 from data.asvspoof_dataset import ASVspoofDataset
+from data.inthewild_audio import InTheWildAudioDataset
 from training.trainer import Trainer
 from training.metrics import compute_eer, compute_auc
 from utils.seed import set_global_seed
@@ -24,6 +25,7 @@ def parse_args():
     parser.add_argument("--batch-size", type=int)
     parser.add_argument("--epochs", type=int)
     parser.add_argument("--lr", type=float)
+    parser.add_argument("--num-workers", type=int)
     parser.add_argument("--amp", action="store_true")
     parser.add_argument("--device", type=str, default="auto")
     parser.add_argument("--resume", type=str)
@@ -38,6 +40,7 @@ def load_config(args) -> Dict[str, Any]:
     if args.batch_size: config['training']['batch_size'] = args.batch_size
     if args.epochs: config['training']['epochs'] = args.epochs
     if args.lr: config['optimizer']['lr'] = args.lr
+    if args.num_workers: config['training']['num_workers'] = args.num_workers
     if args.amp: config['training']['amp'] = True
         
     config['checkpoint_dir'] = args.output_dir
@@ -68,7 +71,7 @@ def main():
     
     set_global_seed(42)
     device = get_device() if args.device == "auto" else torch.device(args.device)
-    print(f"✅ Using device: {device}")
+    print(f"[DEVICE] Using device: {device}")
     
     root_dir = config['data']['root_dir']
     max_duration = config['data']['max_duration']
@@ -76,9 +79,12 @@ def main():
     batch_size = config['training']['batch_size']
     num_workers = config['training']['num_workers']
     
-    print("Loading ASVspoof datasets...")
-    train_dataset = ASVspoofDataset(root_dir=root_dir, split='train', max_duration=max_duration, sample_rate=sample_rate)
-    val_dataset = ASVspoofDataset(root_dir=root_dir, split='val', max_duration=max_duration, sample_rate=sample_rate)
+    dataset_type = config['data'].get('dataset', 'asvspoof2019')
+    DatasetClass = InTheWildAudioDataset if dataset_type == 'inthewild_audio' else ASVspoofDataset
+    
+    print(f"Loading {dataset_type} datasets...")
+    train_dataset = DatasetClass(root_dir=root_dir, split='train', max_duration=max_duration, sample_rate=sample_rate)
+    val_dataset = DatasetClass(root_dir=root_dir, split='val', max_duration=max_duration, sample_rate=sample_rate)
     
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
@@ -118,7 +124,7 @@ def main():
             print(f"Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f} | Val EER: {val_eer:.4f} | Val AUC: {val_metrics.get('auc', 0.0):.4f}")
             trainer.checkpoint(val_eer, trainer.model, trainer.optimizer, epoch)
             if trainer.early_stopping(val_eer):
-                print(f"🛑 Early stopping triggered!")
+                print("[STOP] Early stopping triggered!")
                 break
         return history
     
@@ -131,11 +137,11 @@ def main():
         history = trainer.train()
     
     best_ckpt_path = os.path.join(config['checkpoint_dir'], f"{config['model_name']}_best.pth")
-    print(f"\\n🧪 Loading best model from {best_ckpt_path} for Test evaluation...")
+    print(f"\n[EVAL] Loading best model from {best_ckpt_path} for Test evaluation...")
     
     model = LCNNMFMAudio.from_pretrained(best_ckpt_path).to(device).eval()
     
-    test_dataset = ASVspoofDataset(root_dir=root_dir, split='test', max_duration=max_duration, sample_rate=sample_rate)
+    test_dataset = DatasetClass(root_dir=root_dir, split='test', max_duration=max_duration, sample_rate=sample_rate)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
     
     all_preds = []
@@ -152,7 +158,7 @@ def main():
     test_auc = compute_auc(all_targets, all_preds)
     
     print("="*40)
-    print("📊 Final Audio Test Evaluation")
+    print("Final Audio Test Evaluation")
     print(f"Test EER:           {test_eer:.4f}")
     print(f"Test AUC:           {test_auc:.4f}")
     print("="*40)

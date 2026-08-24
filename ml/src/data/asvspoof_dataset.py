@@ -46,7 +46,7 @@ class ASVspoofDataset(Dataset):
         
         # Print statistics
         dist = self.get_class_distribution()
-        print(f"✅ Init ASVspoofDataset ('{split}') - Total: {len(self.samples)} | Real (0): {dist['real']} | Fake (1): {dist['fake']}")
+        print(f"[OK] Init ASVspoofDataset ('{split}') - Total: {len(self.samples)} | Real (0): {dist['real']} | Fake (1): {dist['fake']}")
         if self.durations:
             stats = self.get_duration_stats()
             print(f"   Duration Stats -> Min: {stats['min']:.2f}s | Max: {stats['max']:.2f}s | Avg: {stats['avg']:.2f}s")

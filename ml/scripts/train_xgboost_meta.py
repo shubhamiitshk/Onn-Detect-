@@ -256,7 +256,7 @@ def build_dataset(config: dict, srm_model, device, baseline) -> tuple[np.ndarray
         paths.extend(files[:n_train])
         labels.extend([label] * min(n_train, len(files)))
 
-    X = np.zeros((len(paths), len(FEATURE_NAMES)), dtype=np.float64)
+    X = np.zeros((len(paths), len(FEATURE_NAMES)), dtype=np.float32)
     y = np.asarray(labels, dtype=np.int64)
 
     for i, p in enumerate(paths):
