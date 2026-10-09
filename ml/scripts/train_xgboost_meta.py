@@ -1,20 +1,10 @@
-"""Train the XGBoost meta-classifier on REAL extracted forensic features.
+"""Train fusion on measured features from an independent stacking split.
 
-Trains on genuine per-image features extracted from the GenImage validation
-split. Canonical 10-feature contract (shared with XGBoostMetaClassifier.kt):
-
-    0: srm_score        1: fft_score      2: kl_score       3: flatness_score
-    4: resolution_norm  5: is_compressed  6: exif_anomaly   7: c2pa_present
-    8: lip_sync_corr    9: landmark_jitter
-
-Features 6-9 default to the neutral authentic-side constants shared with the
-Android pipeline; supply measured values via extract_visual_features()
-``provenance`` once real per-file labels are available.
-
-Also fixes the Kotlin exporter: the old version contained literal '\\n'
-escaping bugs that corrupted XGBoostMetaClassifier.kt. The regenerated
-classifier is cross-validated against booster.predict() before being written
-into the Android source tree.
+FEATURE_NAMES is the authoritative feature order. Separate fusion_val,
+calibration and sealed test splits serve model selection, threshold fitting
+and final evaluation. Inputs come from the staged quantized visual model.
+Trees, constants, lineage and Kotlin source are written to a new output
+directory; installing them into Android requires the validated bundle tool.
 """
 
 import os
@@ -26,6 +16,7 @@ sys.path.append(os.path.abspath(os.path.join(SCRIPT_DIR, "..", "src")))
 sys.path.insert(0, os.path.abspath(os.path.join(SCRIPT_DIR, "..")))
 
 import json
+from pathlib import Path
 
 import joblib
 import numpy as np
@@ -42,12 +33,6 @@ from meta_classifier.feature_extractor import (
     extract_visual_features,
     load_baseline,
 )
-
-ANDROID_KT_DIR = os.path.join(
-    ROOT_DIR, "android", "app", "src", "main", "java", "com", "onndetect",
-    "detection", "fusion"
-)
-
 
 # ---------------------------------------------------------------------------
 # Kotlin export
@@ -83,6 +68,7 @@ def _parse_tree(dump_json: str, feature_names=None) -> dict:
             "thr": float(n["split_condition"]),
             "yes": int(n["yes"]),
             "no": int(n["no"]),
+            "missing": int(n["missing"]),
         }
         for child in n["children"]:
             walk(child)
@@ -102,7 +88,9 @@ def _emit_kotlin(nodes: dict, nid: int, indent: str, out: list):
         out.append(f"{indent}margin += {val}f")
     else:
         thr = repr(float(node["thr"]))
-        out.append(f"{indent}if (features[{node['fid']}] < {thr}f) {{")
+        missing_yes = node["missing"] == node["yes"]
+        missing_test = f"features[{node['fid']}].isNaN() || " if missing_yes else f"!features[{node['fid']}].isNaN() && "
+        out.append(f"{indent}if ({missing_test}features[{node['fid']}] < {thr}f) {{")
         _emit_kotlin(nodes, node["yes"], indent + "    ", out)
         out.append(f"{indent}}} else {{")
         _emit_kotlin(nodes, node["no"], indent + "    ", out)
@@ -110,7 +98,7 @@ def _emit_kotlin(nodes: dict, nid: int, indent: str, out: list):
 
 
 def export_to_kotlin(booster: xgb.Booster, feature_names: list[str], output_path: str,
-                     intercept: float = 0.0) -> None:
+                     intercept: float = 0.0, release_id: str = "unvalidated") -> None:
     """Export trees as valid Kotlin if/else inference code (real newlines!).
 
     `intercept` is the base_score logit that xgboost >= 2.0 folds into its own
@@ -143,9 +131,12 @@ def export_to_kotlin(booster: xgb.Booster, feature_names: list[str], output_path
     ] + doc_lines + [
         " */",
         "class XGBoostMetaClassifier {",
+        f'    companion object {{ const val RELEASE_ID = {json.dumps(release_id)} }}',
         "",
         "    /** @return P(AI-generated) in [0,1]. */",
         "    fun predict(features: FloatArray): Float {",
+        f'        require(features.size == {n_features}) {{ "Feature schema mismatch" }}',
+        '        require(features.all { it.isFinite() }) { "Non-finite features" }',
         f"        var margin = {repr(float(intercept))}f",
     ]
 
@@ -200,7 +191,8 @@ def transpiled_margin(trees: list[dict], x: np.ndarray) -> np.ndarray:
             nid = 0
             while "leaf" not in nodes[nid]:
                 n = nodes[nid]
-                nid = n["yes"] if x[row, n["fid"]] < n["thr"] else n["no"]
+                value = x[row, n["fid"]]
+                nid = n["missing"] if np.isnan(value) else (n["yes"] if np.float32(value) < np.float32(n["thr"]) else n["no"])
             margins[row] += nodes[nid]["leaf"]
     return margins
 
@@ -244,185 +236,118 @@ def list_images(folder: str, limit: int) -> list[str]:
     return files[:limit]
 
 
-def build_dataset(config: dict, srm_model, device, baseline) -> tuple[np.ndarray, np.ndarray]:
-    data_cfg = config["data"]
-    genimage = os.path.join(ROOT_DIR, "datasets", "genimage")
-    cache = os.path.join(SCRIPT_DIR, "..", "exported", "meta_features_cache.npz")
-
-    if os.path.exists(cache) and not data_cfg.get("force_recompute", False):
-        blob = np.load(cache)
-        print(f"Loaded cached feature matrix: {blob['X'].shape}")
-        return blob["X"], blob["y"]
-
-    real_dir = os.path.join(genimage, "val", "real")
-    fake_dir = os.path.join(genimage, "val", "fake")
-    per_class_train = int(data_cfg.get("train_samples_per_class", 2500))
-    per_class_test = int(data_cfg.get("test_samples_per_class", 1500))
-
-    paths, labels = [], []
-    for cls_dir, label, n_train, n_test in (
-        (real_dir, 0, per_class_train, per_class_test),
-        (fake_dir, 1, per_class_train, per_class_test),
-    ):
-        files = list_images(cls_dir, n_train + n_test)
-        # First chunk -> train, second -> held-out test (deterministic order)
-        paths.extend(files[:n_train])
-        labels.extend([label] * min(n_train, len(files)))
-
-    X = np.zeros((len(paths), len(FEATURE_NAMES)), dtype=np.float32)
-    y = np.asarray(labels, dtype=np.int64)
-
-    for i, p in enumerate(paths):
-        try:
-            X[i] = extract_visual_features(p, srm_model, device, baseline)
-        except Exception as e:  # keep going; mark bad row via NaN then drop
-            print(f"Feature extraction failed for {p}: {e}")
-            X[i] = np.nan
-        if (i + 1) % 500 == 0:
-            print(f"  extracted {i + 1}/{len(paths)}")
-
-    good = ~np.isnan(X).any(axis=1)
-    X, y = X[good], y[good]
-
-    os.makedirs(os.path.dirname(cache), exist_ok=True)
-    np.savez_compressed(cache, X=X, y=y)
-    print(f"Saved feature cache -> {cache}")
-    return X, y
-
-
 def main():
-    with open(os.path.join(SCRIPT_DIR, "..", "configs", "xgboost_meta.yaml")) as f:
-        config = yaml.safe_load(f)
-
-    out_dir = os.path.normpath(os.path.join(
-        SCRIPT_DIR, "..", config["logging"]["output_dir"]))
-    os.makedirs(out_dir, exist_ok=True)
-
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    # 1. Trained SRM-CNN (native-res retrained checkpoint)
-    ckpt_path = os.path.join(SCRIPT_DIR, "..", "checkpoints", "srm_cnn_genimage_best.pth")
-    srm_model = SRMForensicCNN()
-    ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=True)
-    srm_model.load_state_dict(ckpt["state_dict"] if "state_dict" in ckpt else ckpt)
-    srm_model.to(device).eval()
-    print(f"Loaded SRM-CNN checkpoint (val AUC {float(ckpt.get('best_metric', 0)):.4f})")
-
-    # 2. Calibrate natural diff-histogram from REAL training photos
-    genimage = os.path.join(ROOT_DIR, "datasets", "genimage")
-    baseline_path = os.path.join(out_dir, "natural_diff_histogram.json")
-    baseline_cache = os.path.join(out_dir, "natural_diff_histogram.json")
-    if os.path.exists(baseline_cache):
-        baseline = load_baseline(baseline_cache)
-        print(f"Baseline histogram loaded ({json.load(open(baseline_cache)).get('num_images', '?')} images)")
-    else:
-        real_files = list_images(os.path.join(genimage, "train", "real"), 500)
-        calib = calibrate_baseline(real_files)
-        with open(baseline_path, "w") as f:
-            json.dump(calib, f)
-        baseline = load_baseline(baseline_path)
-        print(f"Calibrated baseline from {calib['num_images']} real images")
-
-    # 3. Extract REAL features
-    print("Extracting real forensic features...")
-    X, y = build_dataset(config, srm_model, device, baseline)
-
-    # Deterministic stratified-ish split: dataset builder interleaves by class
-    # blocks, so shuffle once with a fixed seed.
-    rng = np.random.default_rng(42)
-    idx = rng.permutation(len(y))
-    X, y = X[idx], y[idx]
-    split = int(len(y) * 0.8)
-    X_train, y_train = X[:split], y[:split]
-    X_test, y_test = X[split:], y[split:]
-
-    # Single-sample sanity: both classes present in both splits
-    assert set(np.unique(y_train)) == {0, 1}, "train split missing a class"
-    assert set(np.unique(y_test)) == {0, 1}, "test split missing a class"
-
-    tcfg = config["training"]
-    dtrain = xgb.DMatrix(X_train, label=y_train, feature_names=FEATURE_NAMES)
-    dtest = xgb.DMatrix(X_test, label=y_test, feature_names=FEATURE_NAMES)
-
-    params = {
-        "max_depth": tcfg["max_depth"],
-        "eta": tcfg["learning_rate"],
-        "objective": "binary:logistic",
-        "eval_metric": tcfg["eval_metric"],
-        "subsample": tcfg["subsample"],
-        "colsample_bytree": tcfg["colsample_bytree"],
-        "seed": 42,
-    }
-
-    print("Training XGBoost meta-classifier on REAL features...")
-    booster = xgb.train(
-        params,
-        dtrain,
-        num_boost_round=tcfg["n_estimators"],
-        evals=[(dtrain, "train"), (dtest, "eval")],
-        early_stopping_rounds=tcfg["early_stopping_rounds"],
-        verbose_eval=False,
-    )
-
-    # Early stopping keeps extra rounds past the best one. Predictions use
-    # best_iteration, but get_dump() returns EVERY boosted tree -> any export
-    # must be made from the truncated booster or parity breaks.
-    best_iter = getattr(booster, "best_iteration", None)
-    if best_iter is not None:
-        booster = booster[: best_iter + 1]
-
-    preds = booster.predict(dtest)
-    auc = roc_auc_score(y_test, preds)
-    acc = accuracy_score(y_test, (preds > 0.5).astype(int))
-
-    # Recover base_score logit offset now; needed by both metrics and exports.
+    import argparse
+    import hashlib
+    from data.contracts import validate_dataset_manifest, discover_samples, IMAGE_EXTS, balanced_subset, sha256_file
+    from training.checkpoint import load_verified_checkpoint
+    from training.metrics import eer_operating_threshold, compute_auc, compute_accuracy
+    from validate_export import _run_tflite
+    parser = argparse.ArgumentParser(description="Train fusion only on independent stacking/model-selection/calibration/test splits")
+    parser.add_argument("--config", default=str(Path(SCRIPT_DIR).parent / "configs" / "xgboost_meta.yaml"))
+    parser.add_argument("--visual-checkpoint", required=True)
+    parser.add_argument("--visual-tflite", required=True)
+    parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--release-id", required=True)
+    parser.add_argument("--test-samples", type=int, default=None)
+    args = parser.parse_args()
+    config = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
+    checkpoint = load_verified_checkpoint(args.visual_checkpoint)
+    root = Path(checkpoint["config"]["data"]["root_dir"])
+    provenance = validate_dataset_manifest(root, ("train", "val", "calibration", "test", "stacking", "fusion_val"))
+    if provenance["manifest_sha256"] != checkpoint["contract"]["dataset_manifest_hash"]:
+        raise ValueError("Fusion dataset must match checkpoint lineage and include independent stacking splits before base training")
+    output = Path(args.output_dir).resolve()
+    if output.exists():
+        raise FileExistsError("Use a new fusion release version; existing artifacts are never replaced")
+    output.mkdir(parents=True)
+    size = checkpoint["contract"]["input_shape"][1]
+    class QuantizedVisual(torch.nn.Module):
+        def forward(self, x):
+            scores = [_run_tflite(args.visual_tflite, np.transpose(item[None].numpy(), (0, 2, 3, 1))) for item in x.cpu()]
+            return torch.tensor(scores, dtype=torch.float32).reshape(-1, 1)
+    model = QuantizedVisual()
+    real_files = [str(path) for path, label in discover_samples(root, "train", IMAGE_EXTS) if label == 0][:500]
+    baseline_data = calibrate_baseline(real_files)
+    baseline_path = output / "natural_diff_histogram.json"
+    baseline_path.write_text(json.dumps(baseline_data, indent=2), encoding="utf-8")
+    baseline = load_baseline(str(baseline_path))
+    identity = {"dataset_manifest_hash": provenance["manifest_sha256"], "visual_model_hash": sha256_file(args.visual_tflite),
+                "checkpoint_hash": sha256_file(args.visual_checkpoint), "baseline_hash": sha256_file(baseline_path),
+                "feature_source_hash": sha256_file(Path(SCRIPT_DIR).parent / "src" / "meta_classifier" / "feature_extractor.py"),
+                "feature_schema": FEATURE_NAMES, "input_size": size}
+    cache = {}
+    limit = int(config["data"].get("samples_per_split", 8000))
+    for split in ("stacking", "fusion_val", "calibration", "test"):
+        samples = discover_samples(root, split, IMAGE_EXTS) if split == "test" and args.test_samples is None else balanced_subset(discover_samples(root, split, IMAGE_EXTS), args.test_samples if split == "test" else limit)
+        # A sample with unusable evidence must abort the run naming the file,
+        # never be dropped and never be replaced by a neutral or zero feature.
+        rows = []
+        for path, _ in samples:
+            try:
+                rows.append(extract_visual_features(str(path), model, torch.device("cpu"), baseline, input_size=size))
+            except Exception as exc:
+                raise ValueError(f"Unusable visual evidence for {path.relative_to(root).as_posix()}: {exc}") from exc
+        X = np.stack(rows)
+        if not np.isfinite(X).all():
+            raise ValueError("Non-finite features; no silently dropped samples")
+        cache["X_" + split] = X
+        cache["y_" + split] = np.asarray([label for _, label in samples], dtype=np.int64)
+        cache["ids_" + split] = np.asarray([path.relative_to(root).as_posix() for path, _ in samples])
+    cache["identity_json"] = np.asarray(json.dumps(identity, sort_keys=True))
+    np.savez_compressed(output / "meta_features_cache.npz", **cache)
+    X_train, y_train = cache["X_stacking"], cache["y_stacking"]
+    X_val, y_val = cache["X_fusion_val"], cache["y_fusion_val"]
+    cfg = config["training"]
+    params = {"max_depth": cfg["max_depth"], "eta": cfg["learning_rate"], "objective": "binary:logistic",
+              "eval_metric": cfg["eval_metric"], "subsample": cfg["subsample"], "colsample_bytree": cfg["colsample_bytree"], "seed": 42}
+    booster = xgb.train(params, xgb.DMatrix(X_train, label=y_train, feature_names=FEATURE_NAMES),
+                        num_boost_round=cfg["n_estimators"], evals=[(xgb.DMatrix(X_val, label=y_val, feature_names=FEATURE_NAMES), "model_selection")],
+                        early_stopping_rounds=cfg["early_stopping_rounds"], verbose_eval=False)
+    best = getattr(booster, "best_iteration", None)
+    if best is not None:
+        booster = booster[:best + 1]
     intercept = detect_intercept(booster, X_train[:512], FEATURE_NAMES)
-    print(f"Detected base_score margin intercept: {intercept:+.6f}")
-
-    # Individual-signal AUCs for honest comparison
-    signal_auc = {}
-    for j, name in enumerate(FEATURE_NAMES):
-        try:
-            signal_auc[name] = round(float(roc_auc_score(y_test, X_test[:, j])), 4)
-        except ValueError:
-            signal_auc[name] = 0.5
-
-    print("=" * 44)
-    print("XGBoost Meta-Classifier (real features)")
-    print(f"Test AUC:      {auc:.4f}")
-    print(f"Test Accuracy: {acc:.4f}")
-    print("Per-signal AUC:")
-    for k, v in signal_auc.items():
-        print(f"   {k:<16} {v:.4f}")
-    print("=" * 44)
-
-    # 4. Save model + metrics
-    joblib.dump(booster, os.path.join(out_dir, "xgboost_meta.joblib"))
-    with open(os.path.join(out_dir, "meta_results.json"), "w") as f:
-        json.dump({
-            "test_auc": float(auc),
-            "test_accuracy": float(acc),
-            "signal_aucs": signal_auc,
-            "n_train": int(len(y_train)),
-            "n_test": int(len(y_test)),
-            "features": FEATURE_NAMES,
-            "best_iteration": int(best_iter) if best_iter is not None else int(booster.num_boosted_rounds()),
-            "base_margin_intercept": float(intercept),
-        }, f, indent=4)
-
-    # 5. Export to Kotlin (ml/exported + Android source tree)
-    kt_ml = os.path.join(out_dir, "XGBoostMetaClassifier.kt")
-    export_to_kotlin(booster, FEATURE_NAMES, kt_ml, intercept)
-    assert kotlin_brace_check(kt_ml), "Generated Kotlin failed structural check!"
-
-    export_to_kotlin(booster, FEATURE_NAMES,
-                     os.path.join(ANDROID_KT_DIR, "XGBoostMetaClassifier.kt"), intercept)
-
-    # 6. Parity validation of the transpiled trees vs xgboost itself
-    if not validate_export(booster, X_test, FEATURE_NAMES, intercept):
-        raise RuntimeError("Kotlin transpilation does not match xgboost predictions!")
-    print("All exports validated.")
-
+    if not validate_export(booster, X_val, FEATURE_NAMES, intercept):
+        raise ValueError("Transpiled tree parity failed")
+    # NaNs must follow the learned missing branch, not an arbitrary else.
+    missing_probe = X_val[:32].copy()
+    for index in range(min(len(FEATURE_NAMES), len(missing_probe))):
+        missing_probe[index, index] = np.nan
+    if not validate_export(booster, missing_probe, FEATURE_NAMES, intercept):
+        raise ValueError("Missing-branch parity failed")
+    cal = booster.predict(xgb.DMatrix(cache["X_calibration"], feature_names=FEATURE_NAMES))
+    _, threshold = eer_operating_threshold(cache["y_calibration"], cal)
+    cal_auc = float(compute_auc(cache["y_calibration"], cal))
+    if cal_auc <= .5:
+        raise ValueError("Fusion calibration at/below chance; refuse release")
+    test = booster.predict(xgb.DMatrix(cache["X_test"], feature_names=FEATURE_NAMES))
+    from training.evaluation import evaluation_summary
+    manifest_records = json.loads((root / "dataset_manifest.json").read_text(encoding="utf-8"))["records"]
+    by_path = {record["path"]: record for record in manifest_records}
+    records = [by_path[str(relative)] for relative in cache["ids_test"]]
+    test_report = evaluation_summary(cache["y_test"], test, threshold, records)
+    if test_report["auc"] <= .5:
+        raise ValueError("Sealed fusion test performance at/below chance; refuse release")
+    kt = output / "XGBoostMetaClassifier.kt"
+    export_to_kotlin(booster, FEATURE_NAMES, str(kt), intercept, args.release_id)
+    if not kotlin_brace_check(str(kt)):
+        raise ValueError("Kotlin structural validation failed")
+    model_path = output / "xgboost_meta.json"
+    booster.save_model(str(model_path))
+    model_hash = sha256_file(model_path)
+    results = {"release_id": args.release_id, "features": FEATURE_NAMES, "identity": identity,
+               "test_auc": test_report["auc"], "test": test_report,
+               "test_scope": "all_sealed_test_files" if args.test_samples is None else "explicit_pilot_cap",
+               "test_accuracy": float(compute_accuracy(cache["y_test"], test, threshold)),
+               "base_margin_intercept": intercept, "n_trees": booster.num_boosted_rounds(),
+               "model_hash": model_hash, "kotlin_hash": sha256_file(kt),
+               "calibration": {"threshold": threshold, "auc": cal_auc, "n_calibration": len(cal),
+                               "split_manifest_hash": provenance["manifest_sha256"], "model_hash": model_hash,
+                               "frontend_id": checkpoint["contract"]["frontend_id"]},
+               "validation_status": "numpy_tree_parity_passed_requires_jvm_and_device_evaluation"}
+    (output / "meta_results.json").write_text(json.dumps(results, indent=2), encoding="utf-8")
+    print(json.dumps(results, indent=2))
 
 if __name__ == "__main__":
     main()

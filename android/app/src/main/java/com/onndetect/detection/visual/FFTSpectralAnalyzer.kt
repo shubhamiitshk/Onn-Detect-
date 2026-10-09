@@ -4,22 +4,12 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import kotlin.math.*
 
-/**
- * Authentic Research Implementation: "Watch your Up-Conv" (Durall et al., 2020)
- * 
- * Convolutional Neural Networks (GANs, Diffusion) rely on upsampling operations 
- * (Transposed Convolutions, Bilinear upsampling) which mathematically fail to 
- * reproduce the spectral distributions of natural images, particularly in the 
- * high-frequency domain.
- * 
- * Natural images follow a predictable 1/f^2 power-law decay in their power spectrum.
- * AI-generated images exhibit spectral anomalies (grid-like artifacts or sudden drop-offs).
- * This analyzer computes the 2D Fast Fourier Transform (FFT), extracts the 1D 
- * azimuthal average, and fits a log-log regression to measure deviation from nature.
- */
+/** Spectral slope/flatness descriptors; these are not generative-origin proof. */
 class FFTSpectralAnalyzer {
     
-    fun analyze(bitmap: Bitmap): SpectralResult {
+    fun analyze(bitmap: Bitmap, checkStop: () -> Unit = {}): SpectralResult {
+        checkStop()
+        require(!bitmap.isRecycled && bitmap.width > 1 && bitmap.height > 1)
         // 1. Resize to power of 2 for Radix-2 FFT (e.g., 256x256)
         val size = 256
         val scaledBitmap = Bitmap.createScaledBitmap(bitmap, size, size, true)
@@ -35,7 +25,12 @@ class FFTSpectralAnalyzer {
             val r = Color.red(color)
             val g = Color.green(color)
             val b = Color.blue(color)
-            grayData[i] = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0
+            // Integer BT.601 luma, shared with KLCooccurrenceAnalyzer and with
+            // meta_classifier/feature_extractor.py to_gray_u8(). This must NOT
+            // use fractional double coefficients: those are not exact binary
+            // fractions, so the double sum lands just below the integer for
+            // roughly 2e-4 of RGB triples and truncates one lower.
+            grayData[i] = ((r * 299 + g * 587 + b * 114) / 1000).toInt() / 255.0
         }
         
         // 3. Compute 2D Power Spectrum
@@ -54,6 +49,8 @@ class FFTSpectralAnalyzer {
         // Normalize score (0 = authentic, 1 = heavily anomalous)
         val score = (slopeDeviation / 2.0f).coerceIn(0.0f, 1.0f)
         
+        checkStop()
+        require(score.isFinite())
         return SpectralResult(
             slopeDeviation = slopeDeviation,
             spectralFlatness = computeWienerEntropy(powerSpectrum).toFloat(),
@@ -113,7 +110,7 @@ class FFTSpectralAnalyzer {
             }
         }
         
-        if (count < 2) return -2.0 // Fallback
+        require(count >= 2) { "Insufficient spectral evidence" }
 
         // Ordinary Least Squares (OLS) regression
         val meanX = sumX / count
@@ -121,7 +118,8 @@ class FFTSpectralAnalyzer {
         val numerator = sumXY - count * meanX * meanY
         val denominator = sumXX - count * meanX * meanX
         
-        return if (denominator == 0.0) -2.0 else numerator / denominator
+        require(denominator > 0.0 && denominator.isFinite()) { "Degenerate spectrum" }
+        return numerator / denominator
     }
 
     private fun computeWienerEntropy(spectrum: DoubleArray): Double {

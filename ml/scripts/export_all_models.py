@@ -1,168 +1,222 @@
-"""Export trained ONN-DETECT models to TFLite for on-device inference.
+"""Stage trained INT8 models with labeled parity, calibration and sealed tests.
 
-Fixes vs the previous version:
-- Actually LOADS the trained checkpoints (previously exported random-init
-  weights, making the .tflite files useless even when they existed).
-- Conversion goes PyTorch -> Keras (weight transfer) -> TFLite, since
-  ai-edge-torch needs torch_xla which has no Windows wheels.
-- Calibration datasets use REAL data from the training distribution.
-- Parity validation runs PyTorch-vs-TFLite on REAL inputs, not noise.
-- Copies final INT8 models into the Android assets directory.
-
-Android input contract (NHWC float32):
-- srm_forensic_cnn_int8.tflite : (1,32,32,3) RGB in [0,1] -> (1,1) P(fake)
-- lcnn_audio_int8.tflite       : (1,T,40,1) LFCC          -> (1,1) P(fake)
+No Android assets are modified. A bundle remains unvalidated until fusion,
+independent phone evaluation and the release validator succeed.
 """
-
+import argparse
+import json
 import os
+import subprocess
 import sys
-import glob
-import shutil
-
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-ROOT_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, "..", ".."))
-sys.path.append(os.path.abspath(os.path.join(SCRIPT_DIR, "..", "src")))
-
+import tempfile
+from pathlib import Path
+ROOT_DIR = Path(__file__).resolve().parents[2]
+ML_ROOT = ROOT_DIR / "ml"
+sys.path.insert(0, str(ML_ROOT / "src"))
 import numpy as np
 import torch
-from PIL import Image
-
+from PIL import Image, ImageOps
+from data.contracts import IMAGE_EXTS, AUDIO_EXTS, discover_samples, balanced_subset, sha256_file, validate_dataset_manifest
+from data.audio_dataset import StrictAudioDataset
+from data.image_dataset import image_tensor
+from data.image_frontend import decode_image
+from data.lfcc_frontend import FRONTEND_ID
+from training.checkpoint import load_verified_checkpoint
+from training.provenance import source_snapshot, training_code_hash
+from training.evaluation import evaluation_summary
+from training.metrics import compute_auc, compute_eer, compute_accuracy, eer_operating_threshold
 from models.srm_forensic_cnn import SRMForensicCNN
 from models.lcnn_mfm_audio import LCNNMFMAudio
-from export.quantize_int8 import (
-    quantize_keras_model,
-    visual_calibration_dataset,
-    audio_specs_calibration_dataset,
-)
-from export.torch_to_tflite_keras import (
-    build_keras_srm,
-    build_keras_lcnn,
-    keras_to_tflite,
-    keras_parity_check,
-)
-from validate_export import validate_models_real
+from validate_export import validate_models_real, _run_tflite
 
-EXPORT_DIR = os.path.join(ROOT_DIR, "ml", "exported")
-ASSETS_DIR = os.path.join(ROOT_DIR, "android", "app", "src", "main", "assets", "models")
-CKPT_DIR = os.path.join(ROOT_DIR, "ml", "checkpoints")
-GENIMAGE_VAL = os.path.join(ROOT_DIR, "datasets", "genimage", "val")
-ASVSPOOF_TEST = os.path.join(ROOT_DIR, "datasets", "asvspoof2019", "test")
-
+CKPT_DIR = ML_ROOT / "checkpoints"
 
 def list_files(folder, exts, limit):
-    out = []
-    for cls in ("real", "fake"):
-        d = os.path.join(folder, cls)
-        if not os.path.isdir(d):
-            continue
-        files = sorted(
-            glob.glob(os.path.join(d, f"*{exts[0]}"))
-            + glob.glob(os.path.join(d, f"*{exts[1]}"))
-        )
-        out.extend(files[: max(limit // 2, 1)])
-    return out
+    folder = Path(folder)
+    samples = discover_samples(folder.parent, folder.name, {e.lower() for e in exts})
+    return [str(path) for path, _ in balanced_subset(samples, limit)]
 
+def load_model(path, cls, frontend=None):
+    state = load_verified_checkpoint(path)
+    if frontend is not None and state["contract"]["frontend_id"] != frontend:
+        raise ValueError("Checkpoint frontend is incompatible")
+    model = cls()
+    model.load_state_dict(state["state_dict"])
+    model.cpu().eval()
+    return model, state
 
-def load_srm():
-    ckpt = torch.load(os.path.join(CKPT_DIR, "srm_cnn_genimage_best.pth"),
-                      map_location="cpu", weights_only=True)
-    state = ckpt["state_dict"] if "state_dict" in ckpt else ckpt
-    model = SRMForensicCNN()
-    model.load_state_dict(state)
-    model.eval()
-    print(f"SRM-CNN loaded (training best val AUC {float(ckpt.get('best_metric', 0)):.4f})")
-    return model
+def load_srm(path=None):
+    return load_model(path or CKPT_DIR / "srm_cnn_genimage_best.pth", SRMForensicCNN)[0]
 
+def load_lcnn(path=None):
+    return load_model(path or CKPT_DIR / "lcnn_audio_asvspoof_best.pth", LCNNMFMAudio, FRONTEND_ID)[0]
 
-def load_lcnn():
-    ckpt = torch.load(os.path.join(CKPT_DIR, "lcnn_audio_asvspoof_best.pth"),
-                      map_location="cpu", weights_only=False)
-    state = ckpt["state_dict"] if isinstance(ckpt, dict) and "state_dict" in ckpt else ckpt
-    model = LCNNMFMAudio()
-    model.load_state_dict(state)
-    model.eval()
-    return model
+def make_lfcc_fn(split):
+    """Bind an audio feature extractor to ONE explicit split.
 
+    ``split`` is required with no default on purpose. ``load_analysis_waveform``
+    only randomizes the 4 s window for ``split == 'train'`` and centres it for
+    everything else, so dropping this argument silently feeds centred crops to
+    the INT8 representative set while the checkpoint was trained on random
+    crops. Every caller must state which regime it intends.
 
-def make_lfcc_fn():
+    Use 'train' for the INT8 representative dataset, 'calibration' for the
+    parity/threshold set, and 'test' for sealed-test scoring.
+    """
     from data.lfcc_extractor import LFCCExtractor
-    import torchaudio
+    from data.audio_dataset import load_analysis_waveform
+    if split not in ('train', 'val', 'calibration', 'test'):
+        raise ValueError(f'Unsupported audio feature split: {split}')
+    extractor = LFCCExtractor()
+    def extract(path):
+        return extractor.extract(load_analysis_waveform(path, split)).numpy().astype(np.float32)
+    return extract
 
-    extractor = LFCCExtractor(sample_rate=16000)
 
-    def flac_to_lfcc(path: str) -> np.ndarray:
-        wav, sr = torchaudio.load(path)
-        if sr != 16000:
-            wav = torchaudio.functional.resample(wav, sr, 16000)
-        # center crop / pad to exactly 4 s like the ASVspoofDataset eval path
-        target = int(4.0 * 16000)
-        frames = wav.shape[-1]
-        if frames > target:
-            start = (frames - target) // 2
-            wav = wav[:, start:start + target]
-        elif frames < target:
-            wav = torch.nn.functional.pad(wav, (0, target - frames))
-        with torch.no_grad():
-            lfcc = extractor.extract(wav)  # PT layout [1,1,T,F]
-        return lfcc.numpy().astype(np.float32)
+def score_inputs(model, inputs, modality):
+    scores = []
+    with torch.no_grad():
+        for value in inputs:
+            pt = image_tensor(value, value.width).unsqueeze(0) if modality == "visual" else torch.from_numpy(value)
+            scores.append(float(model(pt).item()))
+    return scores
 
-    return flac_to_lfcc
+def collect(root, split, modality, size, limit):
+    ext = IMAGE_EXTS if modality == "visual" else AUDIO_EXTS
+    samples = balanced_subset(discover_samples(root, split, ext), limit)
+    inputs = []
+    extract = make_lfcc_fn(split) if modality == "audio" else None
+    for path, _ in samples:
+        if modality == "visual":
+            inputs.append(decode_image(path).image.resize((size, size), Image.Resampling.BILINEAR))
+        else:
+            inputs.append(extract(path))
+    return samples, inputs
+
+def sealed_test_scores(root, modality, size, model_path, limit=None):
+    """Decode one sealed test sample at a time; parity pool limit is unrelated."""
+    samples = discover_samples(root, "test", IMAGE_EXTS if modality == "visual" else AUDIO_EXTS)
+    if limit is not None:
+        samples = balanced_subset(samples, limit)
+    extract = make_lfcc_fn("test") if modality == "audio" else None
+    scores = []
+    for path, _ in samples:
+        if modality == "visual":
+            image = decode_image(path).image.resize((size, size), Image.Resampling.BILINEAR)
+            x = np.asarray(image, dtype=np.float32)[None] / 255.0
+        else:
+            x = np.transpose(extract(path), (0, 2, 3, 1))
+        scores.append(_run_tflite(str(model_path), x))
+    return samples, scores
 
 
 def main():
-    os.makedirs(EXPORT_DIR, exist_ok=True)
-    os.makedirs(ASSETS_DIR, exist_ok=True)
-
-    print("=" * 50)
-    print("ONN-DETECT TFLite Export Pipeline (trained weights)")
-    print("=" * 50)
-
-    image_paths = list_files(GENIMAGE_VAL, (".jpg", ".jpeg"), 400)
-    flac_paths = list_files(ASVSPOOF_TEST, (".flac", ".wav"), 200)
-    print(f"Calibration pool: {len(image_paths)} images, {len(flac_paths)} audio files")
-
-    # ---------------- SRM Forensic CNN ----------------
-    srm = load_srm()
-    srm_int8 = os.path.join(EXPORT_DIR, "srm_forensic_cnn_int8.tflite")
-    srm_keras = build_keras_srm(srm)
-    calib_imgs = [Image.open(p).convert("RGB") for p in image_paths[:400]]
-    real_imgs = [im for im in calib_imgs if im.size == (32, 32)]
-    keras_parity_check(
-        srm_keras, srm,
-        [(np.asarray(im, dtype=np.float32) / 255.0) for im in real_imgs[:32]],
-        "visual")
-    quantize_keras_model(srm_keras, visual_calibration_dataset(image_paths, 200), srm_int8)
-    real_imgs = [Image.open(p).convert("RGB") for p in image_paths[:100]]
-    validate_models_real(srm, srm_int8, "visual", real_images=real_imgs)
-
-    # ---------------- LCNN-MFM Audio ----------------
-    lcnn = load_lcnn()
-    lfcc_fn = make_lfcc_fn()
-    probe = lfcc_fn(flac_paths[0])
-    n_frames = int(probe.shape[-2])
-    print(f"LFCC probe shape {probe.shape} -> fixed time axis T={n_frames}")
-
-    specs = []
-    for p in flac_paths[:120]:
-        try:
-            specs.append(lfcc_fn(p))
-        except Exception:
-            continue
-
-    lcnn_int8 = os.path.join(EXPORT_DIR, "lcnn_audio_int8.tflite")
-    lcnn_keras = build_keras_lcnn(lcnn, input_frames=n_frames)
-    quantize_keras_model(lcnn_keras, audio_specs_calibration_dataset(specs, 80), lcnn_int8)
-    validate_models_real(lcnn, lcnn_int8, "audio", real_specs_pt=specs,
-                         target_frames=n_frames, num_samples=60)
-
-    # ---------------- Ship to Android assets ----------------
-    for name in ("srm_forensic_cnn_int8.tflite", "lcnn_audio_int8.tflite"):
-        shutil.copy2(os.path.join(EXPORT_DIR, name), os.path.join(ASSETS_DIR, name))
-        size_kb = os.path.getsize(os.path.join(ASSETS_DIR, name)) / 1024
-        print(f"Shipped {name} -> android assets ({size_kb:.0f} KB)")
-
-    print("Export pipeline complete.")
-
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--visual-checkpoint", default=str(CKPT_DIR / "srm_cnn_genimage_best.pth"))
+    parser.add_argument("--audio-checkpoint", default=str(CKPT_DIR / "lcnn_audio_asvspoof_best.pth"))
+    parser.add_argument("--output-dir", required=True, help="A new staged bundle directory")
+    parser.add_argument("--validation-samples", type=int, default=400)
+    parser.add_argument("--release-id", required=True)
+    parser.add_argument("--test-samples", type=int, default=None, help="Optional pilot cap; default evaluates all sealed test files")
+    args = parser.parse_args()
+    if args.validation_samples < 100:
+        raise ValueError("Export gates require at least 100 balanced samples")
+    destination = Path(args.output_dir).resolve()
+    if destination.exists():
+        raise FileExistsError(f"Refusing to replace release directory {destination}")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    stage = Path(tempfile.mkdtemp(prefix=destination.name + ".stage-", dir=destination.parent))
+    for name in ("models", "constants"):
+        (stage / name).mkdir()
+    from export.quantize_int8 import quantize_keras_model, visual_calibration_dataset, audio_specs_calibration_dataset
+    from export.torch_to_tflite_keras import build_keras_srm, build_keras_lcnn, keras_parity_check
+    report = {"release_id": args.release_id, "models": {}, "status": "desktop_validation_only"}
+    manifest = {"schema_version": 1, "release_id": args.release_id, "validated": False,
+                "validation_status": "requires_fusion_and_independent_device_evaluation",
+                "score_convention": "real=0_fake=1", "models": {}, "artifacts": {}, "calibration": {},
+                "data_manifest_hashes": {}, "device_validation": {"passed": False}}
+    try:
+        manifest["source_commit"] = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT_DIR, text=True).strip()
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError("Release source commit unavailable") from exc
+    for modality, checkpoint, cls, asset in [("visual", args.visual_checkpoint, SRMForensicCNN, "srm_forensic_cnn_int8.tflite"),
+                                              ("audio", args.audio_checkpoint, LCNNMFMAudio, "lcnn_audio_int8.tflite")]:
+        model, state = load_model(checkpoint, cls, FRONTEND_ID if modality == "audio" else None)
+        contract = state["contract"]
+        if contract.get("training_code_hash") != training_code_hash():
+            raise ValueError("Training source bytes changed since the checkpoint; retrain or restore its archived sources")
+        root = Path(state["config"]["data"]["root_dir"])
+        provenance = validate_dataset_manifest(root)
+        if provenance["manifest_sha256"] != contract["dataset_manifest_hash"]:
+            raise ValueError("Checkpoint dataset differs from export dataset")
+        size = int(contract["input_shape"][1]) if modality == "visual" else 401
+        train_samples, train_inputs = collect(root, "train", modality, size, 200)
+        calibration_samples, calibration_inputs = collect(root, "calibration", modality, size, args.validation_samples)
+        calibration_labels = [label for _, label in calibration_samples]
+        pt_scores = score_inputs(model, calibration_inputs, modality)
+        _, pt_threshold = eer_operating_threshold(calibration_labels, pt_scores)
+        if modality == "visual":
+            keras = build_keras_srm(model, size)
+            representative = visual_calibration_dataset([str(path) for path, _ in train_samples], 200, size)
+            nhwc = [np.asarray(value, dtype=np.float32) / 255.0 for value in calibration_inputs]
+        else:
+            keras = build_keras_lcnn(model, input_frames=401)
+            representative = audio_specs_calibration_dataset(train_inputs, 200)
+            nhwc = [np.transpose(value[0], (1, 2, 0)) for value in calibration_inputs]
+        fp32_error = keras_parity_check(keras, model, nhwc, modality)
+        model_path = stage / "models" / asset
+        quantization = quantize_keras_model(keras, representative, str(model_path))
+        validation = validate_models_real(model, str(model_path), modality,
+                                         real_images=calibration_inputs if modality == "visual" else None,
+                                         real_specs_pt=calibration_inputs if modality == "audio" else None,
+                                         num_samples=args.validation_samples, labels=calibration_labels, threshold=pt_threshold)
+        int8_scores = [_run_tflite(str(model_path), value[None]) for value in nhwc]
+        calibration_eer, threshold = eer_operating_threshold(calibration_labels, int8_scores)
+        auc = float(compute_auc(calibration_labels, int8_scores))
+        if auc <= .5:
+            raise ValueError("Calibration detector is at/below chance; diagnose labels/domain before release")
+        digest = sha256_file(model_path)
+        calibration = {"model_hash": digest, "frontend_id": contract["frontend_id"], "threshold": threshold,
+                       "auc": auc, "n_calibration": len(calibration_labels), "split_manifest_hash": provenance["manifest_sha256"]}
+        manifest["calibration"][asset] = calibration
+        manifest["artifacts"]["models/" + asset] = digest
+        manifest["models"][asset] = {"sha256": digest, "input_shape": contract["input_shape"], "output_shape": [1, 1],
+                                     "dtype": "FLOAT32", "frontend_id": contract["frontend_id"], "quantization": quantization}
+        manifest["data_manifest_hashes"][modality] = provenance["manifest_sha256"]
+        test_samples, test_scores = sealed_test_scores(root, modality, size, model_path, args.test_samples)
+        test_labels = [label for _, label in test_samples]
+        manifest_records = json.loads((root / "dataset_manifest.json").read_text(encoding="utf-8"))["records"]
+        by_path = {r["path"]: r for r in manifest_records}
+        records = [by_path[path.relative_to(root).as_posix()] for path, _ in test_samples]
+        test_report = evaluation_summary(test_labels, test_scores, threshold, records)
+        if test_report["auc"] <= .5:
+            raise ValueError("Sealed INT8 test performance is at/below chance; refuse release without automatic polarity inversion")
+        report["models"][asset] = {"fp32_max_error": fp32_error, "parity": validation, "calibration": calibration,
+                                   "checkpoint_sha256": sha256_file(checkpoint), "test_auc": test_report["auc"],
+                                   "test_eer": test_report["eer"], "test_accuracy": test_report["accuracy"], "test": test_report,
+                                   "test_scope": "all_sealed_test_files" if args.test_samples is None else "explicit_pilot_cap",
+                                   "test_ids": [str(path.relative_to(root)) for path, _ in test_samples]}
+        if modality == "audio":
+            payload = dict(calibration, threshold_at_eer=threshold, eer=calibration_eer, n_eval=len(calibration_labels),
+                           score_semantics={"model_output": "P(synthetic) in [0,1]", "bonafide_label": 0, "synthetic_label": 1},
+                           calibration_split="calibration")
+            path = stage / "constants" / "lcnn_audio_threshold.json"
+            path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            manifest["artifacts"]["constants/lcnn_audio_threshold.json"] = sha256_file(path)
+    snapshot = stage / "source_snapshot.json"
+    snapshot.write_text(json.dumps(source_snapshot(ROOT_DIR), indent=2), encoding="utf-8")
+    snapshot_hash = sha256_file(snapshot)
+    manifest["source_snapshot_sha256"] = snapshot_hash
+    manifest["source_dirty"] = json.loads(snapshot.read_text(encoding="utf-8"))["source_dirty"]
+    manifest["artifacts"]["source_snapshot.json"] = snapshot_hash
+    report["source_snapshot_sha256"] = snapshot_hash
+    report_path = stage / "evaluation_report.json"
+    report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    manifest["evaluation_report_hash"] = sha256_file(report_path)
+    manifest["artifacts"]["evaluation_report.json"] = sha256_file(report_path)
+    (stage / "release_manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    os.rename(stage, destination)
+    print(f"Desktop-validated staging bundle: {destination}. It is not yet a validated Android release.")
 
 if __name__ == "__main__":
     main()

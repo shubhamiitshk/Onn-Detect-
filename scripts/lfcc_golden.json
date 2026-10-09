@@ -1,0 +1,48 @@
+{
+  "frontend_id": "lfcc-v3-sr16000-f128-c40-nfft512-hop160-topdbnone-resampler-quadratic_window_sinc_v1-float64stft-float32",
+  "goldens": {
+    "energy": 0.990098,
+    "frame0": [
+      5.148946,
+      4.709937,
+      1.004868,
+      5.588885
+    ],
+    "frame50": [
+      -0.201757,
+      -0.200907,
+      0.09098,
+      -0.201051,
+      -0.201809,
+      -0.201672,
+      -0.155396,
+      0.189619
+    ],
+    "frame99": [
+      4.640401,
+      5.025739,
+      -5.317201,
+      4.190491
+    ],
+    "frame_last": [
+      5.183328,
+      4.137931,
+      -7.721352,
+      4.764157
+    ],
+    "shape": [
+      101,
+      40
+    ]
+  },
+  "parameters": {
+    "hop_length": 160,
+    "n_fft": 512,
+    "n_filter": 128,
+    "n_lfcc": 40,
+    "normalization": "cmvn-per-coefficient-over-time",
+    "sample_rate": 16000
+  },
+  "probe": "two_tone_signal",
+  "schema_version": 1
+}

@@ -1,34 +1,9 @@
-"""Real meta-classifier feature extraction.
+"""Canonical ten-signal feature extraction for fusion experiments.
 
-Every handcrafted feature computed here mirrors, step for step, its on-device
-counterpart in the Android app (see android/app/src/main/java/com/onndetect/
-detection/). This guarantees that the distribution the XGBoost meta-classifier
-is trained on matches what it will see at inference time.
-
-Canonical feature vector (order is a cross-platform contract, shared with
-XGBoostMetaClassifier.kt / DetectionPipeline.kt):
-
-    0: srm_score        - SRMForensicCNN probability of AI-generated
-    1: fft_score        - spectral slope deviation from 1/f^2 power law
-    2: kl_score         - KL divergence of adjacent-pixel-diff histogram vs baseline
-    3: flatness_score   - Wiener spectral entropy of the power spectrum
-    4: resolution_norm  - min(w,h)/1024 clamped to [0,1]
-    5: is_compressed    - 1.0 if JPEG-compressed source, else 0.0
-    6: exif_anomaly     - EXIF metadata tampering anomaly [0,1]
-    7: c2pa_present     - C2PA manifest presence score [0,1]
-    8: lip_sync_corr    - cross-modal audio/mouth correlation (temporal)
-    9: landmark_jitter  - inter-frame facial landmark jitter (temporal)
-
-Features 8-9 are undefined for still images; BOTH platforms use the neutral
-authentic-side constants NEUTRAL_* below. Features 6-7 are computed from real
-file metadata on-device; during training they default to the same neutrals
-unless the caller supplies measured values via ``provenance``.
-
-NOTE: the shipped meta-model therefore carries little signal in features 6-9
-until it is retrained with real per-file provenance/temporal labels. The
-previous behaviour - synthesising these features from ``srm > 0.5`` - was
-removed because it leaked the heuristic label into training and inflated the
-reported meta AUC.
+RGB resize/feature equations are versioned with the checkpoint and release.
+Features 6-9 use fixed unsupported placeholders; unverified provenance or
+temporal measurements are rejected. Python equations alone do not establish
+Android decoder parity.
 """
 
 import json
@@ -36,6 +11,7 @@ import os
 
 import numpy as np
 from PIL import Image
+from data.image_frontend import decode_image, SOURCE_SIZE_KEY, SOURCE_FORMAT_KEY
 
 # Bin edges identical to Android KLCooccurrenceAnalyzer: diffs in [-10, 10]
 KL_BINS = 21
@@ -75,13 +51,21 @@ def diff_histogram(gray: np.ndarray) -> np.ndarray:
 
     Mirrors Android KLCooccurrenceAnalyzer.analyze(): clamp diffs to [-10, 10],
     bin index = diff + 10, normalize, add 1e-6 epsilon, renormalize.
+
+    No adjacent pixel pair is UNAVAILABLE evidence, never a uniform
+    distribution. Returning a constant vector here would sum to 21e-6 rather
+    than 1.0 and would then be consumed by ``kl_score`` as if it were a
+    probability distribution; Android refuses the same input instead
+    (KLCooccurrenceAnalyzer: "Insufficient pixel differences").
     """
+    if gray.ndim != 2 or gray.shape[1] < 2:
+        raise ValueError(f"No adjacent pixel pairs in grayscale array of shape {gray.shape}")
     diffs = gray[:, :-1].astype(np.int32) - gray[:, 1:].astype(np.int32)
     clipped = np.clip(diffs, -KL_CLAMP, KL_CLAMP) + KL_CLAMP
     hist = np.bincount(clipped.ravel(), minlength=KL_BINS).astype(np.float64)
     total = hist.sum()
     if total == 0:
-        return np.full(KL_BINS, 1e-6)
+        raise ValueError("Empty adjacent-pixel difference histogram")
     hist = hist / total + 1e-6
     return hist / hist.sum()
 
@@ -114,11 +98,11 @@ def calibrate_baseline(image_paths: list[str], sample_limit: int | None = None) 
     used = 0
     for p in paths:
         try:
-            img = Image.open(p).convert("RGB")
+            img = decode_image(p).image
             acc += diff_histogram(to_gray_u8(img))
             used += 1
-        except Exception:
-            continue
+        except Exception as exc:
+            raise RuntimeError(f"Unable to decode baseline sample {p}") from exc
     if used == 0:
         raise RuntimeError("No images available for baseline calibration")
     acc /= acc.sum()
@@ -152,19 +136,33 @@ def azimuthal_average(ps: np.ndarray) -> np.ndarray:
 
 
 def power_law_slope(radial: np.ndarray) -> float:
-    """OLS log-log slope, skipping DC and r<2 — mirrors Android implementation."""
+    """OLS log-log slope, skipping DC and r<2 - mirrors Android implementation.
+
+    Matches FFTSpectralAnalyzer.computePowerLawSlope, which raises
+    ("Insufficient spectral evidence" / "Degenerate spectrum") rather than
+    inventing a slope.
+
+    An earlier version returned the natural slope -2.0 here. That value
+    reaches the feature vector through ``abs(slope - (-2.0)) / 2`` and becomes
+    fft_score = 0.0, i.e. MAXIMALLY AUTHENTIC under real=0_fake=1, for an
+    image that produced no usable spectrum at all. Missing evidence is
+    unavailable, not zero.
+    """
     freqs, powers = [], []
     for i in range(2, len(radial)):
         if radial[i] > 1e-10:
             freqs.append(np.log(i))
             powers.append(np.log(radial[i]))
     if len(freqs) < 2:
-        return -2.0
+        raise ValueError(f"Insufficient spectral evidence: {len(freqs)} usable radial bins")
     fx, fy = np.asarray(freqs), np.asarray(powers)
     denom = np.sum(fx**2) - len(fx) * fx.mean() ** 2
-    if denom == 0:
-        return -2.0
-    return float((np.sum(fx * fy) - len(fx) * fx.mean() * fy.mean()) / denom)
+    if not np.isfinite(denom) or denom <= 0.0:
+        raise ValueError("Degenerate spectrum: OLS denominator is not positive")
+    slope = float((np.sum(fx * fy) - len(fx) * fx.mean() * fy.mean()) / denom)
+    if not np.isfinite(slope):
+        raise ValueError("Degenerate spectrum: fitted slope is not finite")
+    return slope
 
 
 def wiener_entropy(ps: np.ndarray) -> float:
@@ -178,7 +176,7 @@ def wiener_entropy(ps: np.ndarray) -> float:
 def fft_features(img: Image.Image, size: int = 256) -> tuple[float, float]:
     """(fft_score, flatness_score) mirroring Android FFTSpectralAnalyzer.
 
-    Bitmap.createScaledBitmap uses bilinear filtering; Pillow BILINEAR matches.
+    Both use bilinear filtering; native codec/resize parity must be measured.
     Score = min(|slope - (-2)| / 2, 1).
     """
     scaled = img.convert("RGB").resize((size, size), Image.BILINEAR)
@@ -192,11 +190,16 @@ def fft_features(img: Image.Image, size: int = 256) -> tuple[float, float]:
     return score, flatness
 
 
-def quality_features(img: Image.Image, path: str) -> tuple[float, float]:
+def quality_features(img: Image.Image, path: str, source_size=None) -> tuple[float, float]:
     """(resolution_norm, is_compressed) from real file properties."""
-    w, h = img.size
+    w, h = source_size or img.info.get(SOURCE_SIZE_KEY, img.size)
     resolution_norm = min(min(w, h) / 1024.0, 1.0)
-    compressed = 1.0 if path.lower().endswith((".jpg", ".jpeg")) else 0.0
+    encoding = img.info.get(SOURCE_FORMAT_KEY) or img.format
+    if not encoding:
+        # File signatures, not suffixes, determine the compressed feature.
+        with Image.open(path) as source:
+            encoding = source.format
+    compressed = 1.0 if encoding == 'JPEG' else 0.0
     return resolution_norm, compressed
 
 
@@ -206,29 +209,35 @@ def extract_visual_features(
     device,
     baseline: np.ndarray,
     provenance: dict | None = None,
+    input_size: int = 32,
 ) -> np.ndarray:
     """Full canonical feature vector for one image file.
 
-    ``provenance`` may carry measured values for features 6-9, e.g.
-    ``{"exif_anomaly": 0.4, "c2pa_present": 0.0, "lip_sync_corr": 0.85,
-    "landmark_jitter": 0.2}``. Keys are optional; anything absent falls back
-    to the neutral constants shared with the Android pipeline.
+    ``provenance`` is reserved and rejects supplied measurements. Unsupported
+    features stay at the fixed constants shared with the Android pipeline.
     """
-    from torchvision import transforms
+    from data.image_dataset import image_tensor
     import torch
 
-    img = Image.open(img_path).convert("RGB")
+    # Reject supplied provenance BEFORE any decode or inference work, so an
+    # unverified measurement can never reach a feature vector even transiently.
+    if provenance:
+        raise ValueError("Unverified provenance/temporal features must not influence the image verdict")
 
-    # SRM-CNN at native resolution (no resize): same as training/eval pipeline
-    tensor = transforms.ToTensor()(img).unsqueeze(0).to(device)
+    decoded = decode_image(img_path)
+    img = decoded.image
+
+    # Match the checkpoint/mobile square resize contract.
+    tensor = image_tensor(img, input_size).unsqueeze(0).to(device)
     with torch.no_grad():
         srm = float(srm_model(tensor).item())
 
     fscore, flatness = fft_features(img)
     kscore, _ = kl_score(to_gray_u8(img), baseline)
-    res_norm, comp = quality_features(img, img_path)
+    res_norm, comp = quality_features(img, img_path, decoded.source_size)
 
-    prov = provenance or {}
+    # Features 6-9 are FIXED unsupported neutral values, not measurements.
+    prov = {}
     exif_anomaly = float(prov.get("exif_anomaly", NEUTRAL_EXIF))
     c2pa_present = float(prov.get("c2pa_present", NEUTRAL_C2PA))
     lip_sync_corr = float(prov.get("lip_sync_corr", NEUTRAL_LIP_SYNC))

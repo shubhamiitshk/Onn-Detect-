@@ -7,6 +7,8 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sqrt
 
+private const val LN10 = 2.302585092994046
+
 /**
  * Pure-Kotlin Linear Frequency Cepstral Coefficients, replicating
  * torchaudio.transforms.LFCC(sample_rate=16000, n_filter=128, n_lfcc=40,
@@ -16,9 +18,21 @@ import kotlin.math.sqrt
  *   reflect-pad(n_fft/2) -> hann(512) STFT, hop 160 -> |X|^2 (257 bins)
  *   -> linear triangular filterbank (128) -> 10*log10(max(x,1e-10))
  *   -> DCT-II ortho (40) -> transpose to (T,40)
- *   -> per-frame mean/std(Bessel) normalize, eps 1e-6.
+ *   -> CMVN: per-COEFFICIENT mean/std over TIME, eps 1e-6.
  *
- * Verified against torchaudio goldens in LFCCExtractorTest.
+ * NORMALIZATION AXIS (this was wrong and is load-bearing):
+ * training applies `lfcc.mean(dim=-1)` to a (n_lfcc, T) tensor, so dim=-1 is
+ * TIME and the statistics are per cepstral coefficient - utterance-level CMVN,
+ * the ASVspoof convention. This class previously z-scored each frame ACROSS
+ * COEFFICIENTS instead. That is a different matrix, it collapses coefficient 0
+ * (log energy) to a constant, and it forces every frame to zero mean so the
+ * network cannot distinguish silence from speech. Its golden test asserted the
+ * zero-mean-per-frame invariant, so it passed while the app disagreed with the
+ * model it was feeding.
+ *
+ * Verified against the pinned training front end via
+ * ml/src/data/lfcc_reference.py - see LFCCExtractorTest and
+ * scripts/gen_lfcc_golden.py --torch.
  */
 class LFCCExtractor(
     private val sampleRate: Int = 16000,
@@ -28,6 +42,23 @@ class LFCCExtractor(
     private val hopLength: Int = 160,
 ) {
 
+    companion object {
+        const val FRONTEND_ID = "lfcc-v3-sr16000-f128-c40-nfft512-hop160-topdbnone-resampler-quadratic_window_sinc_v1-float64stft-float32"
+    }
+    init {
+        require(sampleRate > 0 && nFilter > 0 && nLfcc in 1..nFilter && nFft > 0 && nFft and (nFft - 1) == 0 && hopLength > 0)
+    }
+    fun extract(pcm: FloatArray): Array<Array<Array<FloatArray>>> {
+        val values = extractFlat(pcm)
+        return Array(1) { Array(pcm.size / hopLength + 1) { t -> Array(nLfcc) { k -> floatArrayOf(values[t * nLfcc + k]) } } }
+    }
+    fun extractBuffer(pcm: FloatArray, checkStop: () -> Unit = {}): java.nio.ByteBuffer {
+        val values = extractFlat(pcm, checkStop)
+        return java.nio.ByteBuffer.allocateDirect(values.size * 4).order(java.nio.ByteOrder.nativeOrder()).apply {
+            for (value in values) putFloat(value)
+            flip()
+        }
+    }
     private val nFreqs = nFft / 2 + 1
     private val window = FloatArray(nFft) { n ->
         (0.5 * (1.0 - cos(2.0 * PI * n / nFft))).toFloat()
@@ -36,7 +67,9 @@ class LFCCExtractor(
     private val dctMatrix = buildDctOrtho()
 
     /** @return tensor shaped [1][T][nLfcc][1], ready for the LCNN tflite. */
-    fun extract(pcm: FloatArray): Array<Array<Array<FloatArray>>> {
+    private fun extractFlat(pcm: FloatArray, checkStop: () -> Unit = {}): FloatArray {
+        checkStop()
+        require(pcm.all { it.isFinite() }) { "Non-finite PCM" }
         require(pcm.size > nFft) { "signal too short for one analysis frame" }
 
         val nFrames = pcm.size / hopLength + 1          // torch center semantics
@@ -49,6 +82,7 @@ class LFCCExtractor(
         val filtered = Array(nFilter) { FloatArray(nFrames) }
 
         for (t in 0 until nFrames) {
+            if (t % 16 == 0) checkStop()
             val base = t * hopLength - pad
             for (n in 0 until nFft) {
                 var src = base + n
@@ -91,23 +125,28 @@ class LFCCExtractor(
             }
         }
 
-        // Per-frame standardize over coefficient axis (Bessel correction).
-        val out = Array(1) { Array(nFrames) { Array(nLfcc) { FloatArray(1) } } }
-        for (t in 0 until nFrames) {
+        // Utterance-level CMVN: statistics are per CEPSTRAL COEFFICIENT,
+        // computed over TIME. Unbiased std (nFrames - 1) matches torch.std's
+        // default correction=1.
+        val out = FloatArray(nFrames * nLfcc)
+        val denom = if (nFrames > 1) (nFrames - 1).toDouble() else 1.0
+        for (kk in 0 until nLfcc) {
             var sum = 0.0
-            for (kk in 0 until nLfcc) sum += lfcc[kk][t]
-            val mean = (sum / nLfcc).toFloat()
+            for (t in 0 until nFrames) sum += lfcc[kk][t]
+            val mean = (sum / nFrames).toFloat()
             var sq = 0.0
-            for (kk in 0 until nLfcc) {
+            for (t in 0 until nFrames) {
                 val d = lfcc[kk][t] - mean
                 sq += d * d
             }
-            val std = sqrt(sq / (nLfcc - 1)).toFloat()   // unbiased like torch.std
+            val std = sqrt(sq / denom).toFloat()
             val inv = 1f / (std + 1e-6f)
-            for (kk in 0 until nLfcc) {
-                out[0][t][kk][0] = (lfcc[kk][t] - mean) * inv
+            for (t in 0 until nFrames) {
+                out[t * nLfcc + kk] = (lfcc[kk][t] - mean) * inv
             }
         }
+        checkStop()
+        require(out.all { it.isFinite() }) { "Invalid LFCC features" }
         return out
     }
 
@@ -144,7 +183,4 @@ class LFCCExtractor(
         return m
     }
 
-    private companion object {
-        const val LN10 = 2.302585092994046
-    }
 }
