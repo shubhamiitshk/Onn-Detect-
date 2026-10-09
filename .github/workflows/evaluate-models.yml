@@ -1,49 +1,64 @@
 name: evaluate-models
 
-# Static cross-platform contract checks; runs the real evaluation pipeline
-# only when trained artifacts and datasets are present (e.g. on a runner
-# where they were produced beforehand).
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+    inputs:
+      training_run_id:
+        description: 'Completed train-models run ID whose onn-model-release artifact should be verified'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
 
 jobs:
-  consistency:
+  cpu-contracts:
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.11'
-
-      - name: Kotlin/manifest/assets contract check
-        run: python scripts/check_android_consistency.py
-
-  full-eval:
-    runs-on: ubuntu-latest
-    if: hashFiles('ml/checkpoints/srm_cnn_genimage_best.pth') != ''
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install backend deps
+      - name: Install pinned CPU training and conversion dependencies
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-          python -m pip install -r ml/requirements.txt
-          python -m pip install -e ml
+          python -m pip install torch==2.14.1 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -r ml/requirements.txt -r ml/requirements-export.txt -r ml/requirements-dev.txt
+          python -m pip install --no-deps -e ml
+      - name: Required contracts and full conversion gates
+        env:
+          ONN_REQUIRE_REAL_AUDIO_IO: '1'
+        run: |
+          python scripts/check_android_consistency.py
+          python -m unittest discover -s scripts/tests -v
+          python -m unittest discover -s ml/tests -p 'test_*.py' -v
+          python scripts/verify_front_end_parity.py --require-torch
+          python scripts/gen_lfcc_golden.py --torch --check scripts/lfcc_golden.json
+          python scripts/verify_fft_parity.py
+          python scripts/verify_export_path.py --full
 
-      - name: Run honest held-out evaluation
-        working-directory: ml
-        run: python scripts/run_full_pipeline.py
+      - name: Validate workflow syntax and pinned actions
+        run: python scripts/verify_workflow_syntax.py
 
-      - name: Upload metrics
-        uses: actions/upload-artifact@v4
+  verify-training-artifact:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          name: evaluation-results
-          path: ml/evaluation_results.json
+          python-version: '3.11'
+      - name: Fetch the explicit training run, not ignored local checkpoints
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: onn-model-release
+          path: training-artifact
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ inputs.training_run_id }}
+      - name: Verify bundle lineage (this does not rerun accuracy evaluation)
+        run: python ml/scripts/release_bundle.py --bundle training-artifact/bundle --validate-only

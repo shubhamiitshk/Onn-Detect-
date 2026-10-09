@@ -4,30 +4,90 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
           java-version: '17'
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Build + unit tests
-        working-directory: android
-        run: |
-          ./gradlew assembleDebug --no-daemon
-          ./gradlew testDebugUnitTest --no-daemon
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
         with:
-          name: onn-detect-debug-apk
-          path: android/app/build/outputs/apk/debug/*.apk
+          log-accepted-android-sdk-licenses: yes
+      # The Python contract checks below are stdlib-only, but running them on an
+      # unpinned runner image made the interpreter version an unstated variable.
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+      - name: Source and release contract checks
+        run: |
+          python scripts/check_android_consistency.py
+          python scripts/verify_workflow_syntax.py
+          python -m unittest discover -s scripts/tests -v
+      - name: Unit tests, lint, debug and minified release
+        working-directory: android
+        run: bash gradlew testDebugUnitTest lintDebug assembleDebug assembleRelease assembleDebugAndroidTest --no-daemon
+      - name: Verify actual APK permissions, hashes and 16 KiB support
+        run: |
+          python scripts/verify_android_artifact.py --apk android/app/build/outputs/apk/debug/app-debug.apk
+          python scripts/verify_android_artifact.py --apk android/app/build/outputs/apk/release/app-release-unsigned.apk
+      - name: Upload diagnostics (models remain explicitly unvalidated)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: android-build-diagnostics
+          if-no-files-found: error
+          path: |
+            android/app/build/outputs/apk/
+            android/app/build/reports/tests/
+            android/app/build/reports/lint-results-debug.html
+            android/app/build/outputs/mapping/release/
+
+  # Separate job rather than a step in `build`: the emulator needs no JDK/SDK
+  # work from the build job and a hung emulator must not consume build minutes.
+  instrumentation:
+    # The four instrumentation classes (AppFlow, PackagedInference,
+    # HistoryMigration, ProviderImport) were previously only COMPILED here via
+    # assembleDebugAndroidTest and never executed. Run them on an API 36
+    # emulator.
+    #
+    # LIMITS, stated rather than hidden:
+    #  * An emulator is not a phone. This catches regressions; it does not
+    #    establish codec, bitmap, performance or thermal behaviour on hardware.
+    #  * A hosted emulator's page size is not guaranteed to be 16 KiB. The
+    #    16 KiB evidence remains the ELF/ZIP APK gate plus device measurement.
+    #  * Requires nested virtualization (/dev/kvm) on the runner.
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+        with:
+          log-accepted-android-sdk-licenses: yes
+      - uses: reactivecircus/android-emulator-runner@1dcd0090116d15e7c562f8db72807de5e036a4ed # v2.34.0
+        with:
+          api-level: 36
+          arch: x86_64
+          profile: pixel_6
+          disable-snapshot: true
+          disable-animations: true
+          emulator-options: -no-snapshot -no-boot-anim -gpu swiftshader_indirect -no-snapshot-save
+          script: gradlew connectedDebugAndroidTest
+      - name: Upload instrumentation results
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: android-instrumentation
+          if-no-files-found: error
+          path: |
+            android/app/build/reports/androidTests/
+            android/app/build/outputs/androidTest-results/

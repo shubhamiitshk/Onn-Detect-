@@ -1,61 +1,85 @@
 name: train-models
 
-# Manual dispatch: full training requires the GenImage + ASVspoof datasets
-# and (for sane wall-times) a CUDA GPU. The job fails fast with a clear
-# message when the expected dataset layout is missing.
-#
-# Expected layout:
-#   datasets/genimage/{train,val}/{real,fake}/*.png|jpg   (native 32x32)
-#   datasets/asvspoof2019/{train,val,test}/{real,fake}/*.flac
+# A provisioned GPU/data runner is required; hosted Ubuntu has neither corpus.
+# Use an up-to-date GitHub runner compatible with the pinned actions.
 on:
   workflow_dispatch:
+    inputs:
+      data_root:
+        description: 'Absolute directory containing prepared, verified datasets on the ML runner'
+        required: true
+        type: string
+      visual_config:
+        description: 'Config path relative to ml/'
+        default: configs/srm_cnn_genimage.yaml
+        required: true
+        type: string
+      audio_config:
+        description: 'Config path relative to ml/'
+        default: configs/lcnn_asvspoof.yaml
+        required: true
+        type: string
+      device:
+        description: 'Training device'
+        type: choice
+        default: cuda
+        options: [cuda, cpu]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: onndetect-model-training
+  cancel-in-progress: false
 
 jobs:
   train:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Verify datasets present
-        run: |
-          test -d datasets/genimage/train || {
-            echo "::error::datasets/genimage missing - download it first (see docs/TRAINING_GUIDE.md)"; exit 1; }
-          test -d datasets/asvspoof2019/test || {
-            echo "::error::datasets/asvspoof2019 missing - download it first (see docs/TRAINING_GUIDE.md)"; exit 1; }
-
-      - uses: actions/setup-python@v5
+    runs-on: [self-hosted, linux, x64, onndetect-ml]
+    timeout-minutes: 1440
+steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.11'
-
-      - name: Install backend deps
+      - name: Install pinned training dependencies
+        # NOTE: no --index-url here. The CPU contract job pins torch from the
+        # CPU wheel index; this job trains, so it needs the CUDA build that the
+        # default index resolves. Copying that index would silently train on CPU
+        # while ONN_DEVICE says cuda. requirements-data.txt is included because
+        # training needs it (the CPU contract job deliberately does not).
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-          python -m pip install -r ml/requirements.txt
-          python -m pip install -e ml
-
-      - name: Train visual SRM-CNN (native resolution!)
-        working-directory: ml
-        run: python scripts/train_srm_cnn.py --device cuda --epochs 12 --batch-size 512
-
-      - name: Train audio LCNN-MFM
-        working-directory: ml
-        run: python scripts/train_lcnn_audio.py --config configs/lcnn_asvspoof.yaml --device cuda
-
-      - name: Train XGBoost meta-fusion + transpile to Kotlin
-        working-directory: ml
-        run: python scripts/train_xgboost_meta.py
-
-      - name: Export TFLite + Android constants
-        working-directory: ml
+          python -m pip install torch==2.14.1
+          python -m pip install -r ml/requirements.txt -r ml/requirements-export.txt -r ml/requirements-dev.txt -r ml/requirements-data.txt
+          python -m pip install --no-deps -e ml
+      - name: Record and freeze the resolved environment
         run: |
-          python scripts/export_all_models.py
-          python scripts/generate_android_constants.py
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+          python -c "import sys, torch; print(sys.version); print(torch.__version__); print('CUDA available:', torch.cuda.is_available())"
+          python -m pip freeze | tee ml/resolved-requirements.txt
+      - name: Check prepared environment and train, calibrate, evaluate, export
+        working-directory: ml
+        env:
+          ONN_DATA_ROOT: ${{ inputs.data_root }}
+          ONN_VISUAL_CONFIG: ${{ inputs.visual_config }}
+          ONN_AUDIO_CONFIG: ${{ inputs.audio_config }}
+          ONN_DEVICE: ${{ inputs.device }}
+        run: |
+          test -d "$ONN_DATA_ROOT"
+          if [ "$ONN_DEVICE" = cuda ]; then python -c "import torch, sys; sys.exit(0 if torch.cuda.is_available() else 'ONN_DEVICE=cuda but torch.cuda.is_available() is False')"; fi
+          python scripts/run_training_pipeline.py --visual-config "$ONN_VISUAL_CONFIG" --audio-config "$ONN_AUDIO_CONFIG" --data-root "$ONN_DATA_ROOT" --device "$ONN_DEVICE" --output-dir runs/current
+      - name: Upload complete staged artifacts and evaluation evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: trained-artifacts
-          path: |
-            ml/evaluation_results.json
-            android/app/src/main/assets/models/*.tflite
+          name: onn-model-release
+          path: ml/runs/current/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload the resolved dependency set
+        # Without this, the bundle's lineage records source hashes but not the
+        # package versions that produced the weights.
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: onn-training-environment
+          path: ml/resolved-requirements.txt
+          if-no-files-found: error
+          retention-days: 90

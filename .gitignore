@@ -1,8 +1,8 @@
 # Python
 venv/
 # Android
-**/build/
-**/.gradle/
+build/
+.gradle/
 **/local.properties
 captures/
 # ML
@@ -16,3 +16,12 @@ __pycache__/
 .idea/
 *.iml
 *.pyc
+ml/runs/
+ml/.pytest_cache/
+ml/.mypy_cache/
+.pytest_cache/
+*.egg-info/
+android/app/src/main/assets.previous-*/
+android/app/src/main/assets.failed-*/
+android/app/src/main/assets.install-*/
+ml/resolved-requirements.txt
