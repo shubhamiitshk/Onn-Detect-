@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "release_id": "legacy-bundled-unvalidated",
+  "validated": false,
+  "validation_status": "Legacy models lack verified score orientation, frontend parity, calibration and held-out/device evaluation; diagnostics only",
+  "score_convention": "real=0_fake=1",
+  "models": {
+    "srm_forensic_cnn_int8.tflite": {
+      "sha256": "5bcfefc15fdde3519f3bd1d077b3b61f39f2b5036b1adf86272af9a5f1a71818",
+      "input_shape": [
+        1,
+        32,
+        32,
+        3
+      ],
+      "output_shape": [
+        1,
+        1
+      ],
+      "dtype": "FLOAT32",
+      "frontend_id": "legacy-rgb32-unvalidated"
+    },
+    "lcnn_audio_int8.tflite": {
+      "sha256": "2dd0c96a24da39c1b81398f8698e3c1b0e417692ea5e050ca7b57cf4695aff46",
+      "input_shape": [
+        1,
+        401,
+        40,
+        1
+      ],
+      "output_shape": [
+        1,
+        1
+      ],
+      "dtype": "FLOAT32",
+      "frontend_id": "legacy-lfcc-unvalidated"
+    }
+  },
+  "artifacts": {
+    "constants/lcnn_audio_threshold.json": "487a0f6395b9e689741448e3e6419ec8ae5e64e0ffbe2d0761b7b3a8b98ae51e",
+    "constants/meta_classifier.json": "bd66810c833f6e0cb113fde37fab529b76e51d3ca6d00a20aeec425d58c12f13",
+    "constants/model_hashes.json": "1b0519220ca4d58a54e8c531dcb2a3c09c04dc8ae2e27cd8faf6081a8da2b3cb",
+    "constants/natural_diff_histogram.json": "5b1de3918a9e5ebed2dba81ea68e4fd8ac9f55772f4806437b976307aa127eae",
+    "models/lcnn_audio_int8.tflite": "2dd0c96a24da39c1b81398f8698e3c1b0e417692ea5e050ca7b57cf4695aff46",
+    "models/srm_forensic_cnn_int8.tflite": "5bcfefc15fdde3519f3bd1d077b3b61f39f2b5036b1adf86272af9a5f1a71818"
+  },
+  "calibration": {},
+  "fusion_revision": "legacy-unvalidated",
+  "source_commit": "unknown",
+  "data_manifest_hashes": {},
+  "evaluation_report_hash": null,
+  "device_validation": {
+    "passed": false
+  }
+}

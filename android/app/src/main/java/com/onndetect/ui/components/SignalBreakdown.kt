@@ -1,61 +1,25 @@
 package com.onndetect.ui.components
 
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Divider
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.onndetect.R
 import com.onndetect.domain.models.SignalBreakdown
 
-private val SignalBreakdown.available: List<Pair<String, Float?>>
-    get() = listOf(
-        "SRM forensic (CNN)" to srmForensicScore,
-        "FFT spectral slope" to fftSpectralScore,
-        "KL co-occurrence" to klDivergenceScore,
-        "MobileCLIP semantic" to mobileClipScore.takeIf { it >= 0f },
-        "Frequency perturbation" to perturbationScore.takeIf { it >= 0f },
-        "Audio model (LCNN)" to audioModelScore.takeIf { it != 0f },
-        "Audio DSP" to audioDspScore.takeIf { it != 0f },
-        "Temporal consistency" to temporalScore.takeIf { it != 0f },
-        "PRNU sensor noise" to prnuScore.takeIf { it >= 0f },
-    )
-
-/** Per-signal readout; signals marked unavailable are hidden or dashed. */
 @Composable
-fun SignalBreakdownCard(
-    signals: SignalBreakdown,
-    modifier: Modifier = Modifier,
-) {
-    Column(modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-        Text("Signal breakdown", style = MaterialTheme.typography.titleMedium)
-        val rows = signals.available
-        rows.forEachIndexed { index, pair ->
-            val label = pair.first
-            val value = pair.second
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(label, style = MaterialTheme.typography.bodyMedium)
-                Text(
-                    text = value?.let { "%.3f".format(it) } ?: "n/a",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontFamily = FontFamily.Monospace,
-                    color = if (value == null) MaterialTheme.colorScheme.outline
-                    else MaterialTheme.colorScheme.onSurface,
-                )
-            }
-            if (index < rows.lastIndex) Divider(thickness = 0.5.dp)
+fun SignalBreakdownCard(signals: SignalBreakdown, modifier: Modifier = Modifier) {
+    val rows = listOf(R.string.signal_srm to signals.srmForensicScore, R.string.signal_fft to signals.fftSpectralScore,
+        R.string.signal_kl to signals.klDivergenceScore, R.string.signal_audio to signals.audioModelScore,
+        R.string.signal_temporal to signals.temporalScore, R.string.signal_residual to signals.prnuScore)
+        .filter { it.second.isFinite() && it.second in 0f..1f }
+    if (rows.isEmpty()) return
+    Column(modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(stringResource(R.string.signals_title), style = MaterialTheme.typography.titleMedium)
+        rows.forEach { (label, value) ->
+            Text(stringResource(R.string.signal_value, stringResource(label), value), style = MaterialTheme.typography.bodyMedium)
         }
     }
 }

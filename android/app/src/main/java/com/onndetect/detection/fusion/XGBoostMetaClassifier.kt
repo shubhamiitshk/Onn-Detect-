@@ -10,9 +10,11 @@ package com.onndetect.detection.fusion
  *   8 lip_sync_corr, 9 landmark_jitter
  */
 class XGBoostMetaClassifier {
+    companion object { const val RELEASE_ID = "legacy-unvalidated" }
 
-    /** @return P(AI-generated) in [0,1]. */
+    /** Legacy raw sigmoid score; calibration and deployment accuracy are unvalidated. */
     fun predict(features: FloatArray): Float {
+        require(features.size == 10 && features.all { it.isFinite() }) { "Expected ten finite fusion features" }
         var margin = 0.003000006039550751f
         // Tree 0
         if (features[6] < 0.800000012f) {

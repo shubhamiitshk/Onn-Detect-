@@ -11,16 +11,18 @@ import org.json.JSONObject
 object SignalBreakdownJson {
 
     fun encode(signals: SignalBreakdown): String = JSONObject().apply {
-        put("mobileClipScore", signals.mobileClipScore.toDouble())
-        put("srmForensicScore", signals.srmForensicScore.toDouble())
-        put("fftSpectralScore", signals.fftSpectralScore.toDouble())
-        put("klDivergenceScore", signals.klDivergenceScore.toDouble())
-        put("perturbationScore", signals.perturbationScore.toDouble())
-        put("audioDspScore", signals.audioDspScore.toDouble())
-        put("audioModelScore", signals.audioModelScore.toDouble())
-        put("temporalScore", signals.temporalScore.toDouble())
-        put("provenanceScore", signals.provenanceScore.toDouble())
-        put("prnuScore", signals.prnuScore.toDouble())
+        put("schemaVersion", 1)
+        fun safe(v: Float) = v.takeIf { it.isFinite() && it in 0f..1f }?.toDouble() ?: JSONObject.NULL
+        put("mobileClipScore", safe(signals.mobileClipScore))
+        put("srmForensicScore", safe(signals.srmForensicScore))
+        put("fftSpectralScore", safe(signals.fftSpectralScore))
+        put("klDivergenceScore", safe(signals.klDivergenceScore))
+        put("perturbationScore", safe(signals.perturbationScore))
+        put("audioDspScore", safe(signals.audioDspScore))
+        put("audioModelScore", safe(signals.audioModelScore))
+        put("temporalScore", safe(signals.temporalScore))
+        put("provenanceScore", safe(signals.provenanceScore))
+        put("prnuScore", safe(signals.prnuScore))
     }.toString()
 
     /** @return null when json is null/corrupt; missing fields default to -1. */
@@ -28,7 +30,8 @@ object SignalBreakdownJson {
         if (json.isNullOrBlank()) return null
         return try {
             val o = JSONObject(json)
-            fun f(name: String) = o.optDouble(name, -1.0).toFloat()
+            if (o.optInt("schemaVersion", 1) != 1) return null
+            fun f(name: String) = o.optDouble(name, -1.0).toFloat().takeIf { it.isFinite() && it in 0f..1f } ?: -1f
             SignalBreakdown(
                 mobileClipScore = f("mobileClipScore"),
                 srmForensicScore = f("srmForensicScore"),

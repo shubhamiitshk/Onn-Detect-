@@ -73,4 +73,9 @@ class FrameCosineDeltaTest {
             FrameCosineDelta.cosine(d1, d2) < 0.99f,
         )
     }
+    @Test
+    fun `black frame is different from a nonblack frame`() {
+        assertEquals(0f, FrameCosineDelta.cosine(FloatArray(256), FloatArray(256) { 1f }), 0f)
+        assertEquals(1f, FrameCosineDelta.cosine(FloatArray(256), FloatArray(256)), 0f)
+    }
 }

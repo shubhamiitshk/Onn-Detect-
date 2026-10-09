@@ -12,7 +12,7 @@ interface ScanHistoryDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(entry: ScanHistoryEntity)
 
-    @Query("SELECT * FROM scan_history ORDER BY timestamp DESC")
+    @Query("SELECT * FROM scan_history ORDER BY timestamp DESC LIMIT 1000")
     fun observeAll(): Flow<List<ScanHistoryEntity>>
 
     @Query("SELECT * FROM scan_history WHERE id = :id LIMIT 1")

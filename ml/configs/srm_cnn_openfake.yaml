@@ -2,38 +2,32 @@ model:
   name: SRMForensicCNN
   input_size: 256
   num_classes: 1
-
 data:
   dataset: openfake
   root_dir: ../datasets/highres_visual
   img_size: 256
-  cache_in_memory: true  # Optimized for 128GB RAM system
-
+  cache_in_memory: false
 training:
   epochs: 50
-  batch_size: 64         # Sized for RTX A4000 16GB VRAM
-  num_workers: 4
+  batch_size: 16
+  num_workers: 0
   prefetch_factor: 2
   amp: true
   precision: fp16
   gradient_clip: 1.0
-
 optimizer:
   name: AdamW
   lr: 0.0005
   weight_decay: 0.0001
-
 scheduler:
   name: CosineAnnealing
   warmup_epochs: 5
   T_max: 50
-  eta_min: 0.000001
-
+  eta_min: 1.0e-06
 early_stopping:
   patience: 10
   metric: val_auc
   mode: max
-
 logging:
   log_dir: ../ml/logs
   save_interval: 5

@@ -1,63 +1,32 @@
-# ONN-DETECT
+# Repository development contract
 
-Offline, privacy-first AI-media forensics for Android. PyTorch backend trains
-compact detectors; the Android app runs them fully on-device via TFLite
-(LiteRT). **No INTERNET permission** - scans never leave the phone.
+Read README.md and docs/FIX_STATUS_2026-10-07.md for current behavior. Historical review documents describe the pre-implementation snapshot and are not acceptance evidence for the current tree.
 
-## Status (working, verified)
+## Truthful output
 
-| Stage | Metric | Value |
-|---|---|---|
-| SRMForensicCNN (visual) | AUC / Acc on genimage/val | 0.956 / 0.889 |
-| LCNN-MFM (audio)        | EER / AUC on asvspoof test | 0.050 / 0.976 |
-| XGBoost meta fusion     | AUC on held-out features   | 0.962 |
+Keep real=0, synthetic=1 and model scores finite in [0,1]. Missing evidence is unavailable, not zero. Unvalidated releases, failed inference, unsupported media and unvalidated sampled aggregation must abstain. Never invert scores automatically because AUC is below chance. Diagnose labels, frontend and domain.
 
-All numbers come from `ml/evaluation_results.json`, produced by real
-evaluations (`ml/scripts/run_full_pipeline.py`). The transpiled Kotlin
-meta-classifier matches xgboost predictions to <1e-4 (export-time parity
-check).
+Do not label a model score as confidence or a calibrated posterior without evidence. Byte-pattern EXIF/C2PA/SynthID matches are not cryptographic attestation. Speaker verification and lip-sync are unavailable; do not synthesize observations for them.
 
-## Layout
+## Shared contracts
 
-- `ml/` - training + export backend (see `ml/Makefile`)
-  - `src/models/` SRMForensicCNN, LCNN-MFM; `src/meta_classifier/` feature
-    extraction mirroring the on-device analyzers
-  - `scripts/train_*.py` -> `scripts/export_all_models.py` ->
-    `scripts/generate_android_constants.py` ships models+constants into the app
-- `android/` - Compose + Hilt app. Image scan path is end-to-end:
-  gallery pick -> SRM TFLite + FFT slope + KL co-occurrence -> transpiled
-  XGBoost fusion -> Room history.
-- `datasets/genimage` 32x32 thumbnails; `datasets/asvspoof2019` FLACs.
+The fusion feature order is:
+srm_score, fft_score, kl_score, flatness_score, resolution_norm, is_compressed, exif_anomaly, c2pa_present, lip_sync_corr, landmark_jitter.
 
-## Critical implementation notes
+Features 6–9 are fixed unsupported neutral values in this baseline, not measured proof. Model/fusion retraining must version changes across both platforms.
 
-1. **Never resize the 32x32 dataset images up** before SRM-CNN inference or
-   training. Native resolution is what makes it work (AUC 0.96 vs 0.50).
-2. Feature contract shared by Python and Kotlin (order matters), 10 slots:
-   `[srm_score, fft_score, kl_score, flatness_score, resolution_norm,
-   is_compressed, exif_anomaly, c2pa_present, lip_sync_corr,
-   landmark_jitter]` - defined in `ml/src/meta_classifier/feature_extractor.py`,
-   consumed by `android/.../detection/fusion/XGBoostMetaClassifier.kt`.
-   Slots 6-7 are measured from real file metadata on-device; slots 8-9 are
-   temporal signals that use the neutral constants in
-   `DetectionPipeline.Companion.NEUTRAL_*` (= feature_extractor NEUTRAL_*)
-   for still images. NEVER synthesize these features from the SRM score
-   during training - that leaks the label and inflates meta AUC.
-3. KL histogram semantics must stay identical on both platforms: diffs are
-   CLAMPED to [-10,10] into 21 bins, epsilon 1e-6, renormalized.
-4. Model hashes in `assets/constants/model_hashes.json` are generated at
-   export time; `ModelIntegrityChecker` verifies them at startup.
+Audio uses the versioned LFCC frontend (16kHz, periodic Hann, NFFT512, hop160,128 linear filters,40 coefficients, no top_db, coefficient CMVN over time with sample std), float32 features and quadratic_window_sinc_v1 resampling. A four-second window has401frames. Torchaudio LFCC/resample is not an interchangeable training shortcut.
 
-## Commands
+Image inference size comes from a checked tensor contract. New image checkpoints use rgb-exif-srgb-whitealpha-pow2cap1024-bilinear-square-v2-sizeN-float32: orient EXIF, convert to sRGB, composite alpha on white, cap the working image by powers of two, preserve source dimensions, then square-resize. The old32px model is diagnostic only. Pillow and Android bitmap sampling still require independent device parity measurement; source-level arithmetic comparison cannot certify platform decoding.
 
-```powershell
-# ML backend (Windows, from repo root)
-.venv\Scripts\python.exe ml\scripts\train_srm_cnn.py --device cuda
-cd ml; make train-meta export eval
+## Model release
 
-# Android
-# open android/ in Android Studio, or from android/: gradle wrapper && .\gradlew assembleDebug
-```
+Preserve user datasets and trained binaries. Downloads require a named actual source, immutable revision, explicit destination and semantic labels. Never erase a dataset or repartition by counters. Validate source groups and all derived variants across independent splits.
 
-Verify cross-platform consistency anytime:
-`.venv\Scripts\python.exe scripts\check_android_consistency.py`
+Train from effective YAML config, select on validation, calibrate on calibration and evaluate on sealed test. Image fusion requires independent stacking and fusion_val. Export stages a complete bundle. Only a validated transaction installs assets together with its matching compiled Kotlin fusion source. Thresholds, preprocessing, weights, reports, dataset lineage and source revision are bound in the release manifest.
+
+## Verification
+
+Use JDK17, SDK36 and the pinned toolchain. Run relevant JVM tests and build/lint; the minified APK and merged permissions/native alignments need inspection. No INTERNET or ACCESS_NETWORK_STATE permission is permitted. Use bash gradlew on Linux (checkout mode may lack executable permission).
+
+Root scripts and ML tests must fail on missing required dependencies and divergent numeric contracts. Synthetic fixtures test implementation behavior; they are not accuracy data. Preserve source changes that predate the task; never reset the worktree or quietly replace model assets.

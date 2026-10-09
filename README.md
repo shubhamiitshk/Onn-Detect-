@@ -1,164 +1,60 @@
-# ONN-DETECT: Zero-Trust Offline Multimodal Deepfake Forensics
+# ONN-DETECT
 
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Platform: Android](https://img.shields.io/badge/Platform-Android%2014%2B-green.svg)](https://developer.android.com)
-[![PyTorch: 2.x](https://img.shields.io/badge/PyTorch-2.x%20%7C%20CUDA-orange.svg)](https://pytorch.org)
-[![TFLite: INT8](https://img.shields.io/badge/Inference-TFLite%20INT8%20(On--Device)-red.svg)](https://tensorflow.org/lite)
-[![Zero-Trust: 100% Offline](https://img.shields.io/badge/Privacy-100%25%20Airgapped%20Offline-black.svg)]()
+An Android app for offline image, speech and sampled video analysis. Media decoding, feature extraction, inference and history storage run on the device. The APK gate checks the merged permissions, asset hashes and 16 KiB compatibility of 64-bit native libraries.
 
-**ONN-DETECT** is an offline multimodal deepfake detection engine for
-Android. It fuses high-frequency residual CNNs, spectral physics, pixel
-co-occurrence statistics and cryptographic metadata provenance in a
-transpiled **XGBoost meta-classifier** to expose synthetic media without
-ever transmitting data off the device (no INTERNET permission; empty TLS
-trust anchors).
+**Current bundled models are unvalidated.** Their hashes are preserved, but their original data, score orientation, preprocessing and calibration cannot be established from this checkout. Scans therefore report **Inconclusive**, with available diagnostic signals and explicit failures or coverage limitations. A diagnostic score is not a calibrated probability or proof of authenticity. No current accuracy claim covers all generators, ChatGPT images, Nano Banana, edited images, music or unseen voices.
 
----
+## Implemented behavior
 
-## Core Forensic Modalities
+- Typed scan status and verdict, with unavailable evidence kept distinct from zero.
+- Hash-bound model, tensor, frontend, threshold and fusion contracts; serialized CPU LiteRT inference.
+- Bounded media decoding, cancellation, PCM-format handling, shared anti-alias resampling, YUV crop/stride/color/rotation handling and sampled coverage.
+- Status-aware result/history UI, lifecycle-safe scanning and explicit Room migrations that retain legacy history as unvalidated.
+- Unsupported biometric enrollment is labeled unavailable. EXIF, byte-pattern provenance and temporal heuristics do not override verdicts.
+- Standalone CPU LiteRT is bundled; no runtime model download is needed.
 
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│                            ONN-DETECT PIPELINE                       │
-└──────────────────────────────────┬───────────────────────────────────┘
-                                   │
-        ┌──────────────────────────┼──────────────────────────┐
-        ▼                          ▼                          ▼
- 📸 Visual Forensics         🎙️ Audio Forensics         🎬 Temporal & Provenance
- ├─ SRM-CNN (noise residuals)├─ LCNN-MFM (LFCC)         ├─ FrameCosineDelta consistency
- ├─ FFT 1/f^2 slope analysis ├─ EER-calibrated verdict  ├─ EXIF anomaly detection
- ├─ KL co-occurrence         └─ Encrypted voiceprint    ├─ C2PA JUMBF manifest scan
- └─ PRNU sensor-noise check     enrollment (Keystore)   └─ SynthID/C2PA fusion rules
-        │                          │                          │
-        └──────────────────────────┼──────────────────────────┘
-                                   ▼
-                    🧠 XGBoost decision trees (transpiled Kotlin, <100 µs)
-                                   ▼
-                    📊 Calibrated risk breakdown (Compose dark UI)
-```
+See [implementation status](docs/FIX_STATUS_2026-10-07.md), [architecture](docs/ARCHITECTURE.md) and the [complete review and dataset research](docs/COMPREHENSIVE_REVIEW_2026-10-06.md). Review files describe the pre-fix snapshot; implementation status describes the current work.
 
-### 1. Visual Forensics
-* **SRM-CNN**: fixed spatial high-pass filters expose noise residuals left by
-  GAN / diffusion generators. Runs at **native resolution** (the shipped model
-  is trained on 32x32 inputs; never upscale before inference).
-* **FFT**: 2D radix-2 power spectrum -> azimuthal average -> log-log slope
-  deviation from the natural 1/f^2 power law.
-* **KL co-occurrence**: adjacent-pixel-difference histograms (21 bins,
-  clamped to ±10) scored against a calibrated natural-image baseline.
-* **PRNU**: Laplacian-variance sensor-noise heuristic, reported as a signal.
+## Build and verify
 
-### 2. Audio Forensics
-* **LCNN-MFM**: Light CNN with Max-Feature-Map over pure-Kotlin LFCC features
-  (verified against torchaudio golden vectors), thresholded at the model's
-  EER operating point from `lcnn_audio_threshold.json`.
-* **Voice enrollment**: encrypted voiceprint storage via
-  `EncryptedSharedPreferences` (Android Keystore).
-
-### 3. Temporal & Provenance
-* **FrameCosineDelta** temporal consistency for video scans.
-* **EXIF analyzer** flags manipulation-software tags and scrubbed timestamps.
-* **C2PA scanner** detects JUMBF manifests (byte-scan; no signature
-  verification yet). `SignalFusion` forces a definitive AI verdict on
-  SynthID presence and dampens scores for trusted C2PA.
-
-> Experimental stubs (documented in code): MobileCLIP semantic scoring,
-> MediaPipe lip-sync correlation, facial-landmark jitter, optical-flow
-> morphing, ECAPA-TDNN speaker verification. They are wired as neutral
-> signals and do not affect verdicts yet.
-
----
-
-## Benchmark Results
-
-From `ml/evaluation_results.json` (real held-out evaluations produced by
-`ml/scripts/run_full_pipeline.py`; see `docs/BENCHMARK_RESULTS.md`):
-
-| Model | Eval split | n | Metric | Result |
-| :--- | :--- | :--- | :--- | :--- |
-| SRMForensicCNN | genimage/val (native 32x32) | 4000 | AUC / Acc / EER | 0.956 / 0.889 / 0.110 |
-| LCNN-MFM-Audio | asvspoof2019/test | 280 | EER / AUC | 0.050 / 0.976 |
-| XGBoost meta fusion | held-out feature split | 1000 | AUC / Acc | 0.962 / 0.893 |
-
-The transpiled Kotlin classifier matches `booster.predict()` to <1e-4 at
-export time.
-
-## The 10-Feature Meta-Fusion Vector
-
-Order is a cross-platform contract between
-`ml/src/meta_classifier/feature_extractor.py` and
-[`XGBoostMetaClassifier.kt`](android/app/src/main/java/com/onndetect/detection/fusion/XGBoostMetaClassifier.kt):
-
-```kotlin
-val features = floatArrayOf(
-    srmScore,          // [0] SRM residual CNN anomaly score
-    spectral.score,    // [1] FFT 2D spectral power-law deviation
-    klScore,           // [2] Pixel co-occurrence KL divergence
-    spectral.flatness, // [3] Spectral flatness measure
-    quality.resNorm,   // [4] Normalized image resolution (min(w,h)/1024)
-    quality.isComp,    // [5] Compression flag (1.0 = compressed)
-    exifAnomaly,       // [6] EXIF tampering anomaly (measured from file)
-    c2paPresent,       // [7] C2PA presence score (measured from file)
-    lipSyncCorr,       // [8] Temporal signal - neutral constant for stills
-    landmarkJitter     // [9] Temporal signal - neutral constant for stills
-)
-val rawScore = metaClassifier.predict(features)
-```
-
-Features 6-9 carry neutral constants until retrained with real labels.
-
-## Reproducing Training & Export
-
-Python backend (Windows PowerShell from repo root):
-
-```powershell
-python -m venv .venv
-.venv\Scripts\python.exe -m pip install torch torchvision torchaudio
-.venv\Scripts\python.exe -m pip install -r ml\requirements.txt
-.venv\Scripts\python.exe -m pip install -e ml
-
-cd ml
-make train-all      # SRM-CNN + LCNN-MFM + XGBoost meta (+ Kotlin transpile)
-make export         # PyTorch -> Keras -> TFLite INT8 (parity-checked)
-python scripts/generate_android_constants.py
-cd ..
-python scripts/check_android_consistency.py
-```
-
-See `docs/TRAINING_GUIDE.md` for dataset layout and options.
-
-## Android App Architecture
-
-Jetpack Compose, Coroutines/Flow, Hilt, Room, LiteRT:
-
-```
-android/app/src/main/java/com/onndetect/
-├── data/local/           # Room scan history
-├── detection/
-│   ├── audio/            # AudioClassifier, AudioDecoder, LFCCExtractor, SpeakerVerifier
-│   ├── crossmodal/       # LipSyncCorrelation (stub)
-│   ├── fusion/           # XGBoostMetaClassifier.kt (transpiled, auto-generated)
-│   ├── provenance/       # EXIFAnalyzer, C2PAManifestChecker
-│   ├── temporal/         # VideoDecoder, FrameCosineDelta, LandmarkJitterDetector (stub)
-│   ├── video/            # VideoForensicAnalyzer, OpticalFlowAnalyzer (stub)
-│   └── visual/           # SRMForensicAnalyzer, FFTSpectralAnalyzer, FFTUtil,
-│                         # KLCooccurrenceAnalyzer, PRNUAnalyzer
-├── domain/pipeline/      # DetectionPipeline orchestrator, SignalFusion
-├── inference/            # LiteRT engine, memory-mapped loader, delegate
-│                         # selector, SHA-256 ModelIntegrityChecker
-└── ui/                   # Compose screens (home/scanner/result/history/
-                          # enrollment) + cyber-forensic dark theme
-```
-
-## Building the APK
+Use JDK 17 and Android SDK 36. The repository pins AGP, Gradle, Kotlin, Compose compiler, KSP and the standalone LiteRT runtime. Android 8.0/API 26 is the minimum supported OS.
 
 ```powershell
 cd android
-.\gradlew.bat assembleDebug
+.\gradlew.bat testDebugUnitTest lintDebug assembleDebug assembleRelease assembleDebugAndroidTest
+cd ..
+python scripts/check_android_consistency.py
+python -m unittest discover -s scripts/tests -v
+python scripts/verify_android_artifact.py --apk android/app/build/outputs/apk/debug/app-debug.apk
+python scripts/verify_android_artifact.py --apk android/app/build/outputs/apk/release/app-release-unsigned.apk
 ```
 
-CI builds the APK, runs unit tests, and executes the cross-platform
-consistency checks on every push (`.github/workflows/`).
+The release APK is unsigned. The ordinary APK gate permits explicitly unvalidated diagnostic builds. Distribution as a validated detector additionally requires `--require-validated-models`, a matched trained release and independent device evidence. JVM tests do not replace codec, bitmap, performance or migration tests on devices.
 
-## License
+## Training
 
-This project is licensed under the Apache 2.0 License.
+Use a separate Python 3.11 environment. Training may run on a GPU workstation or dedicated runner; detection remains offline on Android.
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r ml/requirements.txt -r ml/requirements-export.txt -r ml/requirements-data.txt -r ml/requirements-dev.txt
+.\.venv\Scripts\python.exe -m pip install --no-deps -e ml
+.\.venv\Scripts\python.exe -m unittest discover -s ml/tests -p "test_*.py" -v
+```
+
+Prepared corpora need verified source/group identities, file hashes, both labels and disjoint train/validation/calibration/test splits. Image fusion additionally needs independent stacking and fusion-validation splits. Missing splits, corrupt files and unknown label schemas fail instead of silently becoming training examples.
+
+```powershell
+cd ml
+..\.venv\Scripts\python.exe scripts/run_training_pipeline.py --visual-config configs/srm_cnn_openfake.yaml --audio-config configs/lcnn_asvspoof.yaml --data-root D:/verified-datasets --device cuda --output-dir runs/experiment-001
+```
+
+This stages a bundle and evaluation evidence. It does not overwrite Android assets or promote desktop evidence to device validation. Read [training guide](docs/TRAINING_GUIDE.md), [model card](docs/MODEL_CARD.md) and [deployment](docs/DEPLOYMENT.md) before running a large experiment.
+
+## Research priorities
+
+The existing 32px image model is a pilot baseline. Test a higher-resolution residual model and a compact semantic model against unseen generator families, including independently acquired modern platform samples. Speech training should combine licensed ASVspoof, multilingual TTS and realistic codec/channel data, with speaker/source/generator-disjoint holdouts. Speech, music and environmental audio need distinct routing and evaluation.
+
+The full review contains verified primary-source links, dataset sizes, license/access restrictions and a staged teacher/student strategy. Large datasets or new models do not by themselves guarantee generalization. Held-out families, calibrated low false-positive operating points and actual phone parity determine what can be released.
+
+License: Apache 2.0 for repository code. Dataset and model licenses are separate.

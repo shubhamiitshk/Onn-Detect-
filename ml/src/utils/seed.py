@@ -6,7 +6,7 @@ import torch
 def set_global_seed(seed: int = 42):
     """Seeds all random number generators to ensure reproducibility."""
     random.seed(seed)
-    os.environ['PYTHONHASHSEED'] = str(seed)
+    # PYTHONHASHSEED must be set before Python starts; runtime changes have no effect.
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)

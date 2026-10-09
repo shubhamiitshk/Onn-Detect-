@@ -1,60 +1,89 @@
 # Architecture
 
-ONN-DETECT is an offline, multimodal AI-media forensics system: a PyTorch
-backend trains compact detectors and exports them (TFLite INT8 + constants)
-into an Android app that runs everything on-device. The app declares **no
-INTERNET permission** and ships a `network_security_config.xml` with no trust
-anchors, so scans physically cannot leave the phone.
+ONN-DETECT runs media analysis locally on Android with bundled model assets and a standalone LiteRT CPU runtime. Training and export are separate Python workflows; training does not need to happen on the phone. The current bundled networks are **unvalidated legacy artifacts**. Their binary integrity and ability to run do not establish detection accuracy or class orientation.
 
-## Detection flow (image)
+## Results and evidence
 
-```
-gallery pick -> ScannerViewModel (decode <=1024px)
-  -> DetectionPipeline.analyzeMedia()
-       1. hardware gate (availMem < 250MB => abstain)
-       2. SRMForensicAnalyzer  - SRM-CNN TFLite INT8, native-res 32x32 input
-       3. FFTSpectralAnalyzer  - 256x256 radix-2 2D FFT -> azimuthal average
-                                 -> log-log slope deviation from 1/f^2
-       4. KLCooccurrenceAnalyzer - clamped adjacent-pixel-diff histogram
-                                    (21 bins, [-10,10], eps 1e-6) vs calibrated
-                                    natural baseline -> KL divergence
-       5. EXIFAnalyzer + C2PAManifestChecker (real metadata, needs source Uri)
-       6. XGBoostMetaClassifier.kt - transpiled decision trees (<100us)
-       7. SignalFusion - SynthID => 1.0; trusted C2PA => score * 0.1
-  -> Room scan history -> ResultScreen
-```
+`ScanResult` carries `AnalysisStatus`, `DetectionVerdict`, a reason, release/frontend/calibration versions, an optional decision threshold, and measured coverage. The verdict has three states: `SYNTHETIC`, `AUTHENTIC`, and `INCONCLUSIVE`. Failures, unsupported media, cancellation, unavailable evidence, and unvalidated models must not produce an authentic or synthetic verdict. The legacy Boolean is compatibility data; callers must render and persist the typed verdict/status.
 
-PRNU sensor-noise variance is computed and *reported* as a signal but is not
-blended into the calibrated meta score.
+A raw network sigmoid or heuristic descriptor is not a calibrated probability. Unavailable signals use `-1` and are omitted from numeric UI displays; zero is a valid measured value. No score-distance-from-0.5 confidence rule remains. Confidence is unavailable until a separate validated calibration policy exists. Heatmaps are unavailable; the app does not manufacture explanations.
 
-## Audio / video
+Historical results created before this contract are treated as unvalidated. Room migrations preserve history and add explicit assessment metadata. Imported media is processed from a bounded private temporary copy and cleaned up; source URI identity and raw file bytes are not stored as an authenticity claim.
 
-- Audio: `AudioDecoder` streams a bounded 4s window -> pure-Kotlin `LFCCExtractor`
-  (verified against torchaudio goldens) -> LCNN-MFM TFLite -> threshold from
-  `constants/lcnn_audio_threshold.json` (EER operating point).
-- Video: seek-based `MediaCodec` sampling of K frames -> per-frame visual
-  ensemble averaged -> same 10-feature meta fusion -> optional embedded-audio
-  LCNN pass; overall = mean(visual, audio) when audio exists.
+## Image route
 
-## Feature contract
-
-The 10-feature vector is a cross-platform contract between
-`ml/src/meta_classifier/feature_extractor.py` and
-`android/.../detection/fusion/XGBoostMetaClassifier.kt`:
-
-```
-0 srm_score  1 fft_score  2 kl_score  3 flatness_score
-4 resolution_norm  5 is_compressed  6 exif_anomaly  7 c2pa_present
-8 lip_sync_corr  9 landmark_jitter
+```text
+Selected file -> bounded import and sRGB/alpha/orientation-aware bitmap decode
+ -> DetectionPipeline
+    input checks -> required-image asset/contract verification
+    -> memory budget selects full diagnostics, math-only diagnostics, or abstention
+    -> per-request RGB float32 tensor sized from the real TFLite input shape
+    -> SRM model score, spectral descriptors, horizontal-difference histogram
+    -> optional residual-energy texture proxy
+    -> validated fusion only when its release and calibration contract passes
+ -> typed result -> local history and result screen
 ```
 
-Features 8-9 are temporal signals that do not exist for still images; both
-platforms substitute the neutral authentic-side constants defined in
-`DetectionPipeline.Companion` (mirrored in `feature_extractor.py`). Features
-6-7 are measured from real file metadata on-device.
+The current SRM tensor is `[1,32,32,3]`. Runtime size is read from the interpreter and compared with the release manifest; it is no longer a hardcoded input-buffer size. This permits compatible square RGB replacement exports. It does **not** create a high-resolution detector: native patches, aspect-preserving global views, partial-edit learning, and their aggregation still require new training and matching preprocessing.
 
-## Model integrity
+The scanner and shared Python decoder retain the original minimum image edge for the resolution feature while bounding the working image. New image checkpoints version EXIF orientation, sRGB profile conversion, white alpha compositing and power-of-two cap1024 in rgb-exif-srgb-whitealpha-pow2cap1024-bilinear-square-v2-sizeN-float32. Pillow and BitmapFactory may sample pixels differently; same-file native decoding/resize parity must still be measured before promoting a replacement release.
 
-`ModelIntegrityChecker` verifies SHA-256 digests of every shipped `.tflite`
-against `assets/constants/model_hashes.json` at startup (generated by
-`ml/scripts/generate_android_constants.py`).
+FFT uses a 256-square radix-2 power spectrum with uint8-truncated luma, matching the declared Python grayscale convention. Insufficient spectral content is unavailable rather than an authentic-side fallback. KL is a 21-bin horizontal adjacent-pixel difference histogram with positive finite baseline validation. Neither descriptor proves generative origin. The class historically named `PRNUAnalyzer` reports a residual-energy proxy; it does not perform camera fingerprint attribution and does not influence the verdict.
+
+## Audio route
+
+`AudioDecoder` finds an audio track, samples one bounded window near the center (or from the beginning when timing is unavailable), and records the actual starting timestamp, analyzed duration, source duration, valid sample count, RMS, peak, and clipping fraction. It honors PCM encoding: unsigned 8-bit, signed 16/24/32-bit, and float32. Unsupported or truncated PCM layouts are rejected. Codec output-format changes are checked instead of assuming every output buffer contains signed shorts.
+
+The current clip contract is native PCM window selection followed by shared resampling and crop/pad to 64,000 samples at 16 kHz. The resampler is **quadratic-window sinc v1 with reflective/short-signal edge rules and per-sample renormalization**. It is not torchaudio's default Hann resampler. Training must use the same bounded-window/edge ordering; whole-file resampling followed by clipping can differ at boundaries. Real-file Python/Android parity remains a release requirement.
+
+LFCC applies centered reflect padding, a periodic Hann STFT (`n_fft=512`, hop 160), 128 linear-frequency filters, power dB with no top-dB clipping, 40 orthonormal DCT coefficients, and per-coefficient time CMVN with sample-standard-deviation correction. The float32 interface is `[1,401,40,1]`. Runtime creates one contiguous tensor buffer rather than thousands of single-element arrays.
+
+Empty, silent, heavily clipped, or too-short sampled material is inconclusive. Signal-energy gates do not constitute speech recognition. The current LCNN is a speech countermeasure: a validated speech/music/environment routing policy and file-level sampled-window calibration are unavailable. **Audio therefore remains inconclusive even if a future neural release's byte and model calibration checks pass.** It is not advertised as an AI music/environmental-sound detector. A central four-second sample does not assess a whole recording, and the UI reports that coverage.
+
+## Video route
+
+`VideoDecoder` captures up to ten default timeline samples and reports actual captured timestamps. It obeys YUV plane row/pixel strides, buffer positions, image crop, supported SDR color standard/range, and track rotation. Unsupported pixel formats and HDR requiring tone mapping are rejected. Null images do not count as captured frames. Output buffers, images, codecs, and intermediate bitmaps are released on failure/cancellation; the analyzer recycles returned frames after extracting diagnostics.
+
+Per-frame image descriptors, a grayscale temporal-change proxy, and a sampled audio-track diagnostic remain separate. There is no trained container-level aggregator. Maximum modality score and OR threshold rules have been removed. **Every video result is inconclusive until a dedicated sampling/aggregation/quality protocol is trained and independently validated.** Sampled frames cannot exclude a short edit elsewhere in the recording.
+
+## Provenance and voice identity
+
+Unverified EXIF fields, substring matches, and caller-supplied C2PA/SynthID flags cannot raise or lower content scores. C2PA verification is unavailable; implementing it requires signed manifest/content-binding verification and a documented offline trust policy. No deployed SynthID verifier exists. The absence of credentials is neutral.
+
+The simulated statistical voice embedding is disabled. `SpeakerVerifier` rejects enrollment/verification as unavailable, and the app exposes no completed biometric identity flow. A future licensed speaker encoder and consent/quality/deletion flow would be a separate feature; matching a voice identity does not prove speech was not cloned.
+
+## Fusion contract
+
+The retained ten-feature schema is:
+
+```text
+0 srm_score        1 fft_score       2 kl_score        3 flatness_score
+4 resolution_norm 5 is_compressed   6 exif_anomaly    7 c2pa_present
+8 lip_sync_corr   9 landmark_jitter
+```
+
+Unverified/unavailable contextual slots stay fixed at `0.1`, `0.05`, `0.9`, and `0.1`. They are compatibility constants, not evidence of authenticity. A new fusion export must use the same extractor and independently calibrated quantized base scores. The current tree's `RELEASE_ID` is `legacy-unvalidated`; runtime cannot promote it merely by replacing a threshold file. Generated trees validate feature count/finiteness and carry their release revision.
+
+Neural training uses explicit independent `train`, `val`, `calibration`, and sealed `test` partitions. Visual stacking adds independent `stacking` and `fusion_val` partitions. Dataset manifests bind source/revision, semantic real=0/fake=1 labels, file hashes, and authoritative source/group identities. A missing split or corrupt sample is an error, never an implicit fallback to the dataset root or replacement silence/image.
+
+## Inference ownership and resource limits
+
+The singleton engine serializes interpreter loading, tensor inspection, invocation, and closing behind one lock. Each request owns its input buffer. Models are memory-mapped from uncompressed assets; mapping descriptors close deterministically after mapping. Failed interpreter construction releases resources. Input/output count, positive shape, scalar float32 output, exact buffer size, and finite input/output values are checked. CPU/XNNPACK is the current conservative baseline, not a measured fastest-delegate claim. No GPU dependency is included.
+
+Image work has a 30-second stage budget. Audio decode has a 20-second deadline and five-second stall detection. Video decode has a 30-second total and five-second per-target limit; video analysis has a 60-second limit. Cancellation propagates instead of becoming a normal score. Native inference itself cannot be interrupted mid-kernel; cancellation is checked immediately before/after, so device latency tests are still necessary. The UI also bounds overall scan time and cancels work when leaving/resetting.
+
+## Release integrity and validation
+
+`constants/model_hashes.json` is mandatory. It declares both required neural models, but verification runs for the requested modality so a missing optional audio model does not silently break image-only diagnostics. Missing/malformed/empty manifests, missing required entries, invalid hashes, or changed model bytes fail closed.
+
+`constants/release_manifest.json` is also mandatory. The shipped legacy manifest has `validated:false`; this deliberately permits diagnostics but never a classified result. A validated release must bind:
+
+- schema/version, release ID, source commit, score convention and dataset manifest hashes;
+- neural hashes, exact tensor dtype/shapes, frontend IDs, and all staged artifact hashes;
+- per-model/fusion calibration linked to the model/frontend/data split, at least 100 calibration examples, finite operating thresholds and AUC above chance;
+- compiled fusion revision and threshold parity with constants;
+- hash-bound evaluation and device reports for that release, with model/frontend parity and offline verification.
+
+The staged installer checks the complete bundle, retains previous assets, installs the matching compiled Kotlin fusion source, and maps the root staging manifest into `constants/release_manifest.json`. The APK verifier checks actual merged permissions, bundled contracts, compiled-fusion source parity, and 64-bit native ELF/ZIP 16 KiB alignment. APK signing authenticates the package; internal hashes additionally catch stale copy/export mismatches.
+
+Desktop math tests and device smoke tests demonstrate specific implementation behavior. They are not cross-generator accuracy, calibrated confidence, real-phone battery/latency, or universal detection evidence. Promotion needs independent datasets and actual device/file-decoding tests with the final shipped artifact.

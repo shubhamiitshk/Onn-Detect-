@@ -2,95 +2,57 @@ package com.onndetect.detection.visual
 
 import android.content.Context
 import android.graphics.Bitmap
+import com.onndetect.inference.LiteRTInferenceEngine
+import com.onndetect.inference.requireModelContract
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import org.json.JSONObject
-import kotlin.math.min
-import kotlin.math.roundToInt
 
-/**
- * Runs the trained SRMForensicCNN (TFLite INT8) over an image.
- *
- * Input contract (see ml/scripts/export_all_models.py):
- *   tensor shape (1, 32, 32, 3), RGB floats in [0,1] - exactly the native-
- *   resolution ToTensor() preprocessing the model was retrained with.
- */
-class SRMForensicAnalyzer(
-    private val context: Context,
-    private val engine: com.onndetect.inference.LiteRTInferenceEngine,
-) {
-
-    companion object {
-        const val MODEL_FILE = "srm_forensic_cnn_int8.tflite"
-        const val INPUT_SIZE = 32
-
-        /** Preallocated input container: [1][32][32][3]. */
-        private fun newInput(): Array<Array<Array<FloatArray>>> =
-            Array(1) { Array(INPUT_SIZE) { Array(INPUT_SIZE) { FloatArray(3) } } }
-    }
-
-    private val input = newInput()
-
-    /** @return P(AI-generated) in [0,1]; 0.5 on any failure. */
-    fun analyze(bitmap: Bitmap): Float {
-        return try {
-            fillInput(bitmap)
-            engine.predict(MODEL_FILE, input).coerceIn(0f, 1f)
-        } catch (_: Exception) {
-            0.5f
+/** Square RGB float32 preprocessing sized from the model's tensor contract. */
+class SRMForensicAnalyzer(private val context: Context, private val engine: LiteRTInferenceEngine) {
+    companion object { const val MODEL_FILE = "srm_forensic_cnn_int8.tflite" }
+    fun analyze(bitmap: Bitmap, checkStop: () -> Unit = {}): Float {
+        checkStop()
+        require(!bitmap.isRecycled && bitmap.width > 1 && bitmap.height > 1) { "Invalid image" }
+        val contract = engine.contract(MODEL_FILE)
+        val shape = contract.inputShape
+        requireModelContract(shape.size == 4 && shape[0] == 1 && shape[3] == 3 && shape[1] == shape[2] && shape[1] in 16..1024) { "Unsupported image tensor" }
+        val expected = JSONObject(context.assets.open("constants/release_manifest.json").bufferedReader().use { it.readText() })
+            .getJSONObject("models").getJSONObject(MODEL_FILE).getJSONArray("input_shape")
+        requireModelContract((0 until 4).all { expected.getInt(it) == shape[it] }) { "Release/model input mismatch" }
+        val size = shape[1]
+        val scaled = Bitmap.createScaledBitmap(bitmap, size, size, true)
+        val pixels = IntArray(size * size)
+        try { scaled.getPixels(pixels, 0, size, 0, 0, size, size) }
+        finally { if (scaled !== bitmap) scaled.recycle() }
+        // Per-request ownership: another scan cannot overwrite this input.
+        val input = ByteBuffer.allocateDirect(contract.inputBytes).order(ByteOrder.nativeOrder())
+        for (c in pixels) {
+            input.putFloat((c shr 16 and 255) / 255f)
+            input.putFloat((c shr 8 and 255) / 255f)
+            input.putFloat((c and 255) / 255f)
         }
-    }
-
-    private fun fillInput(src: Bitmap) {
-        val scaled = Bitmap.createScaledBitmap(src, INPUT_SIZE, INPUT_SIZE, true)
-        val pixels = IntArray(INPUT_SIZE * INPUT_SIZE)
-        scaled.getPixels(pixels, 0, INPUT_SIZE, 0, 0, INPUT_SIZE, INPUT_SIZE)
-        if (scaled !== src) scaled.recycle()
-
-        val plane = input[0]
-        for (i in pixels.indices) {
-            val c = pixels[i]
-            plane[i / INPUT_SIZE][i % INPUT_SIZE][0] = ((c shr 16 and 0xFF)) / 255f
-            plane[i / INPUT_SIZE][i % INPUT_SIZE][1] = ((c shr 8 and 0xFF)) / 255f
-            plane[i / INPUT_SIZE][i % INPUT_SIZE][2] = ((c and 0xFF)) / 255f
-        }
+        input.flip()
+        return engine.predict(MODEL_FILE, input, checkStop)
     }
 }
 
-/**
- * Loads calibration constants (JSON) from assets/constants/ with safe
- * fallbacks so a missing file degrades instead of crashing.
- */
+/** Constants never silently fall back to a verdict-changing value. */
 object CalibrationStore {
-
-    fun naturalHistogram(context: Context): FloatArray? {
-        return try {
-            val json = JSONObject(readAsset(context, "constants/natural_diff_histogram.json"))
-            val bins = json.optJSONArray("bins") ?: return null
-            FloatArray(bins.length()) { i -> bins.getDouble(i).toFloat() }
-        } catch (_: Exception) {
-            null
-        }
+    fun naturalHistogram(context: Context): FloatArray {
+        val json = read(context, "constants/natural_diff_histogram.json")
+        val bins = json.getJSONArray("bins")
+        require(bins.length() == 21)
+        val histogram = FloatArray(21) { bins.getDouble(it).toFloat() }
+        require(histogram.all { it.isFinite() && it > 0f }) { "Invalid baseline bins" }
+        val sum = histogram.sum()
+        require(sum.isFinite() && sum > 0f)
+        return histogram.apply { for (i in indices) this[i] /= sum }
     }
-
-    fun metaDecisionThreshold(context: Context): Float = try {
-        val json = JSONObject(readAsset(context, "constants/meta_classifier.json"))
-        json.getDouble("decision_threshold").toFloat()
-    } catch (_: Exception) {
-        0.5f
+    fun metaDecisionThreshold(context: Context): Float = threshold(read(context, "constants/meta_classifier.json"), "decision_threshold")
+    fun audioThreshold(context: Context): Float = threshold(read(context, "constants/lcnn_audio_threshold.json"), "threshold_at_eer")
+    private fun threshold(json: JSONObject, key: String): Float = json.getDouble(key).toFloat().also {
+        require(it.isFinite() && it in 0f..1f) { "Invalid decision threshold" }
     }
-
-    fun audioThreshold(context: Context): Float = try {
-        val json = JSONObject(readAsset(context, "constants/lcnn_audio_threshold.json"))
-        json.getDouble("threshold_at_eer").toFloat()
-    } catch (_: Exception) {
-        0.5f
-    }
-
-    private fun readAsset(context: Context, path: String): String =
-        context.assets.open(path).bufferedReader().use { it.readText() }
-
-    @Suppress("unused")
-    private fun clamp01(v: Float) = min(1f, v.coerceAtLeast(0f))
-
-    @Suppress("unused")
-    private fun round(v: Double) = v.roundToInt()
+    private fun read(context: Context, path: String) = JSONObject(context.assets.open(path).bufferedReader().use { it.readText() })
 }

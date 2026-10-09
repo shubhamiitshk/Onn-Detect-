@@ -1,28 +1,20 @@
-.PHONY: setup train-visual train-audio train-meta train-all export eval package clean
-
+PYTHON ?= python
+ARGS ?=
+.PHONY: setup test train-visual train-audio train-all export parity validate-release
 setup:
-	pip install -r requirements.txt
-	pip install -e .
-
+	$(PYTHON) -m pip install -r requirements.txt -r requirements-export.txt -r requirements-data.txt -r requirements-dev.txt
+	$(PYTHON) -m pip install -e .
+test:
+	$(PYTHON) -m unittest discover -s tests -p "test_*.py"
 train-visual:
-	python scripts/train_srm_cnn.py
-
+	$(PYTHON) scripts/train_srm_cnn.py $(ARGS)
 train-audio:
-	python scripts/train_lcnn_audio.py
-
-train-meta:
-	python scripts/train_xgboost_meta.py
-
-train-all: train-visual train-audio train-meta
-
+	$(PYTHON) scripts/train_lcnn_audio.py $(ARGS)
+train-all:
+	$(PYTHON) scripts/run_training_pipeline.py $(ARGS)
 export:
-	python scripts/export_all_models.py
-
-eval:
-	python scripts/run_full_pipeline.py
-
-package:
-	cd .. && ./scripts/package_for_android.sh
-
-clean:
-	rm -rf checkpoints/* exported/*
+	$(PYTHON) scripts/export_all_models.py $(ARGS)
+parity:
+	$(PYTHON) ../scripts/verify_front_end_parity.py --require-torch
+validate-release:
+	$(PYTHON) scripts/release_bundle.py --validate-only $(ARGS)

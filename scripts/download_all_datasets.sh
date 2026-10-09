@@ -1,15 +1,5 @@
-#!/bin/bash
-set -e
-
-echo "Downloading all datasets..."
-
-echo "Downloading ASVSpoof..."
-python datasets/download_asvspoof.py
-
-echo "Downloading GenImage..."
-python datasets/download_genimage.py
-
-echo "Downloading OpenFake..."
-python datasets/download_openfake.py
-
-echo "All datasets downloaded successfully."
+#!/usr/bin/env bash
+# An explicit pinned corpus is required; no automatic bulk downloads.
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+exec "${ONN_PYTHON:-python}" "$ROOT/ml/scripts/download_all_datasets.py" "$@"

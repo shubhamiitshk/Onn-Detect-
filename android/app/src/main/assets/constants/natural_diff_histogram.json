@@ -22,5 +22,7 @@
     0.014210379001395818,
     0.19077320344014698
   ],
-  "num_images": 500
+  "num_images": 500,
+  "validated": false,
+  "validation_status": "legacy-unvalidated; no reproducible model/frontend/data/calibration lineage"
 }

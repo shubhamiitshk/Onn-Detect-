@@ -28,7 +28,7 @@ fun HeatmapViewer(
                 "XAI heatmap unavailable for this scan type."
             },
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.outline,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 6.dp),
         )
     }

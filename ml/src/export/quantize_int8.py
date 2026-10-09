@@ -3,11 +3,11 @@ import numpy as np
 import os
 
 
-def quantize_keras_model(keras_model, representative_dataset_gen, output_path: str):
+def quantize_keras_model(keras_model, representative_dataset_gen, output_path: str, allow_dynamic_range: bool = False):
     """
     Quantizes a Keras model straight to INT8 TFLite with a REAL-data
-    representative dataset. Falls back to dynamic range quantization when
-    full-int8 conversion fails.
+    representative dataset. Dynamic range fallback requires an explicit
+    diagnostic opt-in; a release conversion fails on unsupported INT8 ops.
     """
     print(f"Quantizing {keras_model.name} to INT8...")
 
@@ -21,6 +21,8 @@ def quantize_keras_model(keras_model, representative_dataset_gen, output_path: s
         quantized = converter.convert()
         kind = "full-int8"
     except Exception as e:
+        if not allow_dynamic_range:
+            raise RuntimeError("Full INT8 conversion failed; no silent release fallback") from e
         print(f"Full-int8 conversion failed ({e}); falling back to dynamic range.")
         converter.representative_dataset = None
         converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS]
@@ -34,10 +36,9 @@ def quantize_keras_model(keras_model, representative_dataset_gen, output_path: s
     return kind
 
 
-def quantize_tflite_model(fp32_tflite_path: str, representative_dataset_gen, output_path: str):
+def quantize_saved_model(fp32_tflite_path: str, representative_dataset_gen, output_path: str, allow_dynamic_range: bool = False):
     """
-    Quantizes a floating-point TFLite flatbuffer to INT8 using Post-Training
-    Quantization (kept for SavedModel/flatbuffer inputs).
+    Quantizes a SavedModel DIRECTORY; TFLite flatbuffers cannot be reconverted.
     """
     print(f"Quantizing {fp32_tflite_path} to INT8...")
 
@@ -52,6 +53,8 @@ def quantize_tflite_model(fp32_tflite_path: str, representative_dataset_gen, out
         quantized = converter.convert()
         kind = "full-int8"
     except Exception as e:
+        if not allow_dynamic_range:
+            raise RuntimeError("Full INT8 conversion failed; no silent release fallback") from e
         print(f"Full-int8 conversion failed ({e}); falling back to dynamic range.")
         converter.representative_dataset = None
         converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS]
@@ -61,33 +64,25 @@ def quantize_tflite_model(fp32_tflite_path: str, representative_dataset_gen, out
     with open(output_path, 'wb') as f:
         f.write(quantized)
 
-    fp32_size = os.path.getsize(fp32_tflite_path) / (1024 * 1024)
+    fp32_size = sum(os.path.getsize(os.path.join(d, f)) for d, _, files in os.walk(fp32_tflite_path) for f in files) / (1024 * 1024)
     int8_size = os.path.getsize(output_path) / (1024 * 1024)
     print(f"[{kind}] {fp32_size:.2f} MB -> {int8_size:.2f} MB "
           f"({(1 - int8_size / fp32_size) * 100:.1f}% smaller)")
     return kind
 
 
-def visual_calibration_dataset(image_paths, limit=200):
-    """Yields NHWC (1,32,32,3) float RGB in [0,1] from REAL images.
-
-    Exactly matches training preprocessing: ToTensor == uint8/255, native res,
-    no resize, no normalization.
-    """
+def visual_calibration_dataset(image_paths, limit=200, input_size=32):
+    """Yield versioned decode + square resize, NHWC float RGB in [0,1]."""
     from PIL import Image
+    from data.image_frontend import decode_image
 
     def generator():
         count = 0
         for p in image_paths:
             if count >= limit:
                 break
-            try:
-                img = Image.open(p).convert("RGB")
-            except Exception:
-                continue
+            img = decode_image(p).image.resize((input_size, input_size), Image.Resampling.BILINEAR)
             arr = np.asarray(img, dtype=np.float32) / 255.0
-            if arr.shape != (32, 32, 3):
-                continue
             yield [arr[np.newaxis]]
             count += 1
 

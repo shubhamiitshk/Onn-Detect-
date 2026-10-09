@@ -82,10 +82,21 @@ class KLCooccurrenceTest {
         assertEquals(1f, hist.sum(), 1e-5f)
     }
 
-    @Test
-    fun `degenerate inputs return neutral score or null histogram`() {
+    @Test(expected = IllegalStateException::class)
+    fun `degenerate inputs are unavailable`() {
         val base = baseline()
         assertNull(analyzer.diffHistogramFromGray(IntArray(4), 1, 4))
-        assertEquals(0.5f, analyzer.scoreFromGray(IntArray(4), 1, 4, base))
+        analyzer.scoreFromGray(IntArray(4), 1, 4, base)
+    }
+    @Test(expected = IllegalArgumentException::class)
+    fun `nonfinite histogram is rejected`() {
+        analyzer.scoreFromHistogram(baseline().apply { this[0] = Float.NaN }, baseline())
+    }
+    @Test(expected = IllegalArgumentException::class)
+    fun `zero baseline is rejected`() { analyzer.scoreFromHistogram(baseline(), FloatArray(21)) }
+    @Test
+    fun `zero probability bins do not generate NaN`() {
+        val spike = FloatArray(21).apply { this[10] = 1f }
+        assertTrue(analyzer.scoreFromHistogram(spike, baseline()).isFinite())
     }
 }

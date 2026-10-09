@@ -1,72 +1,110 @@
+"""LFCC feature extraction for audio deepfake detection.
+
+Linear Frequency Cepstral Coefficients (LFCC) keep the filterbank linear in
+absolute frequency rather than perceptual (Mel) spacing, which preserves the
+high-frequency linearity that neural vocoders and diffusion TTS disturb.
+
+The DSP and the normalization now live in ``lfcc_frontend`` (PyTorch, explicit
+and version-pinned) and ``lfcc_reference`` (NumPy, the parity oracle). This
+module keeps only the API the datasets and export scripts already call.
+
+Do NOT reintroduce ``torchaudio.transforms.LFCC`` here. As of torchaudio 2.11
+it hardcodes ``top_db=80.0``, which floors 91.5 % of spectrogram cells and
+silently changed the training features relative to the Kotlin runtime. See the
+``lfcc_frontend`` module docstring for the measurements.
+"""
+
 import torch
-import torchaudio
-import torchaudio.transforms as T
+
+from .lfcc_frontend import (
+    CENTER,
+    EPSILON,
+    FRONTEND_ID,
+    HOP_LENGTH,
+    N_FFT,
+    N_FILTER,
+    N_LFCC,
+    SAMPLE_RATE,
+    TOP_DB,
+    LFCCFrontend,
+    center_crop_or_pad,
+    normalize_cmn,
+)
+
 
 class LFCCExtractor:
+    """LFCC extractor with the ONN-DETECT front-end contract.
+
+    Args:
+        sample_rate: analysis rate (the waveform must already be resampled).
+        n_filter: number of linear (Hz-spaced) triangular filters.
+        n_lfcc: number of cepstral coefficients (DCT-II output length).
+        n_fft: FFT size, also the window length.
+        hop_length: STFT hop in samples (10 ms at 16 kHz).
     """
-    Linear Frequency Cepstral Coefficients (LFCC) Extractor.
-    Designed for audio deepfake detection, as high-frequency linearity preserves
-    synthetic artifacts better than Mel-scaled filters.
-    """
-    def __init__(self, sample_rate: int = 16000, n_filter: int = 128, n_lfcc: int = 40, n_fft: int = 512, hop_length: int = 160):
-        """
-        Initializes the LFCC transform.
-        Args:
-            sample_rate (int): Audio sample rate (default 16kHz).
-            n_filter (int): Number of linear filters to apply.
-            n_lfcc (int): Number of cepstral coefficients to retain.
-            n_fft (int): Size of FFT.
-            hop_length (int): Length of hop between STFT windows.
-        """
+
+    def __init__(
+        self,
+        sample_rate: int = SAMPLE_RATE,
+        n_filter: int = N_FILTER,
+        n_lfcc: int = N_LFCC,
+        n_fft: int = N_FFT,
+        hop_length: int = HOP_LENGTH,
+    ) -> None:
         self.sample_rate = sample_rate
-        
-        self.lfcc_transform = T.LFCC(
+        self.n_filter = n_filter
+        self.n_lfcc = n_lfcc
+        self.n_fft = n_fft
+        self.hop_length = hop_length
+        self._frontend = LFCCFrontend(
             sample_rate=sample_rate,
             n_filter=n_filter,
             n_lfcc=n_lfcc,
-            speckwargs={
-                'n_fft': n_fft,
-                'hop_length': hop_length,
-                'center': True
-            }
+            n_fft=n_fft,
+            hop_length=hop_length,
+            center=CENTER,
         )
+        if (sample_rate, n_filter, n_lfcc, n_fft, hop_length) != (SAMPLE_RATE, N_FILTER, N_LFCC, N_FFT, HOP_LENGTH):
+            raise ValueError("Non-default frontend requires a separately versioned mobile contract")
+        self.frontend_id = FRONTEND_ID
 
     def extract(self, waveform: torch.Tensor) -> torch.Tensor:
-        """
-        Extracts and normalizes LFCC features from a given waveform.
-        
+        """Extract LFCC for one utterance.
+
         Args:
-            waveform (torch.Tensor): Audio waveform of shape (..., time).
-        
+            waveform: (channels, time) or (time,) float tensor.
+
         Returns:
-            torch.Tensor: Normalized LFCC features of shape (1, 1, time_frames, n_lfcc).
+            (1, 1, n_frames, n_lfcc) â€” the layout LCNNMFMAudio expects.
+            Frames are CMVN-normalized per cepstral coefficient over time.
         """
-        # Ensure waveform is 2D: (channels, time)
         if waveform.dim() == 1:
             waveform = waveform.unsqueeze(0)
-            
-        # Compute LFCC: output shape (channels, n_lfcc, time_frames)
-        lfcc = self.lfcc_transform(waveform)
-        
-        # Normalize: zero mean, unit variance per utterance
-        mean = lfcc.mean(dim=-1, keepdim=True)
-        std = lfcc.std(dim=-1, keepdim=True)
-        # Add epsilon to prevent division by zero
-        lfcc_normalized = (lfcc - mean) / (std + 1e-6)
-        
-        # Rearrange dimensions to (batch, channels, time_frames, n_lfcc_coeffs)
-        # Expected output shape: [1, 1, time_frames, n_lfcc]
-        lfcc_transposed = lfcc_normalized.transpose(1, 2)
-        
-        # If input didn't have a batch dimension natively, ensure the final shape is exactly [1, 1, T, F]
-        if lfcc_transposed.dim() == 3 and lfcc_transposed.size(0) == 1:
-            lfcc_final = lfcc_transposed.unsqueeze(0)
-        else:
-            # Assumes input was (batch, time) or (batch, channels, time)
-            # Ensure it fits the [B, 1, T, F] structure
-            if lfcc_transposed.dim() == 3:
-                lfcc_final = lfcc_transposed.unsqueeze(1)
-            else:
-                lfcc_final = lfcc_transposed
-                
-        return lfcc_final
+
+        # (channels, time) -> (1, time) mono mean when multi-channel.
+        if waveform.shape[0] > 1:
+            waveform = waveform.mean(dim=0, keepdim=True)
+
+        features = self._frontend(waveform)      # (1, n_frames, n_lfcc)
+        return features.unsqueeze(1).float()             # (1, 1, n_frames, n_lfcc)
+
+    def n_frames(self, n_samples: int) -> int:
+        """Frame count for a given sample count (matches extract())."""
+        return self._frontend.n_frames(n_samples)
+
+
+__all__ = [
+    "LFCCExtractor",
+    "LFCCFrontend",
+    "normalize_cmn",
+    "center_crop_or_pad",
+    "FRONTEND_ID",
+    "SAMPLE_RATE",
+    "N_FILTER",
+    "N_LFCC",
+    "N_FFT",
+    "HOP_LENGTH",
+    "CENTER",
+    "EPSILON",
+    "TOP_DB",
+]

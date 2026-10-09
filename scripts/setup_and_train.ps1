@@ -1,41 +1,36 @@
+param(
+    [ValidateSet('auto','cpu','cuda')][string]$Device = 'auto',
+    [string]$VisualConfig = 'configs/srm_cnn_genimage.yaml',
+    [string]$AudioConfig = 'configs/lcnn_asvspoof.yaml',
+    [string]$OutputDir = 'runs/current',
+    [string]$DataRoot = '',
+    [switch]$InstallDependencies
+)
 $ErrorActionPreference = 'Stop'
+$taskRoot = Split-Path -Parent $PSScriptRoot
+function Invoke-Checked {
+    param([string]$Executable, [string[]]$Arguments)
+    & $Executable @Arguments
+    if ($LASTEXITCODE -ne 0) { throw "Command failed with exit $LASTEXITCODE`: $Executable" }
+}
 
-Write-Host "Setting up Python environment using uv..."
-$env:UV_HTTP_TIMEOUT = "3600"
-
-# Create a clear virtual environment using Python 3.10
-uv venv --python 3.10 
-
-# Install PyTorch CUDA (full-fledged) for RTX A4000
-Write-Host "Installing PyTorch with CUDA support..."
-uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-
-# Install the rest of the dependencies
-Write-Host "Installing remaining requirements..."
-uv pip install -r ml/requirements.txt requests
-uv pip install -e ml/
-
-Write-Host "Downloading all datasets..."
-uv run python ml/scripts/download_all_datasets.py
-
-Write-Host "Starting training pipeline..."
-cd ml
-
-Write-Host "Training Visual Model..."
-uv run python scripts/train_srm_cnn.py --device cuda
-
-Write-Host "Training Audio Model..."
-uv run python scripts/train_lcnn_audio.py --device cuda
-
-Write-Host "Training Meta Classifier..."
-uv run python scripts/train_xgboost_meta.py
-
-Write-Host "Exporting models + Android constants..."
-uv run python scripts/export_all_models.py
-uv run python scripts/generate_android_constants.py
-
-Write-Host "Running honest evaluation..."
-uv run python scripts/run_full_pipeline.py
-
-Write-Host "Training pipeline completed!"
-cd ..
+Push-Location -LiteralPath $taskRoot
+try {
+    if ($InstallDependencies) {
+        if (-not (Get-Command uv -ErrorAction SilentlyContinue)) { throw 'uv is required for -InstallDependencies; install it or use an existing Python environment.' }
+        # Never replace an existing environment or download datasets implicitly.
+        if (-not (Test-Path -LiteralPath '.venv/Scripts/python.exe')) {
+            Invoke-Checked uv @('venv','--python','3.11','.venv')
+        }
+        Invoke-Checked uv @('pip','install','--python','.venv/Scripts/python.exe','-r','ml/requirements.txt','-r','ml/requirements-export.txt','-r','ml/requirements-data.txt')
+        Invoke-Checked uv @('pip','install','--python','.venv/Scripts/python.exe','--no-deps','-e','ml')
+    }
+    $taskPython = Join-Path $taskRoot '.venv/Scripts/python.exe'
+    if (-not (Test-Path -LiteralPath $taskPython)) { throw 'Missing .venv. Use -InstallDependencies or run the pipeline with your own configured Python environment.' }
+    Push-Location -LiteralPath (Join-Path $taskRoot 'ml')
+    try {
+        $taskArguments = @('scripts/run_training_pipeline.py','--visual-config',$VisualConfig,'--audio-config',$AudioConfig,'--device',$Device,'--output-dir',$OutputDir)
+        if ($DataRoot) { $taskArguments += @('--data-root',$DataRoot) }
+        Invoke-Checked $taskPython $taskArguments
+    } finally { Pop-Location }
+} finally { Pop-Location }

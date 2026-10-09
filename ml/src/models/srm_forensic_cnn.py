@@ -125,7 +125,7 @@ class SRMForensicCNN(nn.Module):
             nn.Sigmoid()
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, return_logits: bool = False) -> torch.Tensor:
         """
         Forward pass.
         Args:
@@ -135,8 +135,11 @@ class SRMForensicCNN(nn.Module):
         """
         x = self.srm(x)
         x = self.backbone(x)
-        x = self.head(x)
+        x = self.head[:-1](x) if return_logits else self.head(x)
         return x
+
+    def forward_logits(self, x):
+        return self.forward(x, return_logits=True)
 
     def count_parameters(self) -> int:
         """Counts the total number of trainable parameters."""
@@ -151,11 +154,11 @@ class SRMForensicCNN(nn.Module):
         if not os.path.exists(checkpoint_path):
             raise FileNotFoundError(f"Checkpoint not found at {checkpoint_path}")
         
-        state_dict = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
-        # Check if it's a Lightning checkpoint (often nested under 'state_dict')
-        if "state_dict" in state_dict:
-            state_dict = state_dict["state_dict"]
-            
+        from training.checkpoint import load_verified_checkpoint
+        checkpoint = load_verified_checkpoint(checkpoint_path)
+        if checkpoint['contract'].get('architecture') != cls.__name__:
+            raise ValueError('Checkpoint architecture mismatch')
+        state_dict = checkpoint['state_dict']
         model.load_state_dict(state_dict)
         return model
 

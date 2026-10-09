@@ -75,11 +75,11 @@ class _MFM(tf.keras.layers.Layer):
 # SRMForensicCNN
 # --------------------------------------------------------------------------
 
-def build_keras_srm(pt_model) -> tf.keras.Model:
+def build_keras_srm(pt_model, input_size: int = 32) -> tf.keras.Model:
     """Rebuild SRMForensicCNN channels-last and copy trained weights."""
     pt = pt_model
 
-    inp = tf.keras.Input((32, 32, 3), name="input")
+    inp = tf.keras.Input((input_size, input_size, 3), name="input")
     # SRM fixed filters + tanh (frozen in PyTorch)
     srm_layer = tf.keras.layers.Conv2D(
         3, 5, strides=1, padding="same", use_bias=False,
@@ -166,13 +166,25 @@ def build_keras_lcnn(pt_model, input_frames: int, n_lfcc: int = 40) -> tf.keras.
     for bi, (ch, ksize) in enumerate([(192, 1), (192, 3)], start=1):
         x = conv_block(x, pt.block4, 2 * (bi - 1), ch, ksize, f"b4_c{bi}")
 
-    x = tf.keras.layers.GlobalAveragePooling2D(name="gap")(x)
+    # AdaptiveAvgPool2d((1, 2)) == mean over time (keep W), then Flatten the
+    # surviving 2 frequency groups => W*C channels. Here C=96, W=2 => 192.
+    # Average over time (axis=1 in channels-last NHWC (B,T,W,C)); NOT
+    # GlobalAveragePooling2D which also collapses W.
+    # (Lambda/Permute layers: raw tf.* ops on symbolic KerasTensors are
+    # rejected by Keras 3, so every op lives inside a layer.)
+    x = tf.keras.layers.Lambda(
+        lambda t: tf.reduce_mean(t, axis=1), name="time_mean")(x)  # (B, W=2, C=96)
+    # Cross-platform flatten-order contract: PyTorch flattens (B,C,1,2) as
+    # c*2+w, so Keras must present (B, C, W) for the Dense weights to line up.
+    x = tf.keras.layers.Permute((2, 1), name="to_channel_first")(x)  # (B, C=96, W=2)
+    x = tf.keras.layers.Flatten(name="gap_flat")(x)  # (B, C*W) = (B, 192)
 
     fc1 = tf.keras.layers.Dense(160, name="cls_fc1")
     x = fc1(x); _set_dense(fc1, pt.classifier[0])
     x = _MFM()(x)
+    # NOTE: pt.classifier[2] is Dropout (train-time only, no weights).
     fc2 = tf.keras.layers.Dense(1, activation="sigmoid", name="cls_fc2")
-    out = fc2(x); _set_dense(fc2, pt.classifier[2])
+    out = fc2(x); _set_dense(fc2, pt.classifier[3])
 
     return tf.keras.Model(inp, out, name="lcnn_mfm_audio")
 
@@ -181,20 +193,29 @@ def build_keras_lcnn(pt_model, input_frames: int, n_lfcc: int = 40) -> tf.keras.
 # conversion entry points
 # --------------------------------------------------------------------------
 
-def keras_parity_check(keras_model, pt_model, inputs_nhwc, modality: str) -> float:
+def keras_parity_check(keras_model, pt_model, inputs_nhwc, modality: str, tolerance: float = 1e-4) -> float:
     """Max |keras - pytorch| over NHWC inputs. Catches weight-transfer bugs
     independently of quantization error."""
     import torch
 
+    if len(inputs_nhwc) == 0:
+        raise ValueError("FP32 parity needs actual inputs")
     worst = 0.0
+    pt_model.cpu().eval()
     for x in inputs_nhwc[:32]:
         xb = x[np.newaxis]
-        k_out = float(keras_model(xb, training=False).numpy().ravel()[0])
+        if not np.isfinite(xb).all():
+            raise ValueError('Non-finite FP32 parity input')
+        k_values = np.asarray(keras_model(xb, training=False).numpy())
         with torch.no_grad():
-            p_out = float(pt_model(torch.from_numpy(
-                from_keras_input(xb, modality))).numpy().ravel()[0])
+            p_values = pt_model(torch.from_numpy(from_keras_input(xb, modality))).numpy()
+        if k_values.shape != (1, 1) or p_values.shape != (1, 1) or not np.isfinite(k_values).all() or not np.isfinite(p_values).all():
+            raise ValueError('FP32 parity requires one finite scalar score from each model')
+        k_out, p_out = float(k_values[0, 0]), float(p_values[0, 0])
         worst = max(worst, abs(k_out - p_out))
     print(f"FP32 Keras-vs-PyTorch parity ({modality}): max err {worst:.2e}")
+    if not np.isfinite(worst) or worst > tolerance:
+        raise ValueError(f"FP32 weight-transfer parity failed: {worst} > {tolerance}")
     return worst
 
 

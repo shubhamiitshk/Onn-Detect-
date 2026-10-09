@@ -67,7 +67,7 @@ object FFTUtil {
      * fftshift-ed so DC sits at the center, matching the azimuthal average.
      */
     fun powerSpectrum2D(pixels: DoubleArray, n: Int): DoubleArray {
-        require(n and (n - 1) == 0)
+        require(n > 0 && n and (n - 1) == 0 && n.toLong() * n == pixels.size.toLong() && pixels.all { it.isFinite() })
         val re = pixels.copyOf()
         val im = DoubleArray(n * n)
 

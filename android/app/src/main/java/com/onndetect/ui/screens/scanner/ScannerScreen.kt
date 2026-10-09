@@ -1,88 +1,47 @@
 package com.onndetect.ui.screens.scanner
 
 import android.net.Uri
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
+import com.onndetect.R
+import com.onndetect.data.repository.ScanHistoryRepository
 import com.onndetect.ui.components.ScanProgressIndicator
+import com.onndetect.ui.screens.result.AssessmentDetails
 
 @Composable
-fun ScannerScreen(
-    navController: NavController,
-    uri: String?,
-    mode: String?,
-    viewModel: ScannerViewModel = hiltViewModel(),
-) {
-    val state by viewModel.state.collectAsState()
-
-    LaunchedEffect(uri, mode) {
-        if (uri != null && state.completedScanId == null && !state.scanning) {
-            val parsed = Uri.parse(uri)
-            when (mode) {
-                "AUDIO_ONLY" -> viewModel.scanAudio(parsed)
-                "VIDEO_ONLY", "VIDEO_WITH_AUDIO", "CROSS_MODAL" -> viewModel.scanVideo(parsed)
-                else -> viewModel.scanImage(parsed)
-            }
-        }
-    }
-
+fun ScannerScreen(navController: NavController, uri: String?, mode: String?, viewModel: ScannerViewModel = hiltViewModel()) {
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    LaunchedEffect(uri,mode) { uri?.let { viewModel.start(Uri.parse(it),mode) } }
+    BackHandler { viewModel.cancel(); navController.popBackStack() }
     LaunchedEffect(state.completedScanId) {
-        state.completedScanId?.let { id ->
-            navController.navigate("result/$id") {
-                popUpTo("home")
-            }
-            viewModel.consumeCompletion()
-        }
+        state.completedScanId?.let { id -> navController.navigate("result/$id") { popUpTo("home") }; viewModel.consumeCompletion() }
     }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text("Scanner", style = MaterialTheme.typography.headlineSmall)
-        Spacer(Modifier.height(24.dp))
-
-        when {
-            state.error != null -> {
-                Text(
-                    "Error: ${state.error}",
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodyLarge,
-                )
-                Spacer(Modifier.height(16.dp))
-                Button(onClick = { navController.popBackStack() }) { Text("Back") }
-            }
-
-            state.scanning || state.stage.isNotEmpty() ->
-                ScanProgressIndicator(
-                    stage = state.stage.ifEmpty { "Preparing…" },
-                    percent = state.percent,
-                    indeterminate = state.indeterminate,
-                )
-
-            else -> {
-                Text("Pick an image on the Home screen to start a scan.")
-                Button(
-                    onClick = { navController.popBackStack() },
-                    modifier = Modifier.padding(top = 16.dp),
-                ) { Text("Back") }
-            }
+    Column(Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text(stringResource(R.string.scanner_title), style = MaterialTheme.typography.headlineSmall)
+        if (uri == null) Text(stringResource(R.string.invalid_input))
+        state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        state.unsavedResult?.let { result ->
+            AssessmentDetails(ScanHistoryRepository.toEntry(result))
+            Button(onClick = viewModel::retrySave) { Text(stringResource(R.string.retry_save)) }
         }
+        if (state.scanning) {
+            ScanProgressIndicator(state.stage,state.percent,state.indeterminate)
+            Text(stringResource(R.string.progress_notice), style = MaterialTheme.typography.bodySmall)
+            Button(onClick = viewModel::cancel) { Text(stringResource(R.string.cancel)) }
+        } else if (state.error != null && state.unsavedResult == null && uri != null) {
+            Button(onClick = { viewModel.start(Uri.parse(uri),mode,retry = true) }) { Text(stringResource(R.string.retry)) }
+        }
+        TextButton(onClick = { viewModel.cancel(); navController.popBackStack() }) { Text(stringResource(R.string.back)) }
     }
 }

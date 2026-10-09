@@ -98,6 +98,8 @@ err = np.abs(np.sort(kt) - np.sort(ref.ravel())).max()  # order-insensitive
 direct = np.abs(kt - ref.ravel()).max()
 print(f"FFT algorithm vs numpy: direct max diff {direct:.2e} "
       f"(order-insensitive {err:.2e})")
+if not np.allclose(kt, ref.ravel(), rtol=1e-10, atol=1e-7):
+    raise SystemExit("FFT algorithm parity failed")
 
 # ---- step 3: full analyzer chain parity on REAL images ----
 from meta_classifier.feature_extractor import fft_features, to_gray_u8, azimuthal_average, power_law_slope, wiener_entropy
@@ -107,7 +109,7 @@ def android_chain(img_path, size=256):
     scaled = img.resize((size, size), Image.BILINEAR)
     gray01 = np.asarray(scaled, dtype=np.float64)
     g = (gray01[..., 0] * 299 + gray01[..., 1] * 587 + gray01[..., 2] * 114) / 1000.0
-    g = np.clip(g, 0, 255) / 255.0
+    g = np.clip(g, 0, 255).astype(np.uint8).astype(np.float64) / 255.0
     ps = kt_power_spectrum(g.ravel(), size).reshape(size, size)
     radial = azimuthal_average(ps)
     slope = power_law_slope(radial)
@@ -140,7 +142,7 @@ for i, item in enumerate(files):
         scaled = item.resize((256, 256), Image.BILINEAR)
         gray01 = np.asarray(scaled, dtype=np.float64)
         g = (gray01[..., 0] * 299 + gray01[..., 1] * 587 + gray01[..., 2] * 114) / 1000.0
-        g = np.clip(g, 0, 255) / 255.0
+        g = np.clip(g, 0, 255).astype(np.uint8).astype(np.float64) / 255.0
         ps = kt_power_spectrum(g.ravel(), 256).reshape(256, 256)
         radial = azimuthal_average(ps)
         slope = power_law_slope(radial)
@@ -154,3 +156,6 @@ for i, item in enumerate(files):
     print(f"{name}: python(score={py_score:.6f}, flat={py_flat:.6e}) "
           f"android(score={kt_score:.6f}, flat={kt_flat:.6e})")
 print(f"\nMax delta  score: {max_ds:.2e} | flatness: {max_df:.2e}")
+if not np.isfinite([max_ds, max_df]).all() or max_ds > 1e-6 or max_df > 1e-7:
+    raise SystemExit("FFT feature parity failed")
+print("Measured Python port parity passed. Kotlin JVM tests remain a separate gate.")

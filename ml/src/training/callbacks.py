@@ -8,6 +8,8 @@ class EarlyStopping:
     Early stopping to terminate training if a validation metric stops improving.
     """
     def __init__(self, patience: int = 5, mode: str = 'max', min_delta: float = 1e-4):
+        if mode not in ("min", "max") or patience < 1:
+            raise ValueError("Invalid early-stopping mode/patience")
         self.patience = patience
         self.mode = mode
         self.min_delta = min_delta
@@ -32,37 +34,28 @@ class EarlyStopping:
 
 
 class ModelCheckpoint:
-    """
-    Saves the best model based on a monitored metric.
-    """
-    def __init__(self, save_dir: str, model_name: str, mode: str = 'max'):
-        self.save_dir = save_dir
-        self.model_name = model_name
-        self.mode = mode
+    """Compatibility callback requiring the same lineage as the main trainer."""
+    def __init__(self, save_dir, model_name, mode='max'):
+        if mode not in ('min', 'max'):
+            raise ValueError('Unsupported checkpoint mode')
+        self.save_dir, self.model_name, self.mode = save_dir, model_name, mode
         self.best_score = None
-        
-        os.makedirs(save_dir, exist_ok=True)
-        self.is_better = lambda new, best: new > best if mode == 'max' else new < best
 
-    def __call__(self, metric_value: float, model: torch.nn.Module, optimizer: torch.optim.Optimizer, epoch: int):
-        if self.best_score is None or self.is_better(metric_value, self.best_score):
-            print(f"\n🌟 Metric improved from {self.best_score} to {metric_value:.5f}. Saving checkpoint...")
+    def __call__(self, metric_value, model, optimizer, epoch, extra=None):
+        if not extra or not extra.get('contract'):
+            raise ValueError('Checkpoint saves require complete versioned training lineage')
+        if self.best_score is None or (metric_value > self.best_score if self.mode == 'max' else metric_value < self.best_score):
+            from .checkpoint import atomic_torch_save
             self.best_score = metric_value
-            
-            save_path = os.path.join(self.save_dir, f"{self.model_name}_best.pth")
-            state = {
-                'epoch': epoch,
-                'state_dict': model.state_dict(),
-                'optimizer': optimizer.state_dict(),
-                'best_metric': self.best_score
-            }
-            torch.save(state, save_path)
+            state = dict(extra, schema_version=1, epoch=epoch, state_dict=model.state_dict(),
+                         optimizer=optimizer.state_dict(), best_metric=metric_value)
+            atomic_torch_save(state, os.path.join(self.save_dir, f'{self.model_name}_best.pth'))
 
 
 class CosineWarmupScheduler:
     """
     Learning Rate Scheduler: Linear Warmup followed by Cosine Annealing.
-    Optimized for stable training on large batches (e.g. 128 on RTX A4000).
+    Uses the explicitly configured floor and epoch count.
     """
     def __init__(self, optimizer: torch.optim.Optimizer, warmup_epochs: int, max_epochs: int, base_lr: float, min_lr: float = 1e-6):
         self.optimizer = optimizer

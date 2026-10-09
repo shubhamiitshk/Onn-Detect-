@@ -1,42 +1,31 @@
-# Model Card - ONN-DETECT v1.0
+# Model card: current baseline
 
-## Models
+## Intended use
 
-| Model | Architecture | Input | Output | Size (assets) |
-|---|---|---|---|---|
-| SRMForensicCNN | frozen 5x5 SRM filters -> depthwise-separable CNN | `(1,32,32,3)` RGB float [0,1] | P(AI-generated) | ~98 KB INT8 |
-| LCNN-MFM-Audio | LightCNN with Max-Feature-Map | `(1,T,40,1)` LFCC (T=401 @ 4s/16kHz) | P(synthetic) | ~492 KB INT8 |
-| XGBoost meta fusion | 19 boosted trees, transpiled to Kotlin if/else | 10-feature vector | P(AI-generated) | source only |
+Offline media diagnostics in an Android research application. Current bundled weights cannot support a validated authenticity verdict. Results are Inconclusive; successful feature extraction may still expose labeled diagnostic signals.
 
-## Training data
+## Assets and lineage
 
-- Visual: GenImage thumbnails (real vs AI-generated), native 32x32.
-- Audio: ASVspoof 2019 (bonafide vs spoof), 16 kHz mono, 4 s windows.
-- Meta: features extracted from genimage/val with the trained SRM-CNN;
-  provenance/temporal slots (features 6-9) are neutral constants pending
-  real per-file labels.
+The existing SRM image and LCNN speech TFLite binaries are preserved. SHA256 and declared tensor contracts are in android/app/src/main/assets/constants/release_manifest.json. The release is legacy-bundled-unvalidated with validated=false. Hash integrity establishes bytes, not detector quality.
 
-## Measured performance (held-out; see docs/BENCHMARK_RESULTS.md)
+Image input is float32 NHWC[1,32,32,3]. Speech input is float32 NHWC[1,401,40,1]. Output is float32[1,1]. Quantized internal operations do not imply integer I/O. The runtime validates actual shapes, dtypes and finite output.
 
-- SRMForensicCNN: AUC 0.956 / accuracy 0.889 on genimage/val (n=4000).
-- LCNN-MFM: EER 0.050 / AUC 0.976 on asvspoof2019/test (n=280).
-- XGBoost meta: AUC 0.962 on held-out feature split (n=1000).
+The previous training source identities, original groups, sealed splits, calibration and original mobile parity are not proven. Historical metrics are not current acceptance evidence. The source LCNN now retains frequency ordering and the shared LFCC contract; this requires newly trained matched weights.
 
-## Intended use & limits
+## Output and unsupported cases
 
-- Purpose: triage support for suspected AI-generated media, fully offline.
-- NOT a court-grade proof of authenticity or forgery.
-- Trained on specific generators/datasets; expect degraded accuracy on
-  unseen generators, heavy recompression, screenshots, or scanned documents.
-- The visual model requires native-resolution input; upscaling inputs
-  invalidates it.
-- Features 6-9 carry no signal until the meta-model is retrained with real
-  provenance/temporal labels.
+Validated releases use real=0/synthetic=1, a frozen calibrated threshold and an explicit operating point. A score is not confidence or a proof of authenticity. Failures and unavailable evidence cannot produce an authentic verdict.
 
-## Security
+Speech-window, file-level audio, speech/music routing and video aggregation are separate contracts. Existing sampled audio/video cannot produce validated file-level verdicts. Biometric enrollment, face landmarks, lip-sync, true PRNU attribution, cryptographic C2PA verification and SynthID verification are not implemented.
 
-- `.tflite` files verified against SHA-256 (`model_hashes.json`) at app start.
-- Voiceprints (if enrolled) stored via EncryptedSharedPreferences
-  (AES-256-GCM/SIV, Android Keystore).
-- App has no INTERNET permission; network security config removes all trust
-  anchors.
+EXIF, metadata strings, Laplacian variance and temporal descriptors are diagnostic observations with alternative explanations. They do not override a verdict. Missing metadata does not establish AI generation.
+
+## Limits
+
+The image baseline is especially limited by32px training and unknown generator diversity. Recompression, screenshots, recapture, retouching, partial edits, unfamiliar camera pipelines and unseen generator updates can shift results. Speech can shift with language, speaker, channel, codec, length, noise and synthesis engine. Non-speech audio is outside a speech detector's validation.
+
+A future release must bind model/frontend/calibration/fusion/data/source/report hashes and pass independent phone testing. The installer rejects unvalidated releases. Do not set validated=true manually or promote historical AUC into a device validation certificate.
+
+## Improvement work
+
+See the complete review for larger corpora, license constraints, teacher/student experiments and distinct speech/music/environmental datasets. The training pipeline now supports strict lazy loading, reproducible checkpoints, configured image resolution, independent fusion splits and staged INT8 exports. These are training infrastructure improvements, not proof of improved detector accuracy.

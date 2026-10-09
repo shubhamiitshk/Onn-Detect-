@@ -6,13 +6,8 @@ import javax.inject.Inject
 import kotlin.math.abs
 import kotlin.math.sqrt
 
+/** Legacy residual-energy proxy. It does not measure camera PRNU or origin. */
 class PRNUAnalyzer @Inject constructor() {
-
-    /**
-     * Extracts Photo Response Non-Uniformity (PRNU) noise residual.
-     * Real camera sensors leave a unique, microscopic noise fingerprint.
-     * AI-generated images (Midjourney, DALL-E) lack this physical hardware footprint.
-     */
     fun analyze(bitmap: Bitmap): Float {
         // Downsample slightly to cap processing time on low-end devices
         val size = 512
@@ -21,24 +16,24 @@ class PRNUAnalyzer @Inject constructor() {
         // 1. Extract Noise Residual (Simplified High-Pass Filter)
         // In a full production C++ JNI module, this would use a 2D Daubechies 
         // Wavelet Transform (DWT) to isolate the exact sensor pattern.
-        val noiseResidual = extractNoiseResidual(scaled, size)
+        val noiseResidual = try { extractNoiseResidual(scaled, size) }
+        finally { if (scaled !== bitmap) scaled.recycle() }
         
         // 2. Calculate Peak-to-Correlation Energy (PCE) or general variance
-        // AI images are mathematically "too smooth" at the hardware noise level.
+        // Descriptor thresholds are uncalibrated and excluded from verdicts.
         val variance = calculateVariance(noiseResidual)
         
-        // Typical natural PRNU variance is around 2.0 to 5.0 (scaled)
-        // AI images often drop below 0.5 because they lack physical sensor defects.
+        // Legacy descriptor mapping retained for diagnostics only.
         
         var anomalyScore = 0.0f
         if (variance < 0.8f) {
-            // Highly suspicious: lacks physical sensor noise
+            // Low residual energy
             anomalyScore = 0.9f 
         } else if (variance > 8.0f) {
-            // Highly suspicious: injected artificial noise (e.g. GAN noise vectors)
+            // High residual energy
             anomalyScore = 0.7f
         } else {
-            // Natural hardware noise profile
+            // Intermediate residual energy
             anomalyScore = 0.1f
         }
         
@@ -48,25 +43,24 @@ class PRNUAnalyzer @Inject constructor() {
     private fun extractNoiseResidual(bitmap: Bitmap, size: Int): FloatArray {
         val pixels = IntArray(size * size)
         bitmap.getPixels(pixels, 0, size, 0, 0, size, size)
-        
-        val residual = FloatArray(pixels.size)
+
+        // Only the interior is computed; return exactly (size-2)^2 values so
+        // the variance does not count the two-pixel uncomputed border as
+        // signal (the old layout embedded those as zeros, and then also
+        // dropped interior zeros - a double corruption).
+        val residual = FloatArray((size - 2) * (size - 2))
         val width = size
-        
-        // Simplified Laplacian high-pass filter to isolate high-frequency noise
+        var p = 0
+
         for (y in 1 until size - 1) {
             for (x in 1 until size - 1) {
                 val idx = y * width + x
-                
-                // Get luma (brightness)
                 val center = getLuma(pixels[idx])
                 val left = getLuma(pixels[idx - 1])
                 val right = getLuma(pixels[idx + 1])
                 val up = getLuma(pixels[idx - width])
                 val down = getLuma(pixels[idx + width])
-                
-                // Laplacian edge/noise detection
-                val laplacian = (4 * center) - left - right - up - down
-                residual[idx] = laplacian
+                residual[p++] = 4 * center - left - right - up - down
             }
         }
         return residual
@@ -80,26 +74,17 @@ class PRNUAnalyzer @Inject constructor() {
     }
     
     private fun calculateVariance(data: FloatArray): Float {
-        var sum = 0f
-        var count = 0
-        
-        // Skip edges where Laplacian is 0
+        if (data.isEmpty()) return 0f
+
+        var sum = 0.0
+        for (v in data) sum += v.toDouble()
+        val mean = sum / data.size
+
+        var sumSquares = 0.0
         for (v in data) {
-            if (v != 0f) {
-                sum += v
-                count++
-            }
+            val d = v - mean
+            sumSquares += d * d
         }
-        if (count == 0) return 0f
-        
-        val mean = sum / count
-        var sumSquares = 0f
-        for (v in data) {
-            if (v != 0f) {
-                sumSquares += (v - mean) * (v - mean)
-            }
-        }
-        
-        return sumSquares / count
+        return (sumSquares / data.size).toFloat()
     }
 }

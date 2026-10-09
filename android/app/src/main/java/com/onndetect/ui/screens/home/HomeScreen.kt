@@ -4,161 +4,52 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.compose.runtime.collectAsState
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
+import com.onndetect.R
 
 @Composable
-fun HomeScreen(
-    navController: NavController,
-    viewModel: HomeViewModel = hiltViewModel(),
-) {
-    val modelsVerified by viewModel.modelsVerified.collectAsState()
-
-    val picker = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickVisualMedia()
-    ) { picked: Uri? ->
-        if (picked != null) {
-            navController.navigate("scanner?uri=${Uri.encode(picked.toString())}&mode=IMAGE_ONLY")
-        }
+fun HomeScreen(navController: NavController, viewModel: HomeViewModel = hiltViewModel()) {
+    val readiness by viewModel.readiness.collectAsStateWithLifecycle()
+    val modelsVerified = if (readiness.image == null || readiness.audio == null) null else readiness.image == true && readiness.audio == true
+    fun open(uri: Uri?, mode: String) {
+        if (uri != null) navController.navigate("scanner?uri=${Uri.encode(uri.toString())}&mode=$mode")
     }
-
-    val audioPicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { picked: Uri? ->
-        if (picked != null) {
-            navController.navigate("scanner?uri=${Uri.encode(picked.toString())}&mode=AUDIO_ONLY")
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { open(it, "IMAGE_ONLY") }
+    val audioPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { open(it, "AUDIO_ONLY") }
+    val videoPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { open(it, "VIDEO_ONLY") }
+    Column(Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text(stringResource(R.string.app_name), style = MaterialTheme.typography.headlineLarge)
+        Text(stringResource(R.string.offline_subtitle), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(stringResource(when (modelsVerified) { true -> R.string.assets_ready; false -> R.string.assets_failed; null -> R.string.assets_checking }),
+            color = if (modelsVerified == false) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(stringResource(R.string.experimental_notice), style = MaterialTheme.typography.bodyMedium)
+        ScannerCard(stringResource(R.string.image_title), stringResource(R.string.image_subtitle), readiness.image == true) {
+            picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
         }
-    }
-
-    val videoPicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { picked: Uri? ->
-        if (picked != null) {
-            navController.navigate("scanner?uri=${Uri.encode(picked.toString())}&mode=VIDEO_ONLY")
-        }
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        
-        Text(
-            "ONN-DETECT", 
-            style = MaterialTheme.typography.headlineLarge,
-            color = MaterialTheme.colorScheme.primary,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 4.sp
-        )
-        Spacer(Modifier.height(4.dp))
-        Text(
-            "Zero-Trust Offline Forensics",
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            letterSpacing = 1.sp
-        )
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 16.dp, bottom = 32.dp),
-            horizontalArrangement = Arrangement.Center,
-        ) {
-            val (label, color) = when (modelsVerified) {
-                true -> "SYSTEMS ONLINE" to MaterialTheme.colorScheme.tertiary
-                false -> "INTEGRITY COMPROMISED" to MaterialTheme.colorScheme.error
-                null -> "INITIALIZING CORE..." to MaterialTheme.colorScheme.secondary
-            }
-            Card(
-                colors = CardDefaults.cardColors(containerColor = color.copy(alpha = 0.1f)),
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Text(
-                    label, 
-                    color = color, 
-                    style = MaterialTheme.typography.labelMedium,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp
-                )
-            }
-        }
-
-        ScannerCard(
-            title = "Visual Forensics",
-            subtitle = "Scan JPG/PNG for generative artifacts",
-            onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
-        )
-        
-        Spacer(Modifier.height(16.dp))
-        
-        ScannerCard(
-            title = "Audio Forensics",
-            subtitle = "Analyze Voice & Speech (WAV/FLAC)",
-            onClick = { audioPicker.launch(arrayOf("audio/*")) }
-        )
-        
-        Spacer(Modifier.height(16.dp))
-
-        ScannerCard(
-            title = "Cross-Modal Forensics",
-            subtitle = "Deepfake Video & Lip-Sync (MP4)",
-            onClick = { videoPicker.launch(arrayOf("video/*")) }
-        )
-        
-        Spacer(Modifier.height(32.dp))
-
-        OutlinedButton(
-            onClick = { navController.navigate("history") },
-            modifier = Modifier.fillMaxWidth().height(56.dp),
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            Text("Forensic Log", letterSpacing = 1.sp)
-        }
-
-        Spacer(Modifier.height(12.dp))
-
-        OutlinedButton(
-            onClick = { navController.navigate("enrollment") },
-            modifier = Modifier.fillMaxWidth().height(56.dp),
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            Text("Voice Liveness Enrollment", letterSpacing = 1.sp)
-        }
+        ScannerCard(stringResource(R.string.audio_title), stringResource(R.string.audio_subtitle), readiness.audio == true) { audioPicker.launch(arrayOf("audio/*")) }
+        ScannerCard(stringResource(R.string.video_title), stringResource(R.string.video_subtitle), readiness.image == true) { videoPicker.launch(arrayOf("video/*")) }
+        Text(stringResource(R.string.local_provider_notice), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        OutlinedButton(onClick = { navController.navigate("history") }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.history_title)) }
     }
 }
-
 @Composable
-fun ScannerCard(title: String, subtitle: String, onClick: () -> Unit) {
-    Card(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-    ) {
-        Column(modifier = Modifier.padding(20.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
-            Spacer(Modifier.height(4.dp))
-            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+fun ScannerCard(title: String, subtitle: String, enabled: Boolean = true, onClick: () -> Unit) {
+    Card(onClick = onClick, enabled = enabled, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

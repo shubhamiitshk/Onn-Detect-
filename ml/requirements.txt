@@ -1,17 +1,12 @@
-ai-edge-torch
-tensorflow
-librosa
-soundfile
-opencv-python
-albumentations
-xgboost
-scikit-learn
-datasets
-huggingface-hub
-wandb
-hydra-core
-omegaconf
-tqdm
-pytest
-jupyter
-matplotlib
+# Direct dependency constraints; archive resolved pip freeze with each release.
+# CPU regression matrix: Python 3.11, torch 2.14.1, numpy 2.3.5.
+torch==2.14.1
+numpy==2.3.5
+Pillow==12.2.0
+PyYAML==6.0.2
+scipy==1.17.1
+scikit-learn==1.6.1
+xgboost==3.2.0
+joblib==1.5.3
+tqdm==4.70.0
+soundfile==0.13.1

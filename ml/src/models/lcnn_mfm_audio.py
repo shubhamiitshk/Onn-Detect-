@@ -71,17 +71,32 @@ class LCNNMFMAudio(nn.Module):
         )
         
         # Global Pooling and Classifier
-        self.global_pool = nn.AdaptiveAvgPool2d(1)
+        # Pool over TIME only, keeping the reduced frequency extent. The old
+        # AdaptiveAvgPool2d(1) averaged over BOTH axes, which collapses the
+        # cepstral ordering (c0 = log energy, c1..c39 = spectral shape) into
+        # one number per channel - the model literally cannot see where in
+        # frequency a vocoder artifact lives. Pooling time to 1 and keeping
+        # frequency preserves the discrimination the LFCC front end encodes.
+        # Input contract is (T, 40): after 4 x stride-2 pools the frequency
+        # extent is 40 -> 20 -> 10 -> 5 -> 2, so we keep exactly 2 groups and
+        # halve nothing away.
+        self.global_pool = nn.AdaptiveAvgPool2d((1, 2))
         self.flatten = nn.Flatten()
-        
+
         self.classifier = nn.Sequential(
-            nn.Linear(96, 160),
+            # 96 channels x 2 frequency groups
+            nn.Linear(96 * 2, 160),
             MaxFeatureMap('1d'), # 160 -> 80 features
+            # Dropout on the MFM output (STC recipe: 0.4). Inactive at export:
+            # the Keras builder transfers only the two Linear layers, so the
+            # indices below must skip this position (see torch_to_tflite_keras
+            # build_keras_lcnn: fc1 <- classifier[0], fc2 <- classifier[3]).
+            nn.Dropout(p=0.4),
             nn.Linear(80, 1),
             nn.Sigmoid()
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, return_logits: bool = False) -> torch.Tensor:
         """
         Forward pass.
         Args:
@@ -106,9 +121,12 @@ class LCNNMFMAudio(nn.Module):
         x = self.global_pool(x)
         x = self.flatten(x)
         
-        x = self.classifier(x)
+        x = self.classifier[:-1](x) if return_logits else self.classifier(x)
         
         return x
+
+    def forward_logits(self, x):
+        return self.forward(x, return_logits=True)
 
     def count_parameters(self) -> int:
         """Counts total trainable parameters."""
@@ -120,10 +138,14 @@ class LCNNMFMAudio(nn.Module):
         model = cls()
         if not os.path.exists(checkpoint_path):
             raise FileNotFoundError(f"Checkpoint not found at {checkpoint_path}")
-        state_dict = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
-        if "state_dict" in state_dict:
-            state_dict = state_dict["state_dict"]
-            
+        from training.checkpoint import load_verified_checkpoint
+        checkpoint = load_verified_checkpoint(checkpoint_path)
+        if checkpoint['contract'].get('architecture') != cls.__name__:
+            raise ValueError('Checkpoint architecture mismatch')
+        from data.lfcc_frontend import FRONTEND_ID
+        if checkpoint['contract']['frontend_id'] != FRONTEND_ID:
+            raise ValueError('Checkpoint LFCC frontend mismatch')
+        state_dict = checkpoint['state_dict']
         model.load_state_dict(state_dict)
         return model
 

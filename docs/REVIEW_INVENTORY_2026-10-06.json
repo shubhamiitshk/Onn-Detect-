@@ -1,0 +1,1376 @@
+{
+  "reviewDate": "2026-10-06",
+  "root": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-",
+  "fileCount": 171,
+  "excluded": "Git internals, build/cache outputs, Python bytecode, IDE/local configuration from main count, and new review artifacts. Additional local configuration and generated artifacts were inspected as documented in the reviews.",
+  "files": [
+    {
+      "path": ".env.example",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/.env.example",
+      "scope": "Tooling and documentation",
+      "bytes": 16,
+      "sha256": "d45c6336ef28791510b8f3dc17a4de5e6ce001683bfc4769b6c51b60f89b03c9",
+      "inspection": "complete text review"
+    },
+    {
+      "path": ".github/workflows/build-android.yml",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/.github/workflows/build-android.yml",
+      "scope": "Tooling and documentation",
+      "bytes": 735,
+      "sha256": "220cbe57e70fb4fa8e00275eedadfaa6caa8a759c2a4b694c1cdeb15d3595b5e",
+      "inspection": "complete text review"
+    },
+    {
+      "path": ".github/workflows/evaluate-models.yml",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/.github/workflows/evaluate-models.yml",
+      "scope": "Tooling and documentation",
+      "bytes": 2025,
+      "sha256": "2de31840e65915cc2c200c6b3e21d5ae9a8c0afd04309a4876e7e30e841b0760",
+      "inspection": "complete text review"
+    },
+    {
+      "path": ".github/workflows/train-models.yml",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/.github/workflows/train-models.yml",
+      "scope": "Tooling and documentation",
+      "bytes": 2173,
+      "sha256": "be332b4a3cd4140b1b2db8d59c06a3a089b70fac6216e7772afa8bfb61f8456f",
+      "inspection": "complete text review"
+    },
+    {
+      "path": ".gitignore",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/.gitignore",
+      "scope": "Tooling and documentation",
+      "bytes": 182,
+      "sha256": "6bd935ce5ae0e37956c55cb8c73dd5e608e019654873df23be7e4f76f7257b63",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/build.gradle.kts",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/build.gradle.kts",
+      "scope": "Android app",
+      "bytes": 4097,
+      "sha256": "0ee9b8543d3d171deafe954a7705aa15d29f6b39516d8244ccce3d5151c21ca8",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/proguard-rules.pro",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/proguard-rules.pro",
+      "scope": "Android app",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/AndroidManifest.xml",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/AndroidManifest.xml",
+      "scope": "Android app",
+      "bytes": 1604,
+      "sha256": "1cb9bb4170716c462ec084d6ac4eab2729e8f4de81ee217b586507b4d0e44a7d",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/assets/constants/lcnn_audio_threshold.json",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/assets/constants/lcnn_audio_threshold.json",
+      "scope": "Android detection",
+      "bytes": 211,
+      "sha256": "84c8ccb63c176eb3fe76823a89169d5af90f464b9bd280fe88b187ee8d60f9c1",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/assets/constants/meta_classifier.json",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/assets/constants/meta_classifier.json",
+      "scope": "Android detection",
+      "bytes": 497,
+      "sha256": "d320d173a3e56261f586392fa9a4ef03b3f6019aa82766196e1c1f32e3e47345",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/assets/constants/model_hashes.json",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/assets/constants/model_hashes.json",
+      "scope": "Android detection",
+      "bytes": 253,
+      "sha256": "1b0519220ca4d58a54e8c531dcb2a3c09c04dc8ae2e27cd8faf6081a8da2b3cb",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/assets/constants/natural_diff_histogram.json",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/assets/constants/natural_diff_histogram.json",
+      "scope": "Android detection",
+      "bytes": 598,
+      "sha256": "c459196ca88e05b95b4bfa69a3db285b9b82ebbb8ebe1226b8c7ffea630fc2b2",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/assets/models/lcnn_audio_int8.tflite",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/assets/models/lcnn_audio_int8.tflite",
+      "scope": "Android detection",
+      "bytes": 503368,
+      "sha256": "2dd0c96a24da39c1b81398f8698e3c1b0e417692ea5e050ca7b57cf4695aff46",
+      "inspection": "binary schema, operators, hashes and CPU invocation"
+    },
+    {
+      "path": "android/app/src/main/assets/models/srm_forensic_cnn_int8.tflite",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/assets/models/srm_forensic_cnn_int8.tflite",
+      "scope": "Android detection",
+      "bytes": 99824,
+      "sha256": "5bcfefc15fdde3519f3bd1d077b3b61f39f2b5036b1adf86272af9a5f1a71818",
+      "inspection": "binary schema, operators, hashes and CPU invocation"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/data/local/ScanHistoryDao.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/data/local/ScanHistoryDao.kt",
+      "scope": "Android app",
+      "bytes": 755,
+      "sha256": "1a0a279020627bbcf9993c22ca541e35fb8a7cf2561598bd739374719188dc7a",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/data/local/ScanHistoryDatabase.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/data/local/ScanHistoryDatabase.kt",
+      "scope": "Android app",
+      "bytes": 1207,
+      "sha256": "2c57928c18c4630d2cbbe2bea2b3821590ea900d54676978f5ae7e63c5d612a5",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/data/local/ScanHistoryEntity.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/data/local/ScanHistoryEntity.kt",
+      "scope": "Android app",
+      "bytes": 898,
+      "sha256": "34699c2f8a1d734afbfe2c45cd700876bce66bccab0a487122c6fac4003d5b57",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/data/local/SignalBreakdownJson.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/data/local/SignalBreakdownJson.kt",
+      "scope": "Android app",
+      "bytes": 2061,
+      "sha256": "52af85499515cc0eceb0e67e044cf0ebdc4e0a9b3aaa4edd77108f1e59748325",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/data/repository/ScanHistoryRepository.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/data/repository/ScanHistoryRepository.kt",
+      "scope": "Android app",
+      "bytes": 1242,
+      "sha256": "fbb63847408c0cff671b4c31982fc82abd0491423b1859b5811d86ded0431391",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/detection/audio/AudioClassifier.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/detection/audio/AudioClassifier.kt",
+      "scope": "Android detection",
+      "bytes": 1863,
+      "sha256": "55f9763aadabf285c70ca998a48c7ad95f7b1f79764afafaa4b24b4828e0fd1d",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/detection/audio/AudioDecoder.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/detection/audio/AudioDecoder.kt",
+      "scope": "Android detection",
+      "bytes": 13202,
+      "sha256": "aa62f5521e7adcb678e193473f4c10506b0c53354dc415cb7ddc643f4ca14ed6",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/detection/audio/LFCCExtractor.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/detection/audio/LFCCExtractor.kt",
+      "scope": "Android detection",
+      "bytes": 6473,
+      "sha256": "f27c917417d6fd2302cab59ec09027a839be610c83aa894cf12ae3bee199a06f",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/detection/audio/SpeakerVerifier.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/detection/audio/SpeakerVerifier.kt",
+      "scope": "Android detection",
+      "bytes": 4702,
+      "sha256": "62d136d34ed649f5c2766ddcf8645d661a6ed037a4ebff409001c0434d57f6bd",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/detection/fusion/XGBoostMetaClassifier.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/detection/fusion/XGBoostMetaClassifier.kt",
+      "scope": "Android detection",
+      "bytes": 19164,
+      "sha256": "64eb3aa444842090c32ccd808c4cb5c117682911f527cfd5a81a80795f60bd4c",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/detection/provenance/C2PAManifestChecker.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/detection/provenance/C2PAManifestChecker.kt",
+      "scope": "Android detection",
+      "bytes": 2217,
+      "sha256": "4ef26b86348f1a1471e5f979a2eda3748a412d5b7e80efd50ec1f24f186dfc5b",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/detection/provenance/EXIFAnalyzer.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/detection/provenance/EXIFAnalyzer.kt",
+      "scope": "Android detection",
+      "bytes": 2529,
+      "sha256": "5280541e5e85e059ea9097bc79ebf5a5fe2bba3c9cbefb7f5de306a27fca5416",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/detection/temporal/FrameCosineDelta.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/detection/temporal/FrameCosineDelta.kt",
+      "scope": "Android detection",
+      "bytes": 3557,
+      "sha256": "90c042a8e4619a64bc8ec97eaad7d999dcd1f2067611e393cda044bde75ccf5a",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/detection/temporal/VideoDecoder.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/detection/temporal/VideoDecoder.kt",
+      "scope": "Android detection",
+      "bytes": 8038,
+      "sha256": "efe46b3f45f4e87d0e50023fdb22bd8ce2e0c27f320cf29c1ec294a5dca01442",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/detection/video/VideoForensicAnalyzer.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/detection/video/VideoForensicAnalyzer.kt",
+      "scope": "Android detection",
+      "bytes": 6331,
+      "sha256": "74e25e7b9f1db42976ec7cbd2a880b01c2177239de62fc548905ce9544f8e499",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/detection/visual/FFTSpectralAnalyzer.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/detection/visual/FFTSpectralAnalyzer.kt",
+      "scope": "Android detection",
+      "bytes": 5537,
+      "sha256": "3b62e2bdbfd4118acd41f6571af4d34ca055da7662976a8eedc37acb8bfca5fe",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/detection/visual/FFTUtil.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/detection/visual/FFTUtil.kt",
+      "scope": "Android detection",
+      "bytes": 3884,
+      "sha256": "12c4ab80d707665e34d36139b3ee407f5acdf04c2f9b5086cfdf28fcf3d666bf",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/detection/visual/KLCooccurrenceAnalyzer.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/detection/visual/KLCooccurrenceAnalyzer.kt",
+      "scope": "Android detection",
+      "bytes": 4474,
+      "sha256": "cff28fba546888aa214b8f327681d79fc39dc9d8b566f9a7337aac4c97223c50",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/detection/visual/PRNUAnalyzer.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/detection/visual/PRNUAnalyzer.kt",
+      "scope": "Android detection",
+      "bytes": 4180,
+      "sha256": "d64eb650999605c0ba72d2d13de9518a7c1484a2db7c3a49c4f3068da0875d2d",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/detection/visual/SRMForensicAnalyzer.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/detection/visual/SRMForensicAnalyzer.kt",
+      "scope": "Android detection",
+      "bytes": 3368,
+      "sha256": "8200f3ccb87ffc78548951c653a794c7ac6a92b05e2d87c7afe7016bd2b4289c",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/di/AppModule.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/di/AppModule.kt",
+      "scope": "Android app",
+      "bytes": 1706,
+      "sha256": "2a4f7d8ea3a40b0e053e52fea8294eb93bfa5445d4d7a1cdfc6ec9a5e529eba9",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/di/PipelineModule.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/di/PipelineModule.kt",
+      "scope": "Android app",
+      "bytes": 3110,
+      "sha256": "c2182544cff95827d06a490313aa1a0c8d5c31f6c35a417361a8ffa25f57ba7a",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/domain/models/DeviceTier.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/domain/models/DeviceTier.kt",
+      "scope": "Android detection",
+      "bytes": 126,
+      "sha256": "f69259a3084551299823157fc400f572ad7123b7c814200dc049b57824d1bc70",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/domain/models/ScanMode.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/domain/models/ScanMode.kt",
+      "scope": "Android detection",
+      "bytes": 136,
+      "sha256": "83f6502317111eb4c505b03fbe7d38079337e4e284f7838c23d470f434f210af",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/domain/models/ScanResult.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/domain/models/ScanResult.kt",
+      "scope": "Android detection",
+      "bytes": 1280,
+      "sha256": "6f1e6c0f2b9948693f8098bcb2c57a0dc34ea5c9f356ccc373f01e09ad72f3f8",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/domain/pipeline/DetectionPipeline.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/domain/pipeline/DetectionPipeline.kt",
+      "scope": "Android detection",
+      "bytes": 11783,
+      "sha256": "10e5679ba3148472ff571f963c3347b18f5302590601c805fa90391cc4d239b6",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/domain/pipeline/SignalFusion.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/domain/pipeline/SignalFusion.kt",
+      "scope": "Android detection",
+      "bytes": 1909,
+      "sha256": "4730052a90c71c65bdf865f9c9556576cdf00402069175bf2b3af20872d3b2fd",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/inference/DelegateSelector.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/inference/DelegateSelector.kt",
+      "scope": "Android detection",
+      "bytes": 1753,
+      "sha256": "053116c45ad6bd075303de2c8001c93e506b59099083bcfee0f2a57e953d9edc",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/inference/LiteRTInferenceEngine.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/inference/LiteRTInferenceEngine.kt",
+      "scope": "Android detection",
+      "bytes": 2964,
+      "sha256": "01282262a0d56c9e54a04d7421d26af5c356402948a47fea4ac031a65b4cb071",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/inference/MemoryMappedModelLoader.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/inference/MemoryMappedModelLoader.kt",
+      "scope": "Android detection",
+      "bytes": 1092,
+      "sha256": "a044daad7be3410ca92a7470b1744bcffdef699e31166c4180978dc9b6f82795",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/inference/ModelIntegrityChecker.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/inference/ModelIntegrityChecker.kt",
+      "scope": "Android detection",
+      "bytes": 2435,
+      "sha256": "caee486f040cb64c3fefd485f76430727f382e54d23332d2bbe8e9ab562df1b0",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/inference/ModelIntegrityGate.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/inference/ModelIntegrityGate.kt",
+      "scope": "Android detection",
+      "bytes": 1700,
+      "sha256": "5bcf9cddefac6a45f702832b259c15b93679e936d432ecd96f315eccd28b34d8",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/inference/SequentialModelLoader.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/inference/SequentialModelLoader.kt",
+      "scope": "Android detection",
+      "bytes": 673,
+      "sha256": "49783c1a4097a49761d8c8914e7b61887c8ac49b2b2a1a22df5041ed93fbc044",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/inference/TensorBufferPool.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/inference/TensorBufferPool.kt",
+      "scope": "Android detection",
+      "bytes": 894,
+      "sha256": "cf01e2ce2c5422e672a48b5d1ab159d1cb426e804c8dd3d093ff9a9ff205239e",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/MainActivity.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/MainActivity.kt",
+      "scope": "Android app",
+      "bytes": 3050,
+      "sha256": "b42a623982965b740ea920aa2d213fa5c715b885d8de41c94acf7e6282947993",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/OnnDetectApplication.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/OnnDetectApplication.kt",
+      "scope": "Android app",
+      "bytes": 1098,
+      "sha256": "5be0fae526cb38cf97718029a1cc4a4cb76b91a88e5af1f17d705c57ec197c28",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/ui/components/ConfidenceMeter.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/ui/components/ConfidenceMeter.kt",
+      "scope": "Android app",
+      "bytes": 1931,
+      "sha256": "806ca0d4295a4e92ba0404ae009417149529e80ce096266613eb44b36c014ff3",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/ui/components/HeatmapViewer.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/ui/components/HeatmapViewer.kt",
+      "scope": "Android app",
+      "bytes": 1264,
+      "sha256": "874bef17a7f0f3789b5a99362368b3d8a169c2a6d6fb1f68d3641704652e190b",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/ui/components/ScanProgressIndicator.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/ui/components/ScanProgressIndicator.kt",
+      "scope": "Android app",
+      "bytes": 1219,
+      "sha256": "29370dc0e86aeee4ee08726630c3dd6a269ba4e2d608d67869534b70633f0fc9",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/ui/components/SignalBreakdown.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/ui/components/SignalBreakdown.kt",
+      "scope": "Android app",
+      "bytes": 2677,
+      "sha256": "456a549dc790373cdfe619d6eb483e46e834a54b23badfa08275a7d2051dcc23",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/ui/navigation/NavGraph.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/ui/navigation/NavGraph.kt",
+      "scope": "Android app",
+      "bytes": 2212,
+      "sha256": "abf8dca211dbcf6fce8bed8308e20d339909c9858bebc0793cafde7aeaadb984",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/ui/screens/enrollment/VoiceEnrollmentScreen.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/ui/screens/enrollment/VoiceEnrollmentScreen.kt",
+      "scope": "Android app",
+      "bytes": 4009,
+      "sha256": "14beb72f74e68344a44b01f3ed09f850e9fd8780066e4d64295b94ca8d7de0fb",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/ui/screens/history/HistoryScreen.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/ui/screens/history/HistoryScreen.kt",
+      "scope": "Android app",
+      "bytes": 3328,
+      "sha256": "06519bad667798d2f6b777315413a86846d5bca9d973c7cf78d5f834f46f28b4",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/ui/screens/history/HistoryViewModel.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/ui/screens/history/HistoryViewModel.kt",
+      "scope": "Android app",
+      "bytes": 878,
+      "sha256": "62b9bc9c50707f023b240438f0e21730e53063f5d27017eea5f7e39dec6c706b",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/ui/screens/home/HomeScreen.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/ui/screens/home/HomeScreen.kt",
+      "scope": "Android app",
+      "bytes": 6034,
+      "sha256": "a4f9c2856f37f95ea02e0039fedb5c8ddbec93bf3c1d61f640283a0cf3c44187",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/ui/screens/home/HomeViewModel.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/ui/screens/home/HomeViewModel.kt",
+      "scope": "Android app",
+      "bytes": 1064,
+      "sha256": "0d58bf3b06477301b16fdf76f753e34f1aae9aa608c619247cd707f07b711b5a",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/ui/screens/result/ResultScreen.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/ui/screens/result/ResultScreen.kt",
+      "scope": "Android app",
+      "bytes": 4240,
+      "sha256": "71b629e902df3564632117ac689c9d018ef8353c040e37517af360600fedd022",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/ui/screens/result/ResultViewModel.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/ui/screens/result/ResultViewModel.kt",
+      "scope": "Android app",
+      "bytes": 1046,
+      "sha256": "2686f29e0e51b2cd2cc6cb03347a1c8ab7faec68d4102fd13b4a75f1fd9a84ab",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/ui/screens/scanner/ScannerScreen.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/ui/screens/scanner/ScannerScreen.kt",
+      "scope": "Android app",
+      "bytes": 3120,
+      "sha256": "59f38df98818a57d3a122563320da20e67c82a7f9e9c62ee9e5b7b257d9749a6",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/ui/screens/scanner/ScannerViewModel.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/ui/screens/scanner/ScannerViewModel.kt",
+      "scope": "Android app",
+      "bytes": 12009,
+      "sha256": "14053a3534c5d9fa8db5cef4090dd508a0efd80a62594df726926821b43ad464",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/ui/theme/Color.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/ui/theme/Color.kt",
+      "scope": "Android app",
+      "bytes": 580,
+      "sha256": "05c146415dc8ba4ad65d899f952f62ead2486bc9646b55da738aa0667b393e3a",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/ui/theme/Theme.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/ui/theme/Theme.kt",
+      "scope": "Android app",
+      "bytes": 2378,
+      "sha256": "d4e71809fbb7cb324d4cc771f7528c2dd2c58994d8da2c9e0c02b3962c36d321",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/java/com/onndetect/ui/theme/Typography.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/java/com/onndetect/ui/theme/Typography.kt",
+      "scope": "Android app",
+      "bytes": 910,
+      "sha256": "5beed698971449ac055a3bcb4267c446419b918c200a168f6a918d55ec4b9f07",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/res/drawable/ic_launcher_foreground.xml",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/res/drawable/ic_launcher_foreground.xml",
+      "scope": "Android app",
+      "bytes": 640,
+      "sha256": "e7ab778c943e713fba704802b533ae7ed24598c48d32809027313053be52e83e",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml",
+      "scope": "Android app",
+      "bytes": 275,
+      "sha256": "e071a8516287e0bacccc1a14a62502f3e1eda8360b2aad3c88c390ccbfa77122",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml",
+      "scope": "Android app",
+      "bytes": 275,
+      "sha256": "e071a8516287e0bacccc1a14a62502f3e1eda8360b2aad3c88c390ccbfa77122",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/res/values/colors.xml",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/res/values/colors.xml",
+      "scope": "Android app",
+      "bytes": 215,
+      "sha256": "a5c998e9e37f9723008d534e5486ea4d5aace1f5000aee7ec42ce7e33ebfda99",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/res/values/strings.xml",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/res/values/strings.xml",
+      "scope": "Android app",
+      "bytes": 526,
+      "sha256": "1c7fe5010c08940063ea92157c8e0ed661aab32e59c345f6f97837c6ce5ecf22",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/res/values/themes.xml",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/res/values/themes.xml",
+      "scope": "Android app",
+      "bytes": 309,
+      "sha256": "1481f94d6e7b3ea9c7e7a1e30eddaa5a986f46488b45577e1aa8c6bc3f61e85d",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/res/xml/backup_rules.xml",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/res/xml/backup_rules.xml",
+      "scope": "Android app",
+      "bytes": 332,
+      "sha256": "1c9b2e9067d1dfb961ace49e953c20158dcd58937b25f72320ad55bdafc13297",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/res/xml/data_extraction_rules.xml",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/res/xml/data_extraction_rules.xml",
+      "scope": "Android app",
+      "bytes": 714,
+      "sha256": "3e228f66277198eb4f2e95e819d8d3ebee251434645923dfaab0c148d50e2a4f",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/main/res/xml/network_security_config.xml",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/main/res/xml/network_security_config.xml",
+      "scope": "Android app",
+      "bytes": 303,
+      "sha256": "495afe312de537d25206afcb90b9fb5406599ad2cfdb20a80a88533b6d842850",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/test/java/com/onndetect/FFTUtilTest.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/test/java/com/onndetect/FFTUtilTest.kt",
+      "scope": "Android detection",
+      "bytes": 2201,
+      "sha256": "d3607940309289eb8e6ce77bea10c38af2c584eb5b238de542a8c573c07e8e45",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/test/java/com/onndetect/FrameCosineDeltaTest.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/test/java/com/onndetect/FrameCosineDeltaTest.kt",
+      "scope": "Android detection",
+      "bytes": 2643,
+      "sha256": "f5c2fecb05720ce082fcf2c7d3bbf112e643bec16c44440b9805ddd7e58fafe0",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/test/java/com/onndetect/KLCooccurrenceTest.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/test/java/com/onndetect/KLCooccurrenceTest.kt",
+      "scope": "Android detection",
+      "bytes": 3469,
+      "sha256": "65e219031a5564b3ea7fb9e106f1e748328454102efd5a9a448b74493cf45a07",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/test/java/com/onndetect/LFCCExtractorTest.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/test/java/com/onndetect/LFCCExtractorTest.kt",
+      "scope": "Android detection",
+      "bytes": 7258,
+      "sha256": "9f42598f7d239bd5f46d4dfc6f3116a13fb902fd88e2d37870115bd2c6f87d40",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/test/java/com/onndetect/PcmUtilResampleTest.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/test/java/com/onndetect/PcmUtilResampleTest.kt",
+      "scope": "Android detection",
+      "bytes": 4507,
+      "sha256": "602e3b69c1abb0e62f0a623f761682721d1f0447c8c290775643ae784bf4162d",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/app/src/test/java/com/onndetect/SignalFusionTest.kt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/app/src/test/java/com/onndetect/SignalFusionTest.kt",
+      "scope": "Android detection",
+      "bytes": 1887,
+      "sha256": "aabdb64536a98266fb0a1b47ff11fb993c169e0cd2615fb3f795982a9cf1a422",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/build.gradle.kts",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/build.gradle.kts",
+      "scope": "Android app",
+      "bytes": 284,
+      "sha256": "dd01603c362830a87203e738588379daff98281ef7bd03fa3d4214da8c71fca2",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/gradle.properties",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/gradle.properties",
+      "scope": "Android app",
+      "bytes": 268,
+      "sha256": "fd96ba7b475f5592be097153c472c773be0ca78924acd654489d2e54ee0481c1",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/gradle/wrapper/gradle-wrapper.jar",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/gradle/wrapper/gradle-wrapper.jar",
+      "scope": "Android app",
+      "bytes": 63721,
+      "sha256": "0336f591bc0ec9aa0c9988929b93ecc916b3c1d52aed202c7381db144aa0ef15",
+      "inspection": "binary size and SHA-256"
+    },
+    {
+      "path": "android/gradle/wrapper/gradle-wrapper.properties",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/gradle/wrapper/gradle-wrapper.properties",
+      "scope": "Android app",
+      "bytes": 257,
+      "sha256": "33a5d81f84c60054bbcd94b9281c08fa997b6f4d9efbbfae88ab53708d1b0846",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/gradlew",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/gradlew",
+      "scope": "Android app",
+      "bytes": 8714,
+      "sha256": "bf2ca3f9d7c42b831380b47ab9e7594ddc33054b3e09253a0c4862353d5d604b",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/gradlew.bat",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/gradlew.bat",
+      "scope": "Android app",
+      "bytes": 2798,
+      "sha256": "3f241e2340e5254a0847f76840bc68440ae31cf63b5a15c7ecd4e1363329a403",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/README.md",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/README.md",
+      "scope": "Android app",
+      "bytes": 1640,
+      "sha256": "9eaafaca5edba432db25f000b2ce1beed507cfcb25082af4e595efa391edca93",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "android/settings.gradle.kts",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/android/settings.gradle.kts",
+      "scope": "Android app",
+      "bytes": 348,
+      "sha256": "ae6e6c7535663185ce9a979276d3aa7080059f069b7fcd90c1fc29fb624dd74c",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "CLAUDE.md",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/CLAUDE.md",
+      "scope": "Tooling and documentation",
+      "bytes": 3261,
+      "sha256": "0c2e56081828a1b893d2371ddb77834fac86625b668fb68ac54e7bdc1fda0e67",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "docs/ARCHITECTURE.md",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/docs/ARCHITECTURE.md",
+      "scope": "Tooling and documentation",
+      "bytes": 2671,
+      "sha256": "962dc08cd72cf235bebefb5849edaccaa9254c291d0cde23957953c2ee7d2a06",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "docs/BENCHMARK_RESULTS.md",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/docs/BENCHMARK_RESULTS.md",
+      "scope": "Tooling and documentation",
+      "bytes": 4229,
+      "sha256": "a08cb2f497b542b4045361fbe0aefc51b76a8ca1d395f168571135304bd72d26",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "docs/DEPLOYMENT.md",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/docs/DEPLOYMENT.md",
+      "scope": "Tooling and documentation",
+      "bytes": 1832,
+      "sha256": "d0ae881edde00dae5989145cfa5b0b3ae243450c465992b2ef7b69434cc7f69c",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "docs/MODEL_CARD.md",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/docs/MODEL_CARD.md",
+      "scope": "Tooling and documentation",
+      "bytes": 2734,
+      "sha256": "d9ce742ec03baa6e211d013b0914eb4114f289aa7c363610eac4c6fb7e6d41e7",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "docs/TRAINING_GUIDE.md",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/docs/TRAINING_GUIDE.md",
+      "scope": "Tooling and documentation",
+      "bytes": 2914,
+      "sha256": "f83b9110202302eb1fc8fb8560990f670fdc9f899252a4d2a09d4a00724f19a1",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/configs/lcnn_asvspoof.yaml",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/configs/lcnn_asvspoof.yaml",
+      "scope": "ML",
+      "bytes": 816,
+      "sha256": "dfd1ebc0bea4b3c39cfc15491bab6bc559a56a6c985125c895f770d872533fad",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/configs/lcnn_inthewild.yaml",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/configs/lcnn_inthewild.yaml",
+      "scope": "ML",
+      "bytes": 725,
+      "sha256": "05bc5b19cb92d8f39bfdeabf058ec9b5b12e1eda417f08cbc5e7a4bcf58147fd",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/configs/srm_cnn_genimage.yaml",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/configs/srm_cnn_genimage.yaml",
+      "scope": "ML",
+      "bytes": 699,
+      "sha256": "cdd23b16744e89961f1f0e7ae295b0940af0e2bee030e1a0b46ebfaebe58c15d",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/configs/srm_cnn_openfake.yaml",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/configs/srm_cnn_openfake.yaml",
+      "scope": "ML",
+      "bytes": 676,
+      "sha256": "eff5b556c6432e3f9890a3bf9525bf7191958c32aa2cc7d891f08526ba6f2ae9",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/configs/xgboost_meta.yaml",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/configs/xgboost_meta.yaml",
+      "scope": "ML",
+      "bytes": 655,
+      "sha256": "ed0cb1eed293505594a423f5820ca46ea57a8cd4412d35e232facf8914531bed",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/Dockerfile",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/Dockerfile",
+      "scope": "ML",
+      "bytes": 416,
+      "sha256": "748723c8cbe3d5310c03a3a253a696e0cb4920ec6021371c8708f5caa683b2f6",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/evaluation_results.json",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/evaluation_results.json",
+      "scope": "ML",
+      "bytes": 564,
+      "sha256": "af3513621d07bd53174ac7ef8d2818f5cd4eca9476a4aa204c995531ccce23ea",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/Makefile",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/Makefile",
+      "scope": "ML",
+      "bytes": 654,
+      "sha256": "b333902ffdf9930d1388710a574d6eaaca7c8da0518bf991282d601fc093b721",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/requirements.txt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/requirements.txt",
+      "scope": "ML",
+      "bytes": 193,
+      "sha256": "9fbfe308ca8e3b2eb43d4d34e532296696c282d13a78ec19e2703294b7f519b3",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/scripts/baseline_aeroblade.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/scripts/baseline_aeroblade.py",
+      "scope": "ML",
+      "bytes": 5317,
+      "sha256": "6ca66faec68978da2e0642fbd19d103dba94815e5883e1bfc4766f146f78429d",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/scripts/download_advanced_datasets.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/scripts/download_advanced_datasets.py",
+      "scope": "ML",
+      "bytes": 5264,
+      "sha256": "e6fa841d3b29eb9800d244b615a6698e9a53a8f399e168af277d245e7d23d56b",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/scripts/download_all_datasets.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/scripts/download_all_datasets.py",
+      "scope": "ML",
+      "bytes": 11438,
+      "sha256": "880d2d189eeabb2fa952419b27583678a8dcf5347ff063cc8215d09f187e8601",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/scripts/download_hf_quickstart.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/scripts/download_hf_quickstart.py",
+      "scope": "ML",
+      "bytes": 2471,
+      "sha256": "23acc1a3ba14731582bbd83c6d857e3da04e83d0a3d04a12ddc8e5bb558393ea",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/scripts/download_highres_audio.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/scripts/download_highres_audio.py",
+      "scope": "ML",
+      "bytes": 2297,
+      "sha256": "daa4d05e226b050ef087520adc859b9278832d2ca19a0051d539fdc87add4831",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/scripts/download_highres_datasets.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/scripts/download_highres_datasets.py",
+      "scope": "ML",
+      "bytes": 2742,
+      "sha256": "9c86340f51526ffcf1c7a23ff339dc7637220729217dcc29fdf5ba485a8d8948",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/scripts/export_all_models.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/scripts/export_all_models.py",
+      "scope": "ML",
+      "bytes": 8399,
+      "sha256": "32edb906288ba3ac705636573c0dfdf33a34b9b0d5747896df2acd389de5054f",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/scripts/generate_android_constants.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/scripts/generate_android_constants.py",
+      "scope": "ML",
+      "bytes": 7682,
+      "sha256": "25b340fa8e6128239f33e68096cc5ada23f622ffb1bc1f0e3fdf48b93c4fb4e2",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/scripts/reeval_srm_cnn.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/scripts/reeval_srm_cnn.py",
+      "scope": "ML",
+      "bytes": 3627,
+      "sha256": "f01610065f423c4db29c8651744c35c2fd5cfa6a1fe8a19293925ba9bb8162e7",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/scripts/retrain_srm_native.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/scripts/retrain_srm_native.py",
+      "scope": "ML",
+      "bytes": 4534,
+      "sha256": "3ac63a55172803588a4b23ed1f36c19cbe1ded47da13675bfc46e35a80052972",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/scripts/run_full_pipeline.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/scripts/run_full_pipeline.py",
+      "scope": "ML",
+      "bytes": 8155,
+      "sha256": "218a13c60cbac7ea083841af1cd7413612e1080fb0fff75d7a6face6bb50e042",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/scripts/train_lcnn_audio.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/scripts/train_lcnn_audio.py",
+      "scope": "ML",
+      "bytes": 7407,
+      "sha256": "7fc5c7d342ca879cfe79f921845a1487718dbc5eb578a1581c2c9707e321657c",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/scripts/train_srm_cnn.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/scripts/train_srm_cnn.py",
+      "scope": "ML",
+      "bytes": 6478,
+      "sha256": "4a18c459bc9a27474d76f4364579d49f3f6ab63ca97b3259a3281e101ad6e07d",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/scripts/train_xgboost_meta.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/scripts/train_xgboost_meta.py",
+      "scope": "ML",
+      "bytes": 18710,
+      "sha256": "ac26f5b1d6af40796f1bf894ce805632e741d924c0b6b55277aed14602c9a1af",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/scripts/validate_export.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/scripts/validate_export.py",
+      "scope": "ML",
+      "bytes": 4530,
+      "sha256": "9513e59c01ea103dc712469b9549666f5eb3bbd17e60abc8c37a7fcfee302415",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/setup.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/setup.py",
+      "scope": "ML",
+      "bytes": 636,
+      "sha256": "3562a9e2a453286b8696aa6633cdec886045e289a99b1e601ed5cfd16f948ea2",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/src/__init__.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/src/__init__.py",
+      "scope": "ML",
+      "bytes": 23,
+      "sha256": "945d7de874d7ceb14d8f723083c6c4353e0ca8241d325b8f61fd36db738dba4e",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/src/data/__init__.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/src/data/__init__.py",
+      "scope": "ML",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/src/data/asvspoof_dataset.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/src/data/asvspoof_dataset.py",
+      "scope": "ML",
+      "bytes": 5062,
+      "sha256": "0b154c5a13fef3d634fcee3b744ddc057c9687c35c6ff62def3f02e75fb18744",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/src/data/augmentations.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/src/data/augmentations.py",
+      "scope": "ML",
+      "bytes": 5730,
+      "sha256": "0afd5adf1dd250a5b70bf6519201d5f7b31a0930e87cbe41428dbf33774290d5",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/src/data/cifake_dataset.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/src/data/cifake_dataset.py",
+      "scope": "ML",
+      "bytes": 3690,
+      "sha256": "bdc69dd37708aa88f89cbe724c57a39c1fcff850927dc927c880d4daabc0d4c5",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/src/data/dataset_splits.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/src/data/dataset_splits.py",
+      "scope": "ML",
+      "bytes": 6794,
+      "sha256": "2bf4565c5987c0e8dd0df0d44fbb18b0d7c42c9e1ec5aaba06cdc45dd98e9554",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/src/data/genimage_dataset.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/src/data/genimage_dataset.py",
+      "scope": "ML",
+      "bytes": 4392,
+      "sha256": "f80b22c2ae4e69b4c0296967ad9b1f418f68e4625c375e3d261baf5a04f43405",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/src/data/inthewild_audio.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/src/data/inthewild_audio.py",
+      "scope": "ML",
+      "bytes": 6638,
+      "sha256": "91d8519e7ea324f14dcaea7676737536f26a0d727bf3a351e09f7532bf106c78",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/src/data/lfcc_extractor.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/src/data/lfcc_extractor.py",
+      "scope": "ML",
+      "bytes": 3288,
+      "sha256": "73ad62e282fd055b78b4c61d7a48a066c09f4cfce1a1b84176ca568e4cc47803",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/src/data/lfcc_frontend.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/src/data/lfcc_frontend.py",
+      "scope": "ML",
+      "bytes": 9698,
+      "sha256": "5e0c97a26b658c11d9b4b8f78031ad375650c963289e1e6288191cbb01632def",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/src/data/lfcc_reference.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/src/data/lfcc_reference.py",
+      "scope": "ML",
+      "bytes": 8707,
+      "sha256": "aa292b96b1078af3583822da07544e49f4a7c2cde4d0e374fe2edc740ab7214f",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/src/data/openfake_dataset.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/src/data/openfake_dataset.py",
+      "scope": "ML",
+      "bytes": 5325,
+      "sha256": "ba115e286782038dc072ee16999555f1a60bea66c882f2b80936cf0113cc2157",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/src/export/__init__.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/src/export/__init__.py",
+      "scope": "ML",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/src/export/quantize_int8.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/src/export/quantize_int8.py",
+      "scope": "ML",
+      "bytes": 4063,
+      "sha256": "7e3a6f6b8acbeb15fd65ea01bc04a2f4790d986d0691ca53639be354f22437d6",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/src/export/torch_to_tflite_keras.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/src/export/torch_to_tflite_keras.py",
+      "scope": "ML",
+      "bytes": 10849,
+      "sha256": "3170807e3e2e6ad2ff3bb5dec51426774eade6e6337ddcd3ec693250d8c18326",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/src/meta_classifier/__init__.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/src/meta_classifier/__init__.py",
+      "scope": "ML",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/src/meta_classifier/feature_extractor.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/src/meta_classifier/feature_extractor.py",
+      "scope": "ML",
+      "bytes": 9487,
+      "sha256": "65ab0f64b07d0dd534a35958f6382c3950de8edf8e13ed7bf6b708493ccbc2b1",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/src/models/__init__.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/src/models/__init__.py",
+      "scope": "ML",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/src/models/lcnn_mfm_audio.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/src/models/lcnn_mfm_audio.py",
+      "scope": "ML",
+      "bytes": 6131,
+      "sha256": "8192d999266a4e7f9d0d7c8cd64750f35693a867a756c528bed1961bdd4372e4",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/src/models/srm_forensic_cnn.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/src/models/srm_forensic_cnn.py",
+      "scope": "ML",
+      "bytes": 6426,
+      "sha256": "6bd27d2c549beee66f72d8ae72c83aa1611782626b116330f4f1ba80151b8a0d",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/src/onndetect.egg-info/dependency_links.txt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/src/onndetect.egg-info/dependency_links.txt",
+      "scope": "ML",
+      "bytes": 2,
+      "sha256": "7eb70257593da06f682a3ddda54a9d260d4fc514f645237f5ca74b08f8da61a6",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/src/onndetect.egg-info/PKG-INFO",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/src/onndetect.egg-info/PKG-INFO",
+      "scope": "ML",
+      "bytes": 585,
+      "sha256": "02a74af5985cf7c834763482239e36921e38602d5e94eb522627441debc7607f",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/src/onndetect.egg-info/requires.txt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/src/onndetect.egg-info/requires.txt",
+      "scope": "ML",
+      "bytes": 220,
+      "sha256": "93eefb4498f28e954f955d23269060c36682f9707e279a87aaeaee727945d4e7",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/src/onndetect.egg-info/SOURCES.txt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/src/onndetect.egg-info/SOURCES.txt",
+      "scope": "ML",
+      "bytes": 1246,
+      "sha256": "1b63435a186b04d1b0481d004180f8d9a55d5d33b063444e8b748da3cadf7437",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/src/onndetect.egg-info/top_level.txt",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/src/onndetect.egg-info/top_level.txt",
+      "scope": "ML",
+      "bytes": 56,
+      "sha256": "2b6b4f5076692faa232019a3ec5b3c4ccea6634017e6ae2344126688e5821865",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/src/training/__init__.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/src/training/__init__.py",
+      "scope": "ML",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/src/training/callbacks.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/src/training/callbacks.py",
+      "scope": "ML",
+      "bytes": 3288,
+      "sha256": "05ae4a9953519a1d9e7c0ebff6f45ac05d58c408a6a38cc823740612cde96436",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/src/training/metrics.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/src/training/metrics.py",
+      "scope": "ML",
+      "bytes": 7125,
+      "sha256": "f08f16a4024cbf72482b41791e4f326931cd843bc26e7cb2b5cc1f69b880b8d1",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/src/training/trainer.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/src/training/trainer.py",
+      "scope": "ML",
+      "bytes": 8188,
+      "sha256": "b76327f61049e99cbb8b27a42a4c7fa38ac5fd4c901b644876287117d635a3bc",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/src/utils/__init__.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/src/utils/__init__.py",
+      "scope": "ML",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/src/utils/device.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/src/utils/device.py",
+      "scope": "ML",
+      "bytes": 828,
+      "sha256": "c8dec61be371a57ba7c6919a377e4f43de7d406253581a4002e489dfe4680a49",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/src/utils/logger.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/src/utils/logger.py",
+      "scope": "ML",
+      "bytes": 1139,
+      "sha256": "bf0e11ee156d8646a8b68df9a2fd7a1fa6a5d8b151590389a7dd27663b658e86",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ml/src/utils/seed.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ml/src/utils/seed.py",
+      "scope": "ML",
+      "bytes": 535,
+      "sha256": "c9831596e2c1c075b264eb460bd4288189b3084b02154fb683e2720da76c7fb7",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "README.md",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/README.md",
+      "scope": "Tooling and documentation",
+      "bytes": 8777,
+      "sha256": "7eb2535ac749dd27c5b85a588918af3c84e6977642f5d1b53db859af5bb82bb5",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "ROADMAP.md",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/ROADMAP.md",
+      "scope": "Tooling and documentation",
+      "bytes": 19574,
+      "sha256": "448967d310f06811da7e26e4ad0e8faa4d15f346655879a033a98119699860a3",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "scripts/check_android_consistency.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/scripts/check_android_consistency.py",
+      "scope": "Tooling and documentation",
+      "bytes": 5759,
+      "sha256": "0629528b05f4e8e2c6c8d1ecaf0b1c16b7e1b68391db89a8abe9d8dfedd7ab3d",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "scripts/diag_accuracy.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/scripts/diag_accuracy.py",
+      "scope": "Tooling and documentation",
+      "bytes": 5132,
+      "sha256": "4b6fa511df6fa1f0dd9728104b5a2c18bdad2d0351f2647b27ffef9bd8544850",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "scripts/diag_export_parity.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/scripts/diag_export_parity.py",
+      "scope": "Tooling and documentation",
+      "bytes": 3158,
+      "sha256": "b5e4c5dd8eeb3be65440fd59a392751ada661d41fe175c3189d2ca17398f89eb",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "scripts/diag_isolate.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/scripts/diag_isolate.py",
+      "scope": "Tooling and documentation",
+      "bytes": 2558,
+      "sha256": "e4d7cd60cf51726f5414a0c223bcdbf61546d3476d5ae6f60151b04b0caab133",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "scripts/diag_quant_repro.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/scripts/diag_quant_repro.py",
+      "scope": "Tooling and documentation",
+      "bytes": 2551,
+      "sha256": "981cf61434f38494d70d143ec48404fb0c6649adc74967058d71d2e2c482a406",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "scripts/download_all_datasets.sh",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/scripts/download_all_datasets.sh",
+      "scope": "Tooling and documentation",
+      "bytes": 323,
+      "sha256": "b60411550b6288c4b1cc106e4a8f1b90411b66c204315c81566c5abcb2a6b7cd",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "scripts/gen_lfcc_golden.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/scripts/gen_lfcc_golden.py",
+      "scope": "Tooling and documentation",
+      "bytes": 5460,
+      "sha256": "15ff18837d5fb7421b2fc651c27439b06141d7e67b2a0a356fe61b9f16bc478d",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "scripts/package_for_android.sh",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/scripts/package_for_android.sh",
+      "scope": "Tooling and documentation",
+      "bytes": 1252,
+      "sha256": "dae0b8749c6ebe8418ad8c53ec3286be72bccfef65e253fc0f7e2274266f03ac",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "scripts/setup_and_train.ps1",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/scripts/setup_and_train.ps1",
+      "scope": "Tooling and documentation",
+      "bytes": 1395,
+      "sha256": "7fbce0bcec33d0b5431feb03fbfb06bed44d14d48b24c5a8e6d1745e8243516e",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "scripts/train_everything.sh",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/scripts/train_everything.sh",
+      "scope": "Tooling and documentation",
+      "bytes": 720,
+      "sha256": "bf5a8ae443520df9f0c7fbf463bc9880fe17010e9d90acf9eb9226f5e650b921",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "scripts/verify_audio_front_end.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/scripts/verify_audio_front_end.py",
+      "scope": "Tooling and documentation",
+      "bytes": 2590,
+      "sha256": "a3a1c5f75262360f10aa0c834efe2fa0c2135cec357f7581b193501723266d8c",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "scripts/verify_export_path.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/scripts/verify_export_path.py",
+      "scope": "Tooling and documentation",
+      "bytes": 5934,
+      "sha256": "93503d3b0e75c9a54a8380fba93c119ceb41cb0118de75a4b107e914e3ead7a2",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "scripts/verify_fft_parity.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/scripts/verify_fft_parity.py",
+      "scope": "Tooling and documentation",
+      "bytes": 5940,
+      "sha256": "9638b57b5b3cd7f79cd144bb1c80d0fb4fe4913751c2820ba5f4902851ff1a59",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "scripts/verify_front_end_parity.py",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/scripts/verify_front_end_parity.py",
+      "scope": "Tooling and documentation",
+      "bytes": 8910,
+      "sha256": "ced1e4bbed8e20e48f5e201bc6ce1226d2d88580eeaeb85cf8f78cd2c791a12f",
+      "inspection": "complete text review"
+    },
+    {
+      "path": "TODO.md",
+      "absolutePath": "C:/Users/sumit/OneDrive/Desktop/Onn-Detect-/TODO.md",
+      "scope": "Tooling and documentation",
+      "bytes": 11704,
+      "sha256": "e618ce8669f5413a569f01a82403ef3a2c0f0643874173eb2878cd69b77a1f97",
+      "inspection": "complete text review"
+    }
+  ]
+}

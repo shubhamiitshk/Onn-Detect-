@@ -5,21 +5,17 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.os.SystemClock
 import com.onndetect.detection.fusion.XGBoostMetaClassifier
-import com.onndetect.detection.visual.CalibrationStore
 import com.onndetect.detection.visual.FFTSpectralAnalyzer
 import com.onndetect.detection.visual.KLCooccurrenceAnalyzer
 import com.onndetect.detection.visual.SRMForensicAnalyzer
-import com.onndetect.domain.models.DeviceTier
-import com.onndetect.domain.models.ProvenanceInfo
-import com.onndetect.domain.models.QualityInfo
-import com.onndetect.domain.models.ScanMode
-import com.onndetect.domain.models.ScanProgress
-import com.onndetect.domain.models.ScanResult
-import com.onndetect.domain.models.SignalBreakdown
+import com.onndetect.inference.ModelIntegrityChecker
+import com.onndetect.inference.ModelIntegrityGate
+import com.onndetect.domain.models.*
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
@@ -29,24 +25,9 @@ import javax.inject.Singleton
 import kotlin.math.max
 import kotlin.math.min
 
-enum class DegradationLevel {
-    FULL, PARTIAL_VISUAL, PARTIAL_AUDIO, MATH_ONLY, ABSTAIN
-}
+enum class DegradationLevel { FULL, PARTIAL_VISUAL, PARTIAL_AUDIO, MATH_ONLY, ABSTAIN }
 
-/**
- * End-to-end image scan: hardware gate -> tier-aware analyzers ->
- * XGBoost meta-fusion (transpiled trees) -> provenance adjustment.
- *
- * Feature contract with the exported classifier (order matters!):
- *   0 srm_score, 1 fft_score, 2 kl_score, 3 flatness_score,
- *   4 resolution_norm, 5 is_compressed, 6 exif_anomaly, 7 c2pa_present,
- *   8 lip_sync_corr, 9 landmark_jitter
- *
- * Features 6-7 are computed from the source file when its Uri is supplied;
- * features 8-9 are temporal signals that do not apply to still images and
- * use the documented neutral (authentic-side) constants 0.9 / 0.1 - the
- * same values the meta-model was calibrated with for authentic media.
- */
+/** Image diagnostics only become verdicts for a validated detector release. */
 @Singleton
 class DetectionPipeline @Inject constructor(
     private val deviceTier: DeviceTier,
@@ -58,145 +39,94 @@ class DetectionPipeline @Inject constructor(
     private val exifAnalyzer: com.onndetect.detection.provenance.EXIFAnalyzer,
     private val c2paChecker: com.onndetect.detection.provenance.C2PAManifestChecker,
     private val prnuAnalyzer: com.onndetect.detection.visual.PRNUAnalyzer,
-    @ApplicationContext private val appContext: Context,
+    @param:ApplicationContext private val appContext: Context,
 ) {
-
     companion object {
-        /** Neutral (authentic-side) values for signals undefined on stills. */
         const val NEUTRAL_LIP_SYNC = 0.9f
         const val NEUTRAL_JITTER = 0.1f
         const val NEUTRAL_EXIF = 0.1f
         const val NEUTRAL_C2PA = 0.05f
     }
-
-    suspend fun analyzeMedia(
-        bitmap: Bitmap,
-        mode: ScanMode,
-        provenance: ProvenanceInfo? = null,
-        sourceUri: android.net.Uri? = null,
-        isCompressed: Boolean = false,
-    ): Flow<ScanProgress> = flow {
+    @Suppress("UNUSED_PARAMETER")
+    suspend fun analyzeMedia(bitmap: Bitmap, mode: ScanMode, provenance: ProvenanceInfo? = null,
+        sourceUri: android.net.Uri? = null, isCompressed: Boolean = false, originalMinEdge: Int? = null): Flow<ScanProgress> = flow {
         val started = SystemClock.elapsedRealtime()
-        emit(ScanProgress("Input validation…", 5f))
-
-        if (mode != ScanMode.IMAGE_ONLY && mode != ScanMode.VIDEO_WITH_AUDIO &&
-            mode != ScanMode.CROSS_MODAL
-        ) {
-            // Audio-only scans are handled by AudioClassifier via
-            // ScannerViewModel; abstain here.
-            emit(aborted(mode))
-            return@flow
+        val jobContext = currentCoroutineContext()
+        val checkStop = {
+            jobContext.ensureActive()
+            check(SystemClock.elapsedRealtime() - started <= 30_000) { "Image analysis deadline exceeded" }
         }
-
-        when (checkHardwareConstraints()) {
-            DegradationLevel.ABSTAIN -> { emit(aborted(mode)); return@flow }
-            else -> Unit
+        var signals = SignalBreakdown(-1f, -1f, -1f, -1f, -1f, -1f, -1f, -1f, -1f)
+        var quality = QualityInfo(originalMinEdge ?: 0, isCompressed, null, false, false)
+        fun result(status: AnalysisStatus, reason: String?, score: Float = -1f,
+            report: ModelIntegrityChecker.Report? = null): ScanResult {
+            val verdict = VerdictPolicy.decide(score, status, report?.validated == true, report?.threshold)
+            return ScanResult(UUID.randomUUID().toString(), mode, System.currentTimeMillis(), score,
+                verdict == DetectionVerdict.SYNTHETIC, 0f, signals, null, provenance, quality,
+                SystemClock.elapsedRealtime() - started, status, verdict, reason, report?.validated == true,
+                report?.releaseId ?: "unknown", report?.frontendId ?: "unknown",
+                if (report?.validated == true) report.releaseId else "unvalidated", report?.threshold)
         }
-
-        emit(ScanProgress("SRM forensic noise analysis…", 20f))
-        val srmScore = srmAnalyzer.analyze(bitmap)
-
-        val spectral: com.onndetect.detection.visual.SpectralResult
-        val klScore: Float
-        if (deviceTier == DeviceTier.HIGH_END) {
-            val (s, k) = coroutineScope {
-                val fftDef = async { fftAnalyzer.analyze(bitmap) }
-                val klDef = async { klAnalyzer.analyze(bitmap) }
-                emit(ScanProgress("Spectral + co-occurrence forensics…", 50f))
-                fftDef.await() to klDef.await()
+        try {
+            emit(ScanProgress("Validating input...", 5f))
+            if (mode != ScanMode.IMAGE_ONLY) {
+                emit(ScanProgress("Unsupported image scan mode", 100f, result = result(AnalysisStatus.UNSUPPORTED_INPUT, "Use the audio or video analysis route")))
+                return@flow
             }
-            spectral = s
-            klScore = k
-        } else {
-            emit(ScanProgress("Spectral analysis…", 40f))
-            spectral = fftAnalyzer.analyze(bitmap)
-            emit(ScanProgress("Co-occurrence statistics…", 60f))
-            klScore = klAnalyzer.analyze(bitmap)
+            if (bitmap.isRecycled || min(bitmap.width, bitmap.height) < 16) {
+                emit(ScanProgress("Unsupported image", 100f, result = result(AnalysisStatus.UNSUPPORTED_INPUT, "Image is too small or unavailable")))
+                return@flow
+            }
+            quality = qualityInfo(bitmap, originalMinEdge).copy(isCompressed = isCompressed)
+            val report = ModelIntegrityGate.report(appContext, setOf(ModelIntegrityChecker.IMAGE_MODEL))
+            if (!report.allOk) {
+                emit(ScanProgress("Model unavailable", 100f, result = result(AnalysisStatus.MODEL_FAILURE, report.failures.joinToString())))
+                return@flow
+            }
+            val budget = checkHardwareConstraints()
+            if (budget == DegradationLevel.ABSTAIN) {
+                emit(ScanProgress("Insufficient memory", 100f, result = result(AnalysisStatus.INCONCLUSIVE, "Not enough memory for analysis")))
+                return@flow
+            }
+            checkStop()
+            var srm = -1f
+            if (budget != DegradationLevel.MATH_ONLY) {
+                emit(ScanProgress("Image model diagnostics...", 20f))
+                srm = srmAnalyzer.analyze(bitmap, checkStop)
+                signals = signals.copy(srmForensicScore = srm)
+            }
+            emit(ScanProgress("Spectral descriptors...", 45f))
+            val spectral = fftAnalyzer.analyze(bitmap, checkStop)
+            signals = signals.copy(fftSpectralScore = spectral.score)
+            checkStop()
+            emit(ScanProgress("Pixel difference descriptors...", 65f))
+            val kl = klAnalyzer.analyze(bitmap)
+            signals = signals.copy(klDivergenceScore = kl)
+            checkStop()
+            if (budget == DegradationLevel.FULL) {
+                signals = signals.copy(prnuScore = prnuAnalyzer.analyze(bitmap))
+                checkStop()
+            }
+            // Unverified EXIF and provenance never enter verdict fusion.
+            // Legacy trees were trained on incompatible metadata; they are
+            // not even exposed as an overall probability.
+            if (!report.validated || srm < 0f) {
+                val reason = if (srm < 0f) "Memory budget allowed diagnostic math only; no validated fallback" else report.validationReason
+                emit(ScanProgress("Analysis inconclusive", 100f, result = result(AnalysisStatus.INCONCLUSIVE, reason, report = report)))
+                return@flow
+            }
+            val features = floatArrayOf(srm, spectral.score, kl, spectral.spectralFlatness,
+                (quality.resolution / 1024f).coerceIn(0f, 1f), if (isCompressed) 1f else 0f,
+                NEUTRAL_EXIF, NEUTRAL_C2PA, NEUTRAL_LIP_SYNC, NEUTRAL_JITTER)
+            val score = signalFusion.fuse(metaClassifier.predict(features), provenance)
+            emit(ScanProgress("Analysis complete", 100f, result = result(AnalysisStatus.SUCCESS, null, score, report)))
+        } catch (e: CancellationException) { throw e }
+        catch (e: Exception) {
+            emit(ScanProgress("Analysis inconclusive", 100f, result = result(AnalysisStatus.MODEL_FAILURE, e.message ?: "Analysis failed")))
         }
-
-        emit(ScanProgress("Fusing signals (XGBoost meta-classifier)…", 80f))
-
-        val quality = qualityInfo(bitmap)
-        val exifAnomaly = sourceUri?.let { exifAnalyzer.analyze(appContext, it) }
-            ?: NEUTRAL_EXIF
-        val c2paPresent = sourceUri?.let { c2paChecker.analyze(appContext, it) }
-            ?: NEUTRAL_C2PA
-        val compressed = isCompressed || quality.isCompressed
-        val features = floatArrayOf(
-            srmScore,
-            spectral.score,
-            klScore,
-            spectral.spectralFlatness,
-            (quality.resolution / 1024f).coerceIn(0f, 1f),
-            if (compressed) 1f else 0f,
-            exifAnomaly,
-            c2paPresent,
-            NEUTRAL_LIP_SYNC,
-            NEUTRAL_JITTER,
-        )
-        val rawScore = metaClassifier.predict(features).coerceIn(0f, 1f)
-
-        // PRNU sensor-noise check: reported as a signal, never blended into
-        // the calibrated meta score.
-        emit(ScanProgress("Extracting PRNU sensor noise…", 85f))
-        val prnuAnomaly = prnuAnalyzer.analyze(bitmap)
-
-        val finalScore = signalFusion.fuse(rawScore, provenance)
-
-        val threshold = CalibrationStore.metaDecisionThreshold(appContext)
-        val signals = SignalBreakdown(
-            mobileClipScore = -1f,
-            srmForensicScore = srmScore,
-            fftSpectralScore = spectral.score,
-            klDivergenceScore = klScore,
-            perturbationScore = -1f,
-            audioDspScore = 0f,
-            audioModelScore = 0f,
-            temporalScore = 0f,
-            provenanceScore = finalScore,
-            prnuScore = prnuAnomaly,
-        )
-
-        val result = ScanResult(
-            id = UUID.randomUUID().toString(),
-            scanMode = mode,
-            timestamp = System.currentTimeMillis(),
-            overallScore = finalScore,
-            isAiGenerated = finalScore >= threshold,
-            confidence = confidenceOf(finalScore),
-            signals = signals,
-            heatmap = null,
-            provenance = provenance,
-            qualityInfo = quality,
-            scanDurationMs = SystemClock.elapsedRealtime() - started,
-        )
-        emit(ScanProgress("Scan complete", 100f, indeterminate = false, result = result))
     }.flowOn(Dispatchers.Default)
 
-    private fun aborted(mode: ScanMode) = ScanProgress(
-        stage = "Scan aborted: insufficient memory for analysis",
-        percent = 100f,
-        indeterminate = false,
-        result = ScanResult(
-            id = UUID.randomUUID().toString(),
-            scanMode = mode,
-            timestamp = System.currentTimeMillis(),
-            overallScore = 0.5f,
-            isAiGenerated = false,
-            confidence = 0f,
-            signals = SignalBreakdown(-1f, -1f, -1f, -1f, -1f, 0f, 0f, 0f, 0.5f),
-            heatmap = null,
-            provenance = null,
-            qualityInfo = QualityInfo(0, false, null, false, true),
-            scanDurationMs = 0L,
-        )
-    )
-
-    /** Maps score distance from the neutral point onto [0,1]. */
-    private fun confidenceOf(score: Float): Float =
-        kotlin.math.abs(score - 0.5f) * 2f
-
-    private fun qualityInfo(bitmap: Bitmap): QualityInfo {
+    private fun qualityInfo(bitmap: Bitmap, originalMinEdge: Int? = null): QualityInfo {
         val w = bitmap.width
         val h = bitmap.height
         // Local name must not be `step` - it collides with the range infix.
@@ -229,7 +159,9 @@ class DetectionPipeline @Inject constructor(
         val meanLuma = if (samples > 0) sumLuma / samples else 128.0
         val lapVar = if (lapSamples > 0) lapSum / lapSamples else 100.0
         return QualityInfo(
-            resolution = min(w, h),
+            // True source edge when the caller decoded bounds first; the
+            // working bitmap is long-edge-capped and would flatten this.
+            resolution = originalMinEdge ?: min(w, h),
             isCompressed = false,
             jpegQuality = null,
             isBlurry = lapVar < 25.0,
@@ -244,9 +176,13 @@ class DetectionPipeline @Inject constructor(
         val am = appContext.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
         val memInfo = ActivityManager.MemoryInfo().also(am::getMemoryInfo)
         val availMb = memInfo.availMem / (1024 * 1024)
+        // memoryClass is the app's REAL per-process heap budget. availMem is
+        // system-wide free memory, which other apps can bleed to near zero and
+        // make this gate fire unpredictably - it is not our budget.
+        val heapBudgetMb = am.memoryClass
         return when {
-            availMb < 250 -> DegradationLevel.ABSTAIN
-            availMb < 600 -> DegradationLevel.MATH_ONLY
+            heapBudgetMb < 64 || availMb < 64 -> DegradationLevel.ABSTAIN
+            heapBudgetMb <= 128 || availMb < 150 -> DegradationLevel.MATH_ONLY
             else -> DegradationLevel.FULL
         }
     }

@@ -26,6 +26,7 @@ object FrameCosineDelta {
 
     /** Pure, unit-testable core over row-major ARGB pixels. */
     fun descriptorFromPixels(pixels: IntArray, w: Int, h: Int): FloatArray {
+        require(w > 0 && h > 0 && w.toLong() * h <= pixels.size)
         val out = FloatArray(GRID * GRID)
         for (gy in 0 until GRID) {
             for (gx in 0 until GRID) {
@@ -50,7 +51,7 @@ object FrameCosineDelta {
     }
 
     fun cosine(a: FloatArray, b: FloatArray): Float {
-        require(a.size == b.size && a.isNotEmpty())
+        require(a.size == b.size && a.isNotEmpty() && a.all { it.isFinite() } && b.all { it.isFinite() })
         var dot = 0.0
         var na = 0.0
         var nb = 0.0
@@ -59,7 +60,8 @@ object FrameCosineDelta {
             na += a[i].toDouble() * a[i]
             nb += b[i].toDouble() * b[i]
         }
-        if (na == 0.0 || nb == 0.0) return 1f // black frames are "identical"
+        if (na == 0.0 && nb == 0.0) return 1f
+        if (na == 0.0 || nb == 0.0) return 0f
         return (dot / (kotlin.math.sqrt(na) * kotlin.math.sqrt(nb)))
             .toFloat().coerceIn(-1f, 1f)
     }
@@ -70,6 +72,7 @@ object FrameCosineDelta {
      *         Both extremes of similarity (frozen or wildly flickering) map up.
      */
     fun anomalyScore(sims: List<Float>): Float {
+        require(sims.all { it.isFinite() && it in -1f..1f })
         if (sims.isEmpty()) return 0f
         val mean = sims.sum() / sims.size
         var vr = 0.0

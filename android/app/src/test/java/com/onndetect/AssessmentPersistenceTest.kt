@@ -1,0 +1,49 @@
+package com.onndetect
+
+import com.onndetect.data.local.SignalBreakdownJson
+import com.onndetect.data.repository.ScanHistoryRepository
+import com.onndetect.domain.models.*
+import com.onndetect.ui.components.assessmentStringId
+import org.json.JSONObject
+import org.junit.Assert.*
+import org.junit.Test
+
+class AssessmentPersistenceTest {
+    private val signals = SignalBreakdown(-1f,0f,Float.NaN,Float.POSITIVE_INFINITY,-1f,-1f,0f,-1f,-1f)
+    private fun result() = ScanResult("test",ScanMode.AUDIO_ONLY,1L,0.2f,false,0f,signals,null,null,
+        QualityInfo(100,false,null,false,false),10L)
+    @Test fun zeroSurvivesRoundTripAndUnavailableValuesAreNotNumbers() {
+        val encoded = SignalBreakdownJson.encode(signals)
+        val o = JSONObject(encoded)
+        assertTrue(o.isNull("fftSpectralScore")); assertTrue(o.isNull("klDivergenceScore"))
+        val decoded = SignalBreakdownJson.decode(encoded)!!
+        assertEquals(0f,decoded.srmForensicScore,0f); assertEquals(0f,decoded.audioModelScore,0f)
+        assertEquals(-1f,decoded.fftSpectralScore,0f)
+    }
+    @Test fun corruptAndMissingSignalsDoNotCreateEvidence() {
+        assertNull(SignalBreakdownJson.decode("broken"))
+        assertNull(SignalBreakdownJson.decode("{\"schemaVersion\":99}"))
+        assertEquals(-1f,SignalBreakdownJson.decode("{\"audioModelScore\":2}")!!.audioModelScore,0f)
+        assertEquals(-1f,SignalBreakdownJson.decode("{}")!!.audioModelScore,0f)
+    }
+    @Test fun legacyOrUnknownVerdictsAlwaysAbstain() {
+        assertEquals(R.string.inconclusive,assessmentStringId("SYNTHETIC",false))
+        assertEquals(R.string.inconclusive,assessmentStringId("invalid",true))
+    }
+    @Test fun failureCannotPersistClassifiedVerdictEvenIfCallerContradictsIt() {
+        assertThrows(IllegalArgumentException::class.java) {
+            ScanHistoryRepository.toEntry(result().copy(status=AnalysisStatus.MODEL_FAILURE,
+                verdict=DetectionVerdict.SYNTHETIC,modelValidated=true))
+        }
+    }
+    @Test fun unvalidatedLegacyAssessmentCannotPersistAuthenticity() {
+        assertEquals("INCONCLUSIVE",ScanHistoryRepository.toEntry(result()).verdict)
+    }
+    @Test fun evidencePersistsModelVersionsCoverageAndNoSourceExif() {
+        val entry = ScanHistoryRepository.toEntry(result().copy(modelVersion="release1",analyzedDurationMs=4000L,
+            totalDurationMs=10000L,analyzedTimestampsMs=listOf(1000L,5000L),provenance=ProvenanceInfo(false,false,mapOf("GPS" to "private"))))
+        val json = JSONObject(entry.evidenceJson!!)
+        assertEquals("release1",json.getString("modelVersion")); assertEquals(4000L,json.getLong("analyzedDurationMs"))
+        assertEquals(2,json.getJSONArray("timestampsMs").length()); assertFalse(entry.evidenceJson!!.contains("private"))
+    }
+}

@@ -27,7 +27,7 @@ fun ScanProgressIndicator(
             )
         } else {
             LinearProgressIndicator(
-                progress = (percent / 100f).coerceIn(0f, 1f),
+                progress = { (percent.takeIf { it.isFinite() } ?: 0f).div(100f).coerceIn(0f, 1f) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 12.dp),

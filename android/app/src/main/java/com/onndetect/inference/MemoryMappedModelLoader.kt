@@ -2,30 +2,22 @@ package com.onndetect.inference
 
 import android.content.Context
 import androidx.annotation.WorkerThread
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.nio.channels.FileChannel
 
-/** A model flatbuffer plus whatever resource must stay open while it lives. */
-data class MappedModel(val buffer: java.nio.ByteBuffer, val closeable: AutoCloseable?)
+data class MappedModel(val buffer: ByteBuffer, val closeable: AutoCloseable?)
+interface ModelLoader { @WorkerThread fun loadMapped(fileName: String): MappedModel }
 
-/**
- * Loads TFLite flatbuffers from assets fully memory-mapped, so the OS pages
- * model weights in and out on demand instead of copying them onto the heap.
- */
-interface ModelLoader {
-    @WorkerThread
-    fun loadMapped(fileName: String): MappedModel
-}
-
+/** mmap survives closing the mapping file descriptors. Models must be uncompressed. */
 class MemoryMappedModelLoader(private val context: Context) : ModelLoader {
-
     override fun loadMapped(fileName: String): MappedModel {
-        val afd = context.assets.openFd("models/$fileName")
-        val inputStream = java.io.FileInputStream(afd.fileDescriptor)
-        val channel = inputStream.channel
-        val buffer = channel.map(
-            java.nio.channels.FileChannel.MapMode.READ_ONLY,
-            afd.startOffset,
-            afd.declaredLength
-        )
-        return MappedModel(buffer, inputStream)
+        return context.assets.openFd("models/$fileName").use { descriptor ->
+            descriptor.createInputStream().use { input ->
+                val buffer = input.channel.map(FileChannel.MapMode.READ_ONLY, descriptor.startOffset, descriptor.declaredLength)
+                buffer.order(ByteOrder.nativeOrder())
+                MappedModel(buffer, null)
+            }
+        }
     }
 }

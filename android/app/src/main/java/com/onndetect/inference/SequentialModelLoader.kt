@@ -1,19 +1,25 @@
 package com.onndetect.inference
 
 import android.content.Context
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
-/**
- * Low-memory fallback path: reads the asset into a direct ByteBuffer once.
- * Used when memory mapping fails (e.g., compressed APK entry).
- */
+/** Optional direct-copy loader; compressed entries require a bounded size. */
 class SequentialModelLoader(private val context: Context) : ModelLoader {
-
     override fun loadMapped(fileName: String): MappedModel {
-        val bytes = context.assets.open("models/$fileName").use { it.readBytes() }
-        val buffer = java.nio.ByteBuffer.allocateDirect(bytes.size)
-        buffer.order(java.nio.ByteOrder.nativeOrder())
-        buffer.put(bytes)
-        buffer.rewind()
+        val size = context.assets.open("models/$fileName").use { stream ->
+            var count = 0L
+            val chunk = ByteArray(8192)
+            while (true) { val n = stream.read(chunk); if (n < 0) break; count += n; require(count <= 32 * 1024 * 1024) { "Model too large" } }
+            count.toInt()
+        }
+        require(size > 0)
+        val buffer = ByteBuffer.allocateDirect(size).order(ByteOrder.nativeOrder())
+        context.assets.open("models/$fileName").use { stream ->
+            val chunk = ByteArray(8192)
+            while (true) { val n = stream.read(chunk); if (n < 0) break; buffer.put(chunk, 0, n) }
+        }
+        buffer.flip()
         return MappedModel(buffer, null)
     }
 }

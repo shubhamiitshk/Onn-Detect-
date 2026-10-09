@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Test-only provider exercises cross-process cancellation and dishonest metadata. -->
+        <provider android:name="com.onndetect.DelayedMediaProvider"
+            android:authorities="com.onndetect.test.delayed-media"
+            android:exported="true" />
+    </application>
+</manifest>
