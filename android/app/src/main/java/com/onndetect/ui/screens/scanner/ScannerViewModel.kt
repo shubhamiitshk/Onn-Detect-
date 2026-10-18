@@ -137,10 +137,13 @@ class ScannerViewModel @Inject constructor(
     private suspend fun scanVideo(uri: Uri) {
         val started = SystemClock.elapsedRealtime()
         val o = runInterruptible(Dispatchers.Default) { videoAnalyzer.analyze(uri) { stage -> _state.update { it.copy(stage = stage) } } }
+        val verdict = VerdictPolicy.decide(o.overallScore, o.status, o.modelValidated, o.decisionThreshold)
         finish(ScanResult(UUID.randomUUID().toString(), ScanMode.VIDEO_ONLY, System.currentTimeMillis(), o.overallScore,
-            false, 0f, SignalBreakdown(-1f,o.srmScore,o.fftScore,o.klScore,-1f,-1f,o.audioScore,o.temporalScore,-1f),
+            verdict == DetectionVerdict.SYNTHETIC, 0f, SignalBreakdown(-1f,o.srmScore,o.fftScore,o.klScore,-1f,-1f,o.audioScore,o.temporalScore,-1f),
             null, null, QualityInfo(minOf(o.width,o.height),true,null,false,false), SystemClock.elapsedRealtime() - started,
-            status = o.status, verdict = DetectionVerdict.INCONCLUSIVE, reason = o.reason, modelValidated = o.modelValidated,
+            status = o.status, verdict = verdict, reason = o.reason, modelValidated = o.modelValidated,
+            decisionThreshold = o.decisionThreshold, modelVersion = o.modelVersion,
+            preprocessingVersion = o.preprocessingVersion, calibrationVersion = o.calibrationVersion,
             totalDurationMs = o.durationMs, analyzedDurationMs = o.audioAnalyzedDurationMs, analyzedTimestampsMs = o.timestampsMs))
     }
     private data class DecodedImage(val bitmap: Bitmap, val originalMinEdge: Int, val mime: String?)

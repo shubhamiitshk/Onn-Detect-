@@ -4,53 +4,91 @@ import os
 
 class SRMLayer(nn.Module):
     """
-    Fixed Spatial Rich Model (SRM) Filter layer to extract high-frequency noise residuals.
-    These filters are effective at highlighting artifacts introduced by generative AI.
+    Fixed Spatial Rich Model (SRM) Filter layer to extract high-frequency noise
+    and color-opponent demosaicing/synthesis residuals.
     """
     def __init__(self):
         super(SRMLayer, self).__init__()
-        # 3 output channels, 3 input channels, 5x5 kernel
-        self.conv = nn.Conv2d(3, 3, kernel_size=5, padding=2, bias=False)
-        
-        # Define 5x5 filters
-        # 1. Laplacian-like center-surround
+        # 12 output channels (7 luminance high-pass + 3 per-channel + 2 chroma-opponent), 3 input channels, 5x5 kernel
+        self.conv = nn.Conv2d(3, 12, kernel_size=5, padding=2, bias=False)
+
+        # 1. 5x5 Laplacian-like center-surround
         f1 = torch.tensor([
             [-1, -1, -1, -1, -1],
             [-1,  1,  2,  1, -1],
             [-1,  2,  4,  2, -1],
             [-1,  1,  2,  1, -1],
             [-1, -1, -1, -1, -1]
-        ], dtype=torch.float32)
-        f1 = f1 / 4.0 # Normalize roughly
+        ], dtype=torch.float32) / 4.0
 
-        # 2. Horizontal edge/noise detector
+        # 2. 5x5 Horizontal edge/noise detector
         f2 = torch.tensor([
             [-1, -2,  0,  2,  1],
             [-2, -4,  0,  4,  2],
             [-4, -8,  0,  8,  4],
             [-2, -4,  0,  4,  2],
             [-1, -2,  0,  2,  1]
-        ], dtype=torch.float32)
-        f2 = f2 / 8.0
+        ], dtype=torch.float32) / 8.0
 
-        # 3. Diagonal high-frequency detector
+        # 3. 5x5 Vertical edge/noise detector
+        f2_v = f2.t().contiguous()
+
+        # 4. 5x5 Main diagonal high-frequency detector
         f3 = torch.tensor([
             [-1, -1,  0,  1,  1],
             [-1, -2,  0,  2,  1],
             [ 0,  0,  0,  0,  0],
             [ 1,  2,  0, -2, -1],
             [ 1,  1,  0, -1, -1]
-        ], dtype=torch.float32)
-        f3 = f3 / 4.0
+        ], dtype=torch.float32) / 4.0
 
-        # Assign to weights (out_channels, in_channels, kH, kW)
-        # We divide by 3 to average the contribution of RGB channels
-        weight = torch.zeros((3, 3, 5, 5), dtype=torch.float32)
-        for in_c in range(3):
-            weight[0, in_c, :, :] = f1 / 3.0
-            weight[1, in_c, :, :] = f2 / 3.0
-            weight[2, in_c, :, :] = f3 / 3.0
-            
+        # 5. 5x5 Anti-diagonal high-frequency detector
+        f3_anti = torch.flip(f3, dims=[1]).contiguous()
+
+        # 6. 5x5 Fridrich KV 4th-order steganalysis filter
+        f_kv = torch.tensor([
+            [-1,  2, -2,  2, -1],
+            [ 2, -6,  8, -6,  2],
+            [-2,  8, -12, 8, -2],
+            [ 2, -6,  8, -6,  2],
+            [-1,  2, -2,  2, -1]
+        ], dtype=torch.float32) / 12.0
+
+        # 7. Nyquist checkerboard filter (detects VAE/upsampling grid periodicity)
+        f_chk = torch.tensor([
+            [ 0,  0,  0,  0,  0],
+            [ 0,  1, -2,  1,  0],
+            [ 0, -2,  4, -2,  0],
+            [ 0,  1, -2,  1,  0],
+            [ 0,  0,  0,  0,  0]
+        ], dtype=torch.float32) / 4.0
+
+        # 3x3 Laplacian embedded in 5x5 for per-channel and color-opponent residuals
+        f_lap3 = torch.tensor([
+            [ 0,  0,  0,  0,  0],
+            [ 0,  0, -1,  0,  0],
+            [ 0, -1,  4, -1,  0],
+            [ 0,  0, -1,  0,  0],
+            [ 0,  0,  0,  0,  0]
+        ], dtype=torch.float32) / 4.0
+
+        weight = torch.zeros((12, 3, 5, 5), dtype=torch.float32)
+        luma_filters = [f1, f2, f2_v, f3, f3_anti, f_kv, f_chk]
+        for idx, filt in enumerate(luma_filters):
+            for in_c in range(3):
+                weight[idx, in_c, :, :] = filt / 3.0
+
+        # Per-channel R, G, B high-pass residuals
+        weight[7, 0, :, :] = f_lap3
+        weight[8, 1, :, :] = f_lap3
+        weight[9, 2, :, :] = f_lap3
+
+        # Color-opponent chrominance high-pass residuals (R - G and B - G)
+        weight[10, 0, :, :] = 0.5 * f_lap3
+        weight[10, 1, :, :] = -0.5 * f_lap3
+        weight[11, 2, :, :] = 0.5 * f_lap3
+        weight[11, 1, :, :] = -0.5 * f_lap3
+
         self.conv.weight = nn.Parameter(weight, requires_grad=False)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -85,32 +123,32 @@ class DepthwiseSeparableBlock(nn.Module):
 
 class SRMForensicCNN(nn.Module):
     """
-    Lightweight CNN for detecting AI-generated images via noise residual analysis.
+    Lightweight CNN for detecting AI-generated images via noise & chrominance residual analysis.
     Designed for on-device inference with highly restricted parameter count.
     """
     def __init__(self):
         super(SRMForensicCNN, self).__init__()
         
-        # 1. SRM Filter Layer (Frozen)
+        # 1. SRM Filter Layer (Frozen, 12 forensic channels)
         self.srm = SRMLayer()
         
         # 2. CNN Backbone (MobileNetV3-inspired)
         self.backbone = nn.Sequential(
-            # Block 1
-            nn.Conv2d(3, 16, kernel_size=3, stride=2, padding=1, bias=False),
-            nn.BatchNorm2d(16),
+            # Stem
+            nn.Conv2d(12, 32, kernel_size=3, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(32),
             nn.Hardswish(inplace=True),
             
-            # Block 2
-            DepthwiseSeparableBlock(16, 32, stride=1),
-            
-            # Block 3
+            # Stage 1
+            DepthwiseSeparableBlock(32, 32, stride=1),
             DepthwiseSeparableBlock(32, 64, stride=2),
             
-            # Block 4
+            # Stage 2
+            DepthwiseSeparableBlock(64, 64, stride=1),
             DepthwiseSeparableBlock(64, 128, stride=2),
             
-            # Block 5
+            # Stage 3
+            DepthwiseSeparableBlock(128, 128, stride=1),
             DepthwiseSeparableBlock(128, 256, stride=2)
         )
         

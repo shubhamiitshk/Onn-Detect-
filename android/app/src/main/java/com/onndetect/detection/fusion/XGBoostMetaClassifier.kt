@@ -2,567 +2,823 @@ package com.onndetect.detection.fusion
 
 /**
  * AUTO-GENERATED FILE - DO NOT EDIT MANUALLY.
- * Transpiled XGBoost meta-classifier (19 trees, 10 features).
- * Regenerate with: python ml/scripts/train_xgboost_meta.py
+ * Transpiled XGBoost meta-classifier (37 trees, 10 features).
  * Feature order:
- *   0 srm_score, 1 fft_score, 2 kl_score, 3 flatness_score,
- *   4 resolution_norm, 5 is_compressed, 6 exif_anomaly, 7 c2pa_present,
+ *   0 srm_score, 1 fft_score, 2 kl_score, 3 flatness_score
+ *   4 resolution_norm, 5 is_compressed, 6 exif_anomaly, 7 c2pa_present
  *   8 lip_sync_corr, 9 landmark_jitter
  */
 class XGBoostMetaClassifier {
-    companion object { const val RELEASE_ID = "legacy-unvalidated" }
+    companion object { const val RELEASE_ID = "onn-20261018-v2" }
 
-    /** Legacy raw sigmoid score; calibration and deployment accuracy are unvalidated. */
+    /** @return P(AI-generated) in [0,1]. */
     fun predict(features: FloatArray): Float {
-        require(features.size == 10 && features.all { it.isFinite() }) { "Expected ten finite fusion features" }
-        var margin = 0.003000006039550751f
+        require(features.size == 10) { "Feature schema mismatch" }
+        require(features.all { it.isFinite() }) { "Non-finite features" }
+        var margin = -3.910188106637236e-08f
         // Tree 0
-        if (features[6] < 0.800000012f) {
-            if (features[2] < 0.0576046333f) {
-                if (features[3] < 1.38037831e-05f) {
-                    margin += -0.0269267205f
-                } else {
-                    margin += -0.127518415f
-                }
+        if (!features[5].isNaN() && features[5] < 1.0f) {
+            if (!features[2].isNaN() && features[2] < 0.0518152267f) {
+                margin += 0.0545454584f
             } else {
-                if (features[3] < 1.98326006e-06f) {
-                    margin += -0.0223889183f
-                } else {
-                    margin += -0.155200288f
-                }
+                margin += 0.191160232f
             }
         } else {
-            if (features[3] < 8.65685433e-06f) {
-                if (features[2] < 0.437803119f) {
-                    margin += 0.179152146f
+            if (!features[4].isNaN() && features[4] < 0.5f) {
+                if (!features[4].isNaN() && features[4] < 0.450195312f) {
+                    margin += -0.193220347f
                 } else {
-                    margin += 0.127296835f
+                    margin += -0.0857142881f
                 }
             } else {
-                if (features[2] < 0.0591931753f) {
-                    margin += 0.053073436f
+                if (!features[3].isNaN() && features[3] < 0.00394030847f) {
+                    margin += -0.0592f
                 } else {
-                    margin += 0.147081837f
+                    margin += 0.0511627905f
                 }
             }
         }
         // Tree 1
-        if (features[6] < 0.800000012f) {
-            if (features[2] < 0.0526733696f) {
-                if (features[3] < 1.00958641e-05f) {
-                    margin += 0.041758921f
-                } else {
-                    margin += -0.114779048f
-                }
-            } else {
-                if (features[3] < 1.98326006e-06f) {
-                    margin += -0.0211462062f
-                } else {
-                    margin += -0.140653133f
-                }
-            }
+        if (!features[5].isNaN() && features[5] < 1.0f) {
+            margin += 0.169802412f
         } else {
-            if (features[3] < 8.65685433e-06f) {
-                if (features[2] < 0.437803119f) {
-                    margin += 0.161784858f
+            if (!features[3].isNaN() && features[3] < 0.00213643746f) {
+                if (!features[3].isNaN() && features[3] < 0.000714186463f) {
+                    margin += -0.126970142f
                 } else {
-                    margin += 0.113078117f
+                    margin += -0.0821409971f
                 }
             } else {
-                if (features[2] < 0.0576046333f) {
-                    margin += 0.0350592025f
+                if (!features[1].isNaN() && features[1] < 0.607739747f) {
+                    margin += -0.077035062f
                 } else {
-                    margin += 0.134427205f
+                    margin += 0.0239959806f
                 }
             }
         }
         // Tree 2
-        if (features[0] < 0.420579582f) {
-            if (features[0] < 0.107302226f) {
-                margin += -0.161256164f
-            } else {
-                if (features[0] < 0.284795046f) {
-                    margin += -0.0944881365f
-                } else {
-                    margin += -0.0319719724f
-                }
-            }
+        if (!features[5].isNaN() && features[5] < 1.0f) {
+            margin += 0.15497826f
         } else {
-            if (features[0] < 0.813860178f) {
-                if (features[3] < 1.57003251e-05f) {
-                    margin += 0.0648273751f
+            if (!features[0].isNaN() && features[0] < 0.5546875f) {
+                if (!features[2].isNaN() && features[2] < 0.92575866f) {
+                    margin += -0.11541485f
                 } else {
-                    margin += 0.0196033008f
+                    margin += -0.0336186066f
                 }
             } else {
-                if (features[0] < 0.947903574f) {
-                    margin += 0.12065196f
+                if (!features[2].isNaN() && features[2] < 0.458656222f) {
+                    margin += 0.00600982271f
                 } else {
-                    margin += 0.166466102f
+                    margin += -0.0923534855f
                 }
             }
         }
         // Tree 3
-        if (features[0] < 0.420579582f) {
-            if (features[0] < 0.107302226f) {
-                if (features[0] < 0.0850145668f) {
-                    margin += -0.154738024f
-                } else {
-                    margin += -0.115382753f
-                }
+        if (!features[5].isNaN() && features[5] < 1.0f) {
+            if (!features[2].isNaN() && features[2] < 0.0518152267f) {
+                margin += 0.01788643f
             } else {
-                if (features[0] < 0.268509209f) {
-                    margin += -0.0870637819f
-                } else {
-                    margin += -0.0355084389f
-                }
+                margin += 0.148359761f
             }
         } else {
-            if (features[0] < 0.822823405f) {
-                if (features[0] < 0.646425784f) {
-                    margin += 0.0068558054f
-                } else {
-                    margin += 0.0579292588f
-                }
+            if (!features[4].isNaN() && features[4] < 0.5f) {
+                margin += -0.16378437f
             } else {
-                if (features[0] < 0.934181929f) {
-                    margin += 0.118403293f
+                if (!features[0].isNaN() && features[0] < 0.6640625f) {
+                    margin += -0.0557080768f
                 } else {
-                    margin += 0.154820576f
+                    margin += 0.0821363702f
                 }
             }
         }
         // Tree 4
-        if (features[0] < 0.319193482f) {
-            if (features[0] < 0.0850145668f) {
-                margin += -0.143348679f
+        if (!features[4].isNaN() && features[4] < 0.5f) {
+            if (!features[0].isNaN() && features[0] < 0.84765625f) {
+                margin += -0.136957124f
             } else {
-                if (features[3] < 7.03555179e-06f) {
-                    margin += -0.0541802309f
-                } else {
-                    margin += -0.0898429006f
-                }
+                margin += 0.0495181382f
             }
         } else {
-            if (features[0] < 0.816632628f) {
-                if (features[0] < 0.646425784f) {
-                    margin += 0.00469833752f
-                } else {
-                    margin += 0.0581291914f
-                }
+            if (!features[4].isNaN() && features[4] < 0.509765625f) {
+                margin += 0.160286769f
             } else {
-                if (features[0] < 0.931741357f) {
-                    margin += 0.0968255401f
+                if (!features[4].isNaN() && features[4] < 0.741210938f) {
+                    margin += -0.135797024f
                 } else {
-                    margin += 0.144135579f
+                    margin += 0.045965936f
                 }
             }
         }
         // Tree 5
-        if (features[0] < 0.646425784f) {
-            if (features[0] < 0.133482397f) {
-                if (features[0] < 0.0850145668f) {
-                    margin += -0.135168627f
-                } else {
-                    margin += -0.0914103016f
-                }
+        if (!features[5].isNaN() && features[5] < 1.0f) {
+            if (!features[2].isNaN() && features[2] < 0.0518152267f) {
+                margin += 0.0599700026f
             } else {
-                if (features[0] < 0.276217908f) {
-                    margin += -0.06941396f
-                } else {
-                    margin += -0.010837811f
-                }
+                margin += 0.139336631f
             }
         } else {
-            if (features[0] < 0.925641537f) {
-                if (features[0] < 0.770036399f) {
-                    margin += 0.0455904976f
-                } else {
-                    margin += 0.0924961269f
-                }
+            if (!features[4].isNaN() && features[4] < 0.5f) {
+                margin += -0.145484313f
             } else {
-                if (features[0] < 0.958618104f) {
-                    margin += 0.115999691f
+                if (!features[0].isNaN() && features[0] < 0.5546875f) {
+                    margin += -0.0720492303f
                 } else {
-                    margin += 0.140803978f
+                    margin += 0.0490698665f
                 }
             }
         }
         // Tree 6
-        if (features[0] < 0.420579582f) {
-            if (features[0] < 0.101974532f) {
-                if (features[2] < 0.038688302f) {
-                    margin += -0.0297227632f
+        if (!features[4].isNaN() && features[4] < 0.5f) {
+            if (!features[0].isNaN() && features[0] < 0.8515625f) {
+                if (!features[4].isNaN() && features[4] < 0.450195312f) {
+                    margin += -0.126225173f
                 } else {
-                    margin += -0.127412334f
+                    margin += -0.04904465f
                 }
             } else {
-                if (features[3] < 1.52944467e-05f) {
-                    margin += -0.0349940732f
-                } else {
-                    margin += -0.0761382505f
-                }
+                margin += 0.0124570439f
             }
         } else {
-            if (features[0] < 0.816632628f) {
-                if (features[3] < 4.46974445e-06f) {
-                    margin += 0.0817058086f
+            if (!features[0].isNaN() && features[0] < 0.578125f) {
+                if (!features[4].isNaN() && features[4] < 0.9375f) {
+                    margin += 0.0594998859f
                 } else {
-                    margin += 0.0185658094f
+                    margin += -0.0475916229f
                 }
             } else {
-                if (features[0] < 0.958618104f) {
-                    margin += 0.1028198f
+                if (!features[1].isNaN() && features[1] < 0.480590165f) {
+                    margin += -0.0481716655f
                 } else {
-                    margin += 0.133167341f
+                    margin += 0.0836796165f
                 }
             }
         }
         // Tree 7
-        if (features[0] < 0.420579582f) {
-            if (features[0] < 0.133482397f) {
-                if (features[0] < 0.0850145668f) {
-                    margin += -0.125100613f
-                } else {
-                    margin += -0.0915093496f
-                }
+        if (!features[5].isNaN() && features[5] < 1.0f) {
+            if (!features[2].isNaN() && features[2] < 0.0518152267f) {
+                margin += 0.0465757437f
             } else {
-                if (features[0] < 0.293696761f) {
-                    margin += -0.0541192405f
-                } else {
-                    margin += -0.0158405602f
-                }
+                margin += 0.130333409f
             }
         } else {
-            if (features[0] < 0.83374542f) {
-                if (features[2] < 0.216476038f) {
-                    margin += 0.0555810295f
+            if (!features[0].isNaN() && features[0] < 0.625f) {
+                if (!features[2].isNaN() && features[2] < 0.910644352f) {
+                    margin += -0.0790334567f
                 } else {
-                    margin += 0.0127693331f
+                    margin += 0.0100041768f
                 }
             } else {
-                if (features[0] < 0.958618104f) {
-                    margin += 0.097972624f
+                if (!features[2].isNaN() && features[2] < 0.659588516f) {
+                    margin += 0.0376640558f
                 } else {
-                    margin += 0.129174963f
+                    margin += -0.0864433795f
                 }
             }
         }
         // Tree 8
-        if (features[0] < 0.319193482f) {
-            if (features[0] < 0.0850145668f) {
-                if (features[2] < 0.0829163566f) {
-                    margin += -0.0842869729f
-                } else {
-                    margin += -0.121996425f
-                }
-            } else {
-                if (features[2] < 0.103342541f) {
-                    margin += -0.00209187134f
-                } else {
-                    margin += -0.0551671386f
-                }
-            }
+        if (!features[5].isNaN() && features[5] < 1.0f) {
+            margin += 0.117052309f
         } else {
-            if (features[0] < 0.813860178f) {
-                if (features[2] < 0.214328751f) {
-                    margin += 0.0339884609f
-                } else {
-                    margin += 0.00195028249f
-                }
+            if (!features[4].isNaN() && features[4] < 0.5f) {
+                margin += -0.129799709f
             } else {
-                if (features[0] < 0.934181929f) {
-                    margin += 0.0844822451f
+                if (!features[4].isNaN() && features[4] < 0.509765625f) {
+                    margin += 0.156945527f
                 } else {
-                    margin += 0.120849252f
+                    margin += -0.0271153487f
                 }
             }
         }
         // Tree 9
-        if (features[0] < 0.646425784f) {
-            if (features[0] < 0.107302226f) {
-                if (features[2] < 0.0829163566f) {
-                    margin += -0.0768242329f
-                } else {
-                    margin += -0.116380326f
-                }
+        if (!features[5].isNaN() && features[5] < 1.0f) {
+            if (!features[2].isNaN() && features[2] < 0.0518152267f) {
+                margin += 0.0449390672f
             } else {
-                if (features[0] < 0.284795046f) {
-                    margin += -0.0539943874f
-                } else {
-                    margin += -0.00579370465f
-                }
+                margin += 0.118464522f
             }
         } else {
-            if (features[0] < 0.934181929f) {
-                if (features[2] < 0.122996591f) {
-                    margin += 0.00576872332f
+            if (!features[0].isNaN() && features[0] < 0.64453125f) {
+                if (!features[2].isNaN() && features[2] < 0.92575866f) {
+                    margin += -0.0752858818f
                 } else {
-                    margin += 0.0626297519f
+                    margin += 0.0159758832f
                 }
             } else {
-                if (features[0] < 0.983518898f) {
-                    margin += 0.101833954f
+                if (!features[2].isNaN() && features[2] < 0.456543237f) {
+                    margin += 0.0532860272f
                 } else {
-                    margin += 0.12373548f
+                    margin += -0.0748626366f
                 }
             }
         }
         // Tree 10
-        if (features[7] < 0.899999976f) {
-            if (features[2] < 0.103342541f) {
-                if (features[3] < 5.73996704e-06f) {
-                    margin += 0.090452224f
-                } else {
-                    margin += -0.0432874337f
-                }
+        if (!features[5].isNaN() && features[5] < 1.0f) {
+            if (!features[4].isNaN() && features[4] < 0.259765625f) {
+                margin += 0.0284225941f
             } else {
-                if (features[3] < 3.35379736e-05f) {
-                    margin += -0.0769966468f
-                } else {
-                    margin += -0.118572406f
-                }
+                margin += 0.121118799f
             }
         } else {
-            if (features[3] < 3.98942211e-06f) {
-                margin += 0.115014456f
-            } else {
-                if (features[2] < 0.12631461f) {
-                    margin += 0.0470914468f
+            if (!features[4].isNaN() && features[4] < 0.75f) {
+                if (!features[4].isNaN() && features[4] < 0.453125f) {
+                    margin += -0.126785532f
                 } else {
-                    margin += 0.0777293295f
+                    margin += -0.0550197251f
+                }
+            } else {
+                if (!features[4].isNaN() && features[4] < 0.87890625f) {
+                    margin += 0.125776663f
+                } else {
+                    margin += -0.0147860413f
                 }
             }
         }
         // Tree 11
-        if (features[0] < 0.284795046f) {
-            if (features[0] < 0.0850145668f) {
-                margin += -0.106914118f
-            } else {
-                if (features[1] < 0.989600837f) {
-                    margin += -0.000621707644f
-                } else {
-                    margin += -0.0528386235f
-                }
-            }
+        if (!features[5].isNaN() && features[5] < 1.0f) {
+            margin += 0.104843251f
         } else {
-            if (features[0] < 0.849259198f) {
-                if (features[0] < 0.71246922f) {
-                    margin += 0.00342487893f
-                } else {
-                    margin += 0.042300608f
-                }
+            if (!features[4].isNaN() && features[4] < 0.453125f) {
+                margin += -0.122774385f
             } else {
-                if (features[0] < 0.949537039f) {
-                    margin += 0.0699113831f
+                if (!features[0].isNaN() && features[0] < 0.62890625f) {
+                    margin += -0.0396551341f
                 } else {
-                    margin += 0.111545518f
+                    margin += 0.0578480437f
                 }
             }
         }
         // Tree 12
-        if (features[0] < 0.65911746f) {
-            if (features[0] < 0.0850145668f) {
-                margin += -0.105620228f
+        if (!features[4].isNaN() && features[4] < 0.5f) {
+            if (!features[0].isNaN() && features[0] < 0.83203125f) {
+                margin += -0.115174249f
             } else {
-                if (features[0] < 0.259732395f) {
-                    margin += -0.0403439254f
-                } else {
-                    margin += -0.00265548378f
-                }
+                margin += -0.0150958514f
             }
         } else {
-            if (features[0] < 0.849259198f) {
-                if (features[2] < 0.575717449f) {
-                    margin += 0.0411973298f
-                } else {
-                    margin += -0.0253902413f
-                }
+            if (!features[4].isNaN() && features[4] < 0.509765625f) {
+                margin += 0.135052517f
             } else {
-                if (features[0] < 0.983518898f) {
-                    margin += 0.0834633335f
+                if (!features[4].isNaN() && features[4] < 0.75f) {
+                    margin += -0.111696161f
                 } else {
-                    margin += 0.118379705f
+                    margin += 0.0315306894f
                 }
             }
         }
         // Tree 13
-        if (features[0] < 0.65911746f) {
-            if (features[0] < 0.133482397f) {
-                if (features[0] < 0.0204040129f) {
-                    margin += -0.11075151f
-                } else {
-                    margin += -0.0790175274f
-                }
-            } else {
-                if (features[2] < 0.366494983f) {
-                    margin += -0.0242913347f
-                } else {
-                    margin += 0.0150543125f
-                }
-            }
+        if (!features[5].isNaN() && features[5] < 1.0f) {
+            margin += 0.107626557f
         } else {
-            if (features[0] < 0.934181929f) {
-                if (features[2] < 0.0500017852f) {
-                    margin += -0.0385340527f
-                } else {
-                    margin += 0.047074195f
-                }
+            if (!features[4].isNaN() && features[4] < 0.453125f) {
+                margin += -0.115874708f
             } else {
-                if (features[2] < 0.044093132f) {
-                    margin += 0.0341989063f
+                if (!features[0].isNaN() && features[0] < 0.62890625f) {
+                    margin += -0.0307131112f
                 } else {
-                    margin += 0.105955385f
+                    margin += 0.0596021414f
                 }
             }
         }
         // Tree 14
-        if (features[0] < 0.259732395f) {
-            if (features[0] < 0.0941247493f) {
-                if (features[3] < 6.14223563e-06f) {
-                    margin += -0.0742234513f
-                } else {
-                    margin += -0.0998596027f
-                }
+        if (!features[5].isNaN() && features[5] < 1.0f) {
+            if (!features[4].isNaN() && features[4] < 0.375976562f) {
+                margin += 0.0342501663f
             } else {
-                if (features[0] < 0.219922051f) {
-                    margin += -0.0189209878f
-                } else {
-                    margin += -0.0775937736f
-                }
+                margin += 0.110582285f
             }
         } else {
-            if (features[0] < 0.925641537f) {
-                if (features[0] < 0.770036399f) {
-                    margin += 0.00941603631f
-                } else {
-                    margin += 0.0504831672f
-                }
+            if (!features[4].isNaN() && features[4] < 0.450195312f) {
+                margin += -0.113301359f
             } else {
-                if (features[0] < 0.983518898f) {
-                    margin += 0.0841571614f
+                if (!features[0].isNaN() && features[0] < 0.6484375f) {
+                    margin += -0.0262739044f
                 } else {
-                    margin += 0.111202233f
+                    margin += 0.0580853038f
                 }
             }
         }
         // Tree 15
-        if (features[0] < 0.786524832f) {
-            if (features[0] < 0.120803773f) {
-                if (features[0] < 0.0850145668f) {
-                    margin += -0.0960780755f
+        if (!features[5].isNaN() && features[5] < 1.0f) {
+            if (!features[2].isNaN() && features[2] < 0.977814555f) {
+                if (!features[2].isNaN() && features[2] < 0.0418483019f) {
+                    margin += 0.0269258656f
                 } else {
-                    margin += -0.0544679463f
+                    margin += 0.101856723f
                 }
             } else {
-                if (features[0] < 0.284795046f) {
-                    margin += -0.033612933f
-                } else {
-                    margin += 0.000698435819f
-                }
+                margin += 0.0309840385f
             }
         } else {
-            if (features[0] < 0.949537039f) {
-                if (features[1] < 0.925970435f) {
-                    margin += 0.0890313536f
+            if (!features[4].isNaN() && features[4] < 0.75f) {
+                if (!features[4].isNaN() && features[4] < 0.533203125f) {
+                    margin += -0.0526797771f
                 } else {
-                    margin += 0.0496684015f
+                    margin += -0.12258096f
                 }
             } else {
-                if (features[2] < 0.044093132f) {
-                    margin += 0.00251341774f
+                if (!features[4].isNaN() && features[4] < 0.87890625f) {
+                    margin += 0.124294937f
                 } else {
-                    margin += 0.107521631f
+                    margin += -0.00905244332f
                 }
             }
         }
         // Tree 16
-        if (features[0] < 0.65911746f) {
-            if (features[0] < 0.0941247493f) {
-                if (features[0] < 0.0204040129f) {
-                    margin += -0.105271272f
-                } else {
-                    margin += -0.0748277307f
-                }
+        if (!features[5].isNaN() && features[5] < 1.0f) {
+            if (!features[2].isNaN() && features[2] < 0.0518152267f) {
+                margin += -0.00164980476f
             } else {
-                if (features[3] < 3.45297631e-05f) {
-                    margin += -0.0204515364f
+                if (!features[1].isNaN() && features[1] < 0.840084016f) {
+                    margin += 0.107621908f
                 } else {
-                    margin += -0.0773538873f
+                    margin += 0.0603216588f
                 }
             }
         } else {
-            if (features[0] < 0.958618104f) {
-                if (features[0] < 0.849259198f) {
-                    margin += 0.0261626337f
+            if (!features[3].isNaN() && features[3] < 0.00308756996f) {
+                if (!features[0].isNaN() && features[0] < 0.21875f) {
+                    margin += -0.129866421f
                 } else {
-                    margin += 0.0580367856f
+                    margin += -0.040075954f
                 }
             } else {
-                if (features[0] < 0.982896388f) {
-                    margin += 0.0789956972f
+                if (!features[4].isNaN() && features[4] < 0.782226562f) {
+                    margin += -0.0470462255f
                 } else {
-                    margin += 0.109075665f
+                    margin += 0.0677963123f
                 }
             }
         }
         // Tree 17
-        if (features[0] < 0.849259198f) {
-            if (features[0] < 0.176155031f) {
-                if (features[0] < 0.0611099303f) {
-                    margin += -0.090348281f
-                } else {
-                    margin += -0.0471015088f
-                }
+        if (!features[5].isNaN() && features[5] < 1.0f) {
+            if (!features[2].isNaN() && features[2] < 0.0518152267f) {
+                margin += 0.0159520637f
             } else {
-                if (features[3] < 3.14893396e-06f) {
-                    margin += 0.0904668942f
+                if (!features[3].isNaN() && features[3] < 0.000347442954f) {
+                    margin += 0.0154470401f
                 } else {
-                    margin += -0.00558787724f
+                    margin += 0.102657489f
                 }
             }
         } else {
-            if (features[0] < 0.949537039f) {
-                if (features[0] < 0.917432964f) {
-                    margin += 0.0653448924f
-                } else {
-                    margin += 0.0321797393f
-                }
+            if (!features[4].isNaN() && features[4] < 0.453125f) {
+                margin += -0.108814374f
             } else {
-                if (features[0] < 0.983518898f) {
-                    margin += 0.0789679065f
+                if (!features[0].isNaN() && features[0] < 0.40234375f) {
+                    margin += -0.0523808412f
                 } else {
-                    margin += 0.107296824f
+                    margin += 0.0202992428f
                 }
             }
         }
         // Tree 18
-        if (features[0] < 0.133482397f) {
-            if (features[0] < 0.0204040129f) {
-                if (features[2] < 0.0526733696f) {
-                    margin += -0.00809871126f
-                } else {
-                    margin += -0.0996350273f
-                }
+        if (!features[5].isNaN() && features[5] < 1.0f) {
+            if (!features[2].isNaN() && features[2] < 0.0518152267f) {
+                margin += -0.010838273f
             } else {
-                if (features[2] < 0.167252839f) {
-                    margin += -0.0307704043f
+                if (!features[2].isNaN() && features[2] < 0.977814555f) {
+                    margin += 0.0950337574f
                 } else {
-                    margin += -0.0662803799f
+                    margin += 0.0317375921f
                 }
             }
         } else {
-            if (features[0] < 0.925641537f) {
-                if (features[0] < 0.138031974f) {
-                    margin += 0.14350836f
+            if (!features[4].isNaN() && features[4] < 0.453125f) {
+                margin += -0.106059007f
+            } else {
+                if (!features[4].isNaN() && features[4] < 0.509765625f) {
+                    margin += 0.0952264443f
                 } else {
-                    margin += 0.0028398342f
+                    margin += -0.0154646933f
+                }
+            }
+        }
+        // Tree 19
+        if (!features[4].isNaN() && features[4] < 0.5f) {
+            if (!features[0].isNaN() && features[0] < 0.83203125f) {
+                if (!features[4].isNaN() && features[4] < 0.458007812f) {
+                    margin += -0.0990644172f
+                } else {
+                    margin += -0.019325994f
                 }
             } else {
-                if (features[0] < 0.983518898f) {
-                    margin += 0.0644107163f
+                margin += -0.0109046837f
+            }
+        } else {
+            if (!features[4].isNaN() && features[4] < 0.509765625f) {
+                margin += 0.125741169f
+            } else {
+                if (!features[4].isNaN() && features[4] < 0.75f) {
+                    margin += -0.101695739f
                 } else {
-                    margin += 0.1039415f
+                    margin += 0.0214538164f
+                }
+            }
+        }
+        // Tree 20
+        if (!features[5].isNaN() && features[5] < 1.0f) {
+            if (!features[2].isNaN() && features[2] < 0.0518152267f) {
+                margin += -0.000620268052f
+            } else {
+                if (!features[2].isNaN() && features[2] < 0.977814555f) {
+                    margin += 0.0912016481f
+                } else {
+                    margin += 0.0196258407f
+                }
+            }
+        } else {
+            if (!features[4].isNaN() && features[4] < 0.75f) {
+                if (!features[4].isNaN() && features[4] < 0.533203125f) {
+                    margin += -0.040704418f
+                } else {
+                    margin += -0.115535222f
+                }
+            } else {
+                if (!features[4].isNaN() && features[4] < 0.87890625f) {
+                    margin += 0.0958695933f
+                } else {
+                    margin += -0.0133876419f
+                }
+            }
+        }
+        // Tree 21
+        if (!features[5].isNaN() && features[5] < 1.0f) {
+            if (!features[2].isNaN() && features[2] < 0.0518152267f) {
+                margin += 0.00961944275f
+            } else {
+                if (!features[2].isNaN() && features[2] < 0.55512321f) {
+                    margin += 0.0999613404f
+                } else {
+                    margin += 0.0502150953f
+                }
+            }
+        } else {
+            if (!features[0].isNaN() && features[0] < 0.70703125f) {
+                if (!features[2].isNaN() && features[2] < 0.92575866f) {
+                    margin += -0.0406695679f
+                } else {
+                    margin += 0.0371563844f
+                }
+            } else {
+                if (!features[2].isNaN() && features[2] < 0.458656222f) {
+                    margin += 0.0566916838f
+                } else {
+                    margin += -0.0562342778f
+                }
+            }
+        }
+        // Tree 22
+        if (!features[5].isNaN() && features[5] < 1.0f) {
+            if (!features[0].isNaN() && features[0] < 0.50390625f) {
+                margin += 0.0943024307f
+            } else {
+                if (!features[3].isNaN() && features[3] < 0.000775020744f) {
+                    margin += -0.0381285809f
+                } else {
+                    margin += 0.0571862273f
+                }
+            }
+        } else {
+            if (!features[3].isNaN() && features[3] < 0.00122227706f) {
+                if (!features[0].isNaN() && features[0] < 0.28515625f) {
+                    margin += -0.013694115f
+                } else {
+                    margin += -0.082259953f
+                }
+            } else {
+                if (!features[1].isNaN() && features[1] < 0.607739747f) {
+                    margin += -0.0408865437f
+                } else {
+                    margin += 0.022551002f
+                }
+            }
+        }
+        // Tree 23
+        if (!features[4].isNaN() && features[4] < 0.5f) {
+            if (!features[5].isNaN() && features[5] < 1.0f) {
+                margin += 0.022697838f
+            } else {
+                if (!features[4].isNaN() && features[4] < 0.450195312f) {
+                    margin += -0.100841723f
+                } else {
+                    margin += -0.0259870533f
+                }
+            }
+        } else {
+            if (!features[4].isNaN() && features[4] < 0.509765625f) {
+                margin += 0.126727745f
+            } else {
+                if (!features[4].isNaN() && features[4] < 0.75f) {
+                    margin += -0.0998864472f
+                } else {
+                    margin += 0.0177846011f
+                }
+            }
+        }
+        // Tree 24
+        if (!features[4].isNaN() && features[4] < 0.5f) {
+            if (!features[5].isNaN() && features[5] < 1.0f) {
+                margin += 0.0268238969f
+            } else {
+                if (!features[4].isNaN() && features[4] < 0.46875f) {
+                    margin += -0.102342486f
+                } else {
+                    margin += -0.0277151f
+                }
+            }
+        } else {
+            if (!features[4].isNaN() && features[4] < 0.509765625f) {
+                margin += 0.122099593f
+            } else {
+                if (!features[4].isNaN() && features[4] < 0.75f) {
+                    margin += -0.0744415149f
+                } else {
+                    margin += 0.0182104968f
+                }
+            }
+        }
+        // Tree 25
+        if (!features[4].isNaN() && features[4] < 0.44921875f) {
+            if (!features[5].isNaN() && features[5] < 1.0f) {
+                margin += 0.0235166606f
+            } else {
+                margin += -0.0972369239f
+            }
+        } else {
+            if (!features[0].isNaN() && features[0] < 0.23046875f) {
+                if (!features[1].isNaN() && features[1] < 0.593319952f) {
+                    margin += 0.0141267702f
+                } else {
+                    margin += -0.0902927443f
+                }
+            } else {
+                if (!features[5].isNaN() && features[5] < 1.0f) {
+                    margin += 0.0727764517f
+                } else {
+                    margin += 0.0124415131f
+                }
+            }
+        }
+        // Tree 26
+        if (!features[4].isNaN() && features[4] < 0.453125f) {
+            if (!features[0].isNaN() && features[0] < 0.77734375f) {
+                margin += -0.0929300487f
+            } else {
+                margin += -0.0207492467f
+            }
+        } else {
+            if (!features[3].isNaN() && features[3] < 0.0031594797f) {
+                if (!features[4].isNaN() && features[4] < 0.509765625f) {
+                    margin += 0.0833550692f
+                } else {
+                    margin += -0.0191407409f
+                }
+            } else {
+                if (!features[1].isNaN() && features[1] < 0.703082442f) {
+                    margin += 0.0692378208f
+                } else {
+                    margin += -0.0015204543f
+                }
+            }
+        }
+        // Tree 27
+        if (!features[4].isNaN() && features[4] < 0.5f) {
+            if (!features[2].isNaN() && features[2] < 0.09869764f) {
+                margin += -0.00577616645f
+            } else {
+                margin += -0.094687365f
+            }
+        } else {
+            if (!features[4].isNaN() && features[4] < 0.509765625f) {
+                margin += 0.110405818f
+            } else {
+                if (!features[4].isNaN() && features[4] < 0.75f) {
+                    margin += -0.0869672075f
+                } else {
+                    margin += 0.00953956414f
+                }
+            }
+        }
+        // Tree 28
+        if (!features[5].isNaN() && features[5] < 1.0f) {
+            if (!features[2].isNaN() && features[2] < 0.0518152267f) {
+                margin += -0.0144813405f
+            } else {
+                if (!features[2].isNaN() && features[2] < 0.91386652f) {
+                    margin += 0.0817160755f
+                } else {
+                    margin += 0.00742913177f
+                }
+            }
+        } else {
+            if (!features[0].isNaN() && features[0] < 0.21875f) {
+                if (!features[1].isNaN() && features[1] < 0.599956393f) {
+                    margin += -0.0334141441f
+                } else {
+                    margin += -0.11477419f
+                }
+            } else {
+                if (!features[4].isNaN() && features[4] < 0.450195312f) {
+                    margin += -0.0927983001f
+                } else {
+                    margin += 0.00753976405f
+                }
+            }
+        }
+        // Tree 29
+        if (!features[4].isNaN() && features[4] < 0.5f) {
+            if (!features[0].isNaN() && features[0] < 0.71484375f) {
+                margin += -0.0900886953f
+            } else {
+                if (!features[2].isNaN() && features[2] < 0.158265367f) {
+                    margin += 0.0475681387f
+                } else {
+                    margin += -0.0607123375f
+                }
+            }
+        } else {
+            if (!features[4].isNaN() && features[4] < 0.509765625f) {
+                margin += 0.108748734f
+            } else {
+                if (!features[4].isNaN() && features[4] < 0.75f) {
+                    margin += -0.0669047832f
+                } else {
+                    margin += 0.0149933686f
+                }
+            }
+        }
+        // Tree 30
+        if (!features[4].isNaN() && features[4] < 0.75f) {
+            if (!features[4].isNaN() && features[4] < 0.533203125f) {
+                if (!features[4].isNaN() && features[4] < 0.5f) {
+                    margin += -0.0663807988f
+                } else {
+                    margin += 0.0638689324f
+                }
+            } else {
+                if (!features[1].isNaN() && features[1] < 0.827483058f) {
+                    margin += -0.124079101f
+                } else {
+                    margin += 0.00250129937f
+                }
+            }
+        } else {
+            if (!features[0].isNaN() && features[0] < 0.26171875f) {
+                if (!features[4].isNaN() && features[4] < 1.0f) {
+                    margin += 0.0245679207f
+                } else {
+                    margin += -0.0849954635f
+                }
+            } else {
+                if (!features[3].isNaN() && features[3] < 0.0039858683f) {
+                    margin += 0.0109252995f
+                } else {
+                    margin += 0.0765198842f
+                }
+            }
+        }
+        // Tree 31
+        if (!features[5].isNaN() && features[5] < 1.0f) {
+            if (!features[0].isNaN() && features[0] < 0.515625f) {
+                margin += 0.0931954607f
+            } else {
+                if (!features[1].isNaN() && features[1] < 0.867220581f) {
+                    margin += 0.0061487346f
+                } else {
+                    margin += 0.0813953802f
+                }
+            }
+        } else {
+            if (!features[3].isNaN() && features[3] < 0.0031594797f) {
+                if (!features[2].isNaN() && features[2] < 0.92575866f) {
+                    margin += -0.0447495244f
+                } else {
+                    margin += 0.048854325f
+                }
+            } else {
+                if (!features[1].isNaN() && features[1] < 0.480590165f) {
+                    margin += -0.0693900362f
+                } else {
+                    margin += 0.0542872436f
+                }
+            }
+        }
+        // Tree 32
+        if (!features[5].isNaN() && features[5] < 1.0f) {
+            if (!features[1].isNaN() && features[1] < 0.840084016f) {
+                margin += 0.0958508924f
+            } else {
+                if (!features[1].isNaN() && features[1] < 0.894050658f) {
+                    margin += -0.0443407707f
+                } else {
+                    margin += 0.0544700213f
+                }
+            }
+        } else {
+            if (!features[4].isNaN() && features[4] < 0.453125f) {
+                margin += -0.0886523649f
+            } else {
+                if (!features[0].isNaN() && features[0] < 0.234375f) {
+                    margin += -0.0665743724f
+                } else {
+                    margin += 0.00799957849f
+                }
+            }
+        }
+        // Tree 33
+        if (!features[0].isNaN() && features[0] < 0.80859375f) {
+            if (!features[4].isNaN() && features[4] < 0.453125f) {
+                margin += -0.0883086696f
+            } else {
+                if (!features[4].isNaN() && features[4] < 0.87890625f) {
+                    margin += 0.0320291929f
+                } else {
+                    margin += -0.0226938985f
+                }
+            }
+        } else {
+            if (!features[4].isNaN() && features[4] < 0.71875f) {
+                if (!features[1].isNaN() && features[1] < 0.81334132f) {
+                    margin += -0.0840090439f
+                } else {
+                    margin += 0.0443401523f
+                }
+            } else {
+                margin += 0.119618371f
+            }
+        }
+        // Tree 34
+        if (!features[4].isNaN() && features[4] < 0.87890625f) {
+            if (!features[4].isNaN() && features[4] < 0.75f) {
+                if (!features[4].isNaN() && features[4] < 0.509765625f) {
+                    margin += 0.00975455157f
+                } else {
+                    margin += -0.0684518442f
+                }
+            } else {
+                if (!features[4].isNaN() && features[4] < 0.8125f) {
+                    margin += 0.0666516051f
+                } else {
+                    margin += 0.130921587f
+                }
+            }
+        } else {
+            if (!features[1].isNaN() && features[1] < 0.93133837f) {
+                if (!features[0].isNaN() && features[0] < 0.26171875f) {
+                    margin += -0.0748260021f
+                } else {
+                    margin += 0.00862385146f
+                }
+            } else {
+                if (!features[3].isNaN() && features[3] < 0.00151619711f) {
+                    margin += -0.111370996f
+                } else {
+                    margin += 0.0106936563f
+                }
+            }
+        }
+        // Tree 35
+        if (!features[0].isNaN() && features[0] < 0.8671875f) {
+            if (!features[4].isNaN() && features[4] < 0.453125f) {
+                margin += -0.0753600225f
+            } else {
+                if (!features[4].isNaN() && features[4] < 0.509765625f) {
+                    margin += 0.083871603f
+                } else {
+                    margin += -0.0120492475f
+                }
+            }
+        } else {
+            if (!features[1].isNaN() && features[1] < 0.64999193f) {
+                margin += 0.0203391612f
+            } else {
+                margin += 0.0980407745f
+            }
+        }
+        // Tree 36
+        if (!features[5].isNaN() && features[5] < 1.0f) {
+            if (!features[2].isNaN() && features[2] < 0.0518152267f) {
+                margin += -0.00817164499f
+            } else {
+                if (!features[2].isNaN() && features[2] < 0.55512321f) {
+                    margin += 0.0895703658f
+                } else {
+                    margin += 0.0272307098f
+                }
+            }
+        } else {
+            if (!features[3].isNaN() && features[3] < 0.00213643746f) {
+                if (!features[3].isNaN() && features[3] < 0.00147929788f) {
+                    margin += -0.0209277514f
+                } else {
+                    margin += -0.0709581003f
+                }
+            } else {
+                if (!features[4].isNaN() && features[4] < 0.75f) {
+                    margin += -0.0493255481f
+                } else {
+                    margin += 0.027889628f
                 }
             }
         }

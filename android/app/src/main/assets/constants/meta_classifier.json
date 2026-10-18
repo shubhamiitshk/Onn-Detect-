@@ -11,12 +11,13 @@
     "lip_sync_corr",
     "landmark_jitter"
   ],
-  "decision_threshold": 0.6276869773864746,
-  "test_auc": 0.9618366261185403,
-  "test_accuracy": 0.894,
-  "base_margin_intercept": 0.003000006039550751,
-  "n_trees": 19,
-  "note": "feature order is a cross-platform contract with XGBoostMetaClassifier.kt",
-  "validated": false,
-  "validation_status": "legacy-unvalidated; no reproducible model/frontend/data/calibration lineage"
+  "decision_threshold": 0.44642606377601624,
+  "calibration_auc": 0.934,
+  "test_auc": 0.9440125,
+  "test_accuracy": 0.86,
+  "n_trees": 37,
+  "base_margin_intercept": -3.910188106637236e-08,
+  "release_id": "onn-20261018-v2",
+  "fusion_model_hash": "e4efac85bb77d91874e07b0df13a2439592631cdef19e6e3054430265c9f98b1",
+  "visual_model_hash": "5ed1aadf54a5fc707aac6d223bdcf72048d639961551b94711a2bac5ebf519fc"
 }

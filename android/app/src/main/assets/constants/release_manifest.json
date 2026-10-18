@@ -1,16 +1,16 @@
 {
   "schema_version": 1,
-  "release_id": "legacy-bundled-unvalidated",
-  "validated": false,
-  "validation_status": "Legacy models lack verified score orientation, frontend parity, calibration and held-out/device evaluation; diagnostics only",
+  "release_id": "onn-20261018-v2",
+  "validated": true,
+  "validation_status": "desktop_and_independent_device_validation_passed",
   "score_convention": "real=0_fake=1",
   "models": {
     "srm_forensic_cnn_int8.tflite": {
-      "sha256": "5bcfefc15fdde3519f3bd1d077b3b61f39f2b5036b1adf86272af9a5f1a71818",
+      "sha256": "5ed1aadf54a5fc707aac6d223bdcf72048d639961551b94711a2bac5ebf519fc",
       "input_shape": [
         1,
-        32,
-        32,
+        128,
+        128,
         3
       ],
       "output_shape": [
@@ -18,10 +18,11 @@
         1
       ],
       "dtype": "FLOAT32",
-      "frontend_id": "legacy-rgb32-unvalidated"
+      "frontend_id": "rgb-exif-srgb-whitealpha-pow2cap1024-bilinear-square-v2-size128-float32",
+      "quantization": "full-int8"
     },
     "lcnn_audio_int8.tflite": {
-      "sha256": "2dd0c96a24da39c1b81398f8698e3c1b0e417692ea5e050ca7b57cf4695aff46",
+      "sha256": "aa70068465ce65255d65fc73560aeac3759725b74933ed08e176e1342c485fc1",
       "input_shape": [
         1,
         401,
@@ -33,23 +34,54 @@
         1
       ],
       "dtype": "FLOAT32",
-      "frontend_id": "legacy-lfcc-unvalidated"
+      "frontend_id": "lfcc-v3-sr16000-f128-c40-nfft512-hop160-topdbnone-resampler-quadratic_window_sinc_v1-float64stft-float32",
+      "quantization": "full-int8"
     }
   },
   "artifacts": {
-    "constants/lcnn_audio_threshold.json": "487a0f6395b9e689741448e3e6419ec8ae5e64e0ffbe2d0761b7b3a8b98ae51e",
-    "constants/meta_classifier.json": "bd66810c833f6e0cb113fde37fab529b76e51d3ca6d00a20aeec425d58c12f13",
-    "constants/model_hashes.json": "1b0519220ca4d58a54e8c531dcb2a3c09c04dc8ae2e27cd8faf6081a8da2b3cb",
-    "constants/natural_diff_histogram.json": "5b1de3918a9e5ebed2dba81ea68e4fd8ac9f55772f4806437b976307aa127eae",
-    "models/lcnn_audio_int8.tflite": "2dd0c96a24da39c1b81398f8698e3c1b0e417692ea5e050ca7b57cf4695aff46",
-    "models/srm_forensic_cnn_int8.tflite": "5bcfefc15fdde3519f3bd1d077b3b61f39f2b5036b1adf86272af9a5f1a71818"
+    "models/srm_forensic_cnn_int8.tflite": "5ed1aadf54a5fc707aac6d223bdcf72048d639961551b94711a2bac5ebf519fc",
+    "models/lcnn_audio_int8.tflite": "aa70068465ce65255d65fc73560aeac3759725b74933ed08e176e1342c485fc1",
+    "constants/lcnn_audio_threshold.json": "cacd502d36162f4c366863b2d4d7ec357108b78944cd7910fccd8033e8a40b3a",
+    "source_snapshot.json": "3676a385f28de15b747bcc65ee7130fabb496986eb95b1e80416f80ea7302794",
+    "evaluation_report.json": "8afc0aa2216bc0581cc57cc640d19ab7cb03ee9c14670fc026f2087ea91019a0",
+    "constants/meta_classifier.json": "0298fb631a897b8a060970f35fcda49dca5e3ed7f23488fc3ccb2ce2fb638c46",
+    "constants/model_hashes.json": "7092192c01cf3b33695814b2c402fa5bf97acc76179f6284caddf8d129ebc7d3",
+    "constants/natural_diff_histogram.json": "471e7ea7b96b4bb98ba07fb0a72397392e8f9910ec21106ce7221039b0240b98",
+    "fusion/meta_results.json": "3e696f6d96e84f1f1a35bdecbe1ed6eb8d0ee60a4fefdcfee5fdf152f25aea79",
+    "fusion/xgboost_meta.json": "e4efac85bb77d91874e07b0df13a2439592631cdef19e6e3054430265c9f98b1",
+    "fusion/XGBoostMetaClassifier.kt": "b09be4376408d2552bfc0a0a266056f6194f37a59fc6370939b788413b8616a1",
+    "device_evaluation.json": "5a202552d3135ebc0dc410b772068d186d5cc9b7c81198ef48adee6015c58521"
   },
-  "calibration": {},
-  "fusion_revision": "legacy-unvalidated",
-  "source_commit": "unknown",
-  "data_manifest_hashes": {},
-  "evaluation_report_hash": null,
+  "calibration": {
+    "srm_forensic_cnn_int8.tflite": {
+      "threshold": 0.44642606377601624,
+      "auc": 0.934,
+      "n_calibration": 400,
+      "split_manifest_hash": "9b0400fcc82e08d117c5cb245fd2c3081b3ba8ed9fd2f169a5455248c84c9312",
+      "model_hash": "5ed1aadf54a5fc707aac6d223bdcf72048d639961551b94711a2bac5ebf519fc",
+      "frontend_id": "rgb-exif-srgb-whitealpha-pow2cap1024-bilinear-square-v2-size128-float32",
+      "fusion_model_hash": "e4efac85bb77d91874e07b0df13a2439592631cdef19e6e3054430265c9f98b1"
+    },
+    "lcnn_audio_int8.tflite": {
+      "model_hash": "aa70068465ce65255d65fc73560aeac3759725b74933ed08e176e1342c485fc1",
+      "frontend_id": "lfcc-v3-sr16000-f128-c40-nfft512-hop160-topdbnone-resampler-quadratic_window_sinc_v1-float64stft-float32",
+      "threshold": 0.375,
+      "auc": 0.86415,
+      "n_calibration": 400,
+      "split_manifest_hash": "6d56263cfdce0b8d1fc8f83cdef9261b91438a5a511e83a3401892be1e1fb524"
+    }
+  },
+  "data_manifest_hashes": {
+    "visual": "9b0400fcc82e08d117c5cb245fd2c3081b3ba8ed9fd2f169a5455248c84c9312",
+    "audio": "6d56263cfdce0b8d1fc8f83cdef9261b91438a5a511e83a3401892be1e1fb524"
+  },
   "device_validation": {
-    "passed": false
-  }
+    "passed": true,
+    "report_hash": "5a202552d3135ebc0dc410b772068d186d5cc9b7c81198ef48adee6015c58521"
+  },
+  "source_commit": "a683620ba886bfa6904d8ca2c19c80312b29b742",
+  "source_snapshot_sha256": "3676a385f28de15b747bcc65ee7130fabb496986eb95b1e80416f80ea7302794",
+  "source_dirty": true,
+  "evaluation_report_hash": "8afc0aa2216bc0581cc57cc640d19ab7cb03ee9c14670fc026f2087ea91019a0",
+  "fusion_revision": "onn-20261018-v2"
 }

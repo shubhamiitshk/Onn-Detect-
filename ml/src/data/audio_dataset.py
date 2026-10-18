@@ -33,6 +33,27 @@ def load_analysis_waveform(path, split='calibration', sample_rate=16000):
         mono = np.pad(mono, (0, 64000 - len(mono)))
     return torch.from_numpy(mono)
 
+def augment_train_waveform(mono: torch.Tensor) -> torch.Tensor:
+    """Realistic channel/gain/noise perturbations for training speech windows only."""
+    x = mono.clone().float()
+    # 1. Random gain variation
+    gain = random.uniform(0.65, 1.35)
+    x = x * gain
+    # 2. Random 1st-order spectral tilt / pre-emphasis (channel response variation)
+    if random.random() < 0.35 and x.numel() > 1:
+        alpha = random.uniform(-0.20, 0.20)
+        tilted = x.clone()
+        tilted[1:] = x[1:] + alpha * x[:-1]
+        x = tilted
+    # 3. Random SNR-bounded additive Gaussian noise
+    if random.random() < 0.35:
+        rms = float(torch.sqrt(torch.mean(x * x) + 1e-12).item())
+        if rms > 1e-4:
+            snr_db = random.uniform(20.0, 38.0)
+            noise_std = rms / (10.0 ** (snr_db / 20.0))
+            x = x + torch.randn_like(x) * noise_std
+    return torch.clamp(x, -1.0, 1.0)
+
 class StrictAudioDataset(Dataset):
     def __init__(self, root_dir, split='train', max_duration=4.0, sample_rate=16000,
                  cache_in_memory=False, subsample_limit=None):
@@ -57,7 +78,10 @@ class StrictAudioDataset(Dataset):
     def __getitem__(self, index):
         path, label = self.samples[index]
         mono = load_analysis_waveform(path, self.split, self.sample_rate)
+        if self.split == 'train':
+            mono = augment_train_waveform(mono)
         feature = self.lfcc_extractor.extract(mono).squeeze(0).float()
         if feature.shape != (1, 401, 40) or not torch.isfinite(feature).all():
             raise ValueError(f'Invalid LFCC feature for {path}: {feature.shape}')
         return feature, label
+

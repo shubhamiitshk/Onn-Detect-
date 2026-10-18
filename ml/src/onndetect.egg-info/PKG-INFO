@@ -1,23 +1,25 @@
 Metadata-Version: 2.4
 Name: onndetect
-Version: 4.0.0
-Requires-Dist: torch==2.4.0
-Requires-Dist: torchvision
-Requires-Dist: torchaudio
-Requires-Dist: ai-edge-torch
-Requires-Dist: tensorflow
-Requires-Dist: librosa
-Requires-Dist: soundfile
-Requires-Dist: opencv-python
-Requires-Dist: albumentations
-Requires-Dist: xgboost
-Requires-Dist: scikit-learn
-Requires-Dist: datasets
-Requires-Dist: huggingface-hub
-Requires-Dist: wandb
-Requires-Dist: hydra-core
-Requires-Dist: omegaconf
-Requires-Dist: tqdm
-Requires-Dist: pytest
-Requires-Dist: jupyter
+Version: 4.1.0
+Requires-Python: >=3.11,<3.12
+Requires-Dist: torch==2.14.1
+Requires-Dist: numpy==2.3.5
+Requires-Dist: Pillow==12.2.0
+Requires-Dist: PyYAML==6.0.2
+Requires-Dist: scipy==1.17.1
+Requires-Dist: scikit-learn==1.6.1
+Requires-Dist: xgboost==3.2.0
+Requires-Dist: joblib==1.5.3
+Requires-Dist: tqdm==4.70.0
+Requires-Dist: soundfile==0.13.1
+Provides-Extra: export
+Requires-Dist: tensorflow==2.21.0; extra == "export"
+Requires-Dist: keras==3.15.1; extra == "export"
+Provides-Extra: data
+Requires-Dist: datasets==4.4.1; extra == "data"
+Requires-Dist: huggingface-hub==1.28.0; extra == "data"
+Provides-Extra: dev
+Requires-Dist: pytest==9.1.1; extra == "dev"
+Dynamic: provides-extra
 Dynamic: requires-dist
+Dynamic: requires-python

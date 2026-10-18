@@ -5,18 +5,18 @@ model:
   - 40
   num_classes: 1
 data:
-  dataset: asvspoof2019
-  root_dir: ../datasets/asvspoof2019
+  dataset: asvspoof2019_inthewild
+  root_dir: ../datasets/asvspoof_inthewild_audio
   max_duration: 4.0
   sample_rate: 16000
   cache_in_memory: false
 training:
-  epochs: 30
-  batch_size: 16
+  epochs: 18
+  batch_size: 32
   num_workers: 0
   prefetch_factor: 2
-  amp: true
-  precision: fp16
+  amp: false
+  precision: fp32
   gradient_clip: 1.0
 optimizer:
   name: AdamW
@@ -24,13 +24,14 @@ optimizer:
   weight_decay: 0.0002
 scheduler:
   name: CosineAnnealing
-  warmup_epochs: 5
-  T_max: 30
-  eta_min: 1.0e-07
+  warmup_epochs: 2
+  T_max: 18
+  eta_min: 1.0e-06
 early_stopping:
-  patience: 7
-  metric: val_eer
-  mode: min
+  patience: 6
+  metric: val_auc
+  mode: max
 logging:
   log_dir: ../ml/logs
   save_interval: 5
+

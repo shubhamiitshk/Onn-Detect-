@@ -29,11 +29,10 @@ import kotlin.math.sin
 @RunWith(AndroidJUnit4::class)
 class PackagedInferenceTest {
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
-    @Test fun actualPackagedModelsHaveFiniteScalarOutputAndRemainUnvalidated() {
+    @Test fun actualPackagedModelsHaveFiniteScalarOutputAndRemainConsistentWithManifest() {
         ModelIntegrityGate.resetForTest()
         val report = ModelIntegrityGate.report(context)
         assertTrue(report.failures.joinToString(), report.allOk)
-        assertFalse("Legacy byte validity must not claim calibrated accuracy", report.validated)
         LiteRTInferenceEngine(MemoryMappedModelLoader(context)).use { engine ->
             for (name in ModelIntegrityChecker.REQUIRED_MODELS) {
                 val contract = engine.contract(name)
@@ -46,37 +45,64 @@ class PackagedInferenceTest {
             }
         }
     }
-    @Test fun imagePipelineCannotClassifyUnvalidatedPackagedAssets() = runBlocking {
+    @Test fun imagePipelineRespectsPackagedValidationStatus() = runBlocking {
+        ModelIntegrityGate.resetForTest()
+        val report = ModelIntegrityGate.report(context, setOf(ModelIntegrityChecker.IMAGE_MODEL))
         LiteRTInferenceEngine(MemoryMappedModelLoader(context)).use { engine ->
-            val bitmap = Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888)
+            val bitmap = Bitmap.createBitmap(128, 128, Bitmap.Config.ARGB_8888)
             try {
-                for (y in 0 until 64) for (x in 0 until 64) bitmap.setPixel(x, y,
-                    Color.rgb(x * 4, y * 4, (x * 13 + y * 7) % 256))
+                for (y in 0 until 128) for (x in 0 until 128) bitmap.setPixel(x, y,
+                    Color.rgb((x * 2) % 256, (y * 2) % 256, (x * 13 + y * 7) % 256))
                 val pipeline = DetectionPipeline(DeviceTier.HIGH_END, SignalFusion(), SRMForensicAnalyzer(context, engine),
                     FFTSpectralAnalyzer(), KLCooccurrenceAnalyzer(context), XGBoostMetaClassifier(),
                     EXIFAnalyzer(), C2PAManifestChecker(), PRNUAnalyzer(), context)
                 val result = pipeline.analyzeMedia(bitmap, ScanMode.IMAGE_ONLY).last().result!!
-                assertEquals(DetectionVerdict.INCONCLUSIVE, result.verdict)
-                assertEquals(AnalysisStatus.INCONCLUSIVE, result.status)
-                assertFalse(result.isAiGenerated)
-                assertFalse(result.modelValidated)
-                assertEquals(-1f, result.overallScore, 0f)
+                if (!report.validated) {
+                    assertEquals(DetectionVerdict.INCONCLUSIVE, result.verdict)
+                    assertEquals(AnalysisStatus.INCONCLUSIVE, result.status)
+                    assertFalse(result.isAiGenerated)
+                    assertFalse(result.modelValidated)
+                    assertEquals(-1f, result.overallScore, 0f)
+                } else {
+                    assertEquals(AnalysisStatus.SUCCESS, result.status)
+                    assertTrue(result.modelValidated)
+                    assertTrue(result.overallScore.isFinite() && result.overallScore in 0f..1f)
+                    assertTrue(result.verdict in setOf(DetectionVerdict.SYNTHETIC, DetectionVerdict.AUTHENTIC))
+                }
             } finally { bitmap.recycle() }
         }
     }
-    private fun wav(name: String, silence: Boolean): File {
+    private fun wav(name: String, mode: Int): File {
         val samples = 64000
         val buffer = ByteBuffer.allocate(44 + samples * 2).order(ByteOrder.LITTLE_ENDIAN)
         buffer.put("RIFF".toByteArray(Charsets.US_ASCII)); buffer.putInt(36 + samples * 2)
         buffer.put("WAVEfmt ".toByteArray(Charsets.US_ASCII)); buffer.putInt(16); buffer.putShort(1); buffer.putShort(1)
         buffer.putInt(16000); buffer.putInt(32000); buffer.putShort(2); buffer.putShort(16)
         buffer.put("data".toByteArray(Charsets.US_ASCII)); buffer.putInt(samples * 2)
-        for (i in 0 until samples) buffer.putShort(if (silence) 0 else (sin(2 * PI * 440 * i / 16000) * 8000).toInt().toShort())
+        for (i in 0 until samples) {
+            val sample = when (mode) {
+                0 -> 0
+                1 -> (sin(2 * PI * 440 * i / 16000) * 8000).toInt()
+                else -> {
+                    // Syllable-modulatedvoiced/unvoiced synthetic speech-like fixture
+                    val t = i.toDouble() / 16000.0
+                    val syllableEnv = (0.5 + 0.5 * sin(2 * PI * 3.5 * t)).let { if (it < 0.25) 0.02 else it }
+                    val voiced = (sin(2 * PI * 6.0 * t) >= -0.2)
+                    val carrier = if (voiced) (0.6 * sin(2 * PI * 140 * t) + 0.3 * sin(2 * PI * 720 * t) + 0.1 * sin(2 * PI * 2400 * t))
+                    else (sin(2 * PI * 3700 * t + sin(2 * PI * 890 * t) * 4.0))
+                    (syllableEnv * carrier * 12000).toInt().coerceIn(-32000, 32000)
+                }
+            }
+            buffer.putShort(sample.toShort())
+        }
         return File(context.cacheDir, name).apply { writeBytes(buffer.array()) }
     }
-    @Test fun decoderRecordsSampleCoverageAndSilenceCannotBecomeAuthentic() {
-        val silence = wav("onn-smoke-silence.wav", true)
-        val tone = wav("onn-smoke-tone.wav", false)
+    @Test fun decoderRecordsSampleCoverageAndSilenceOrPureToneCannotBecomeAuthentic() {
+        ModelIntegrityGate.resetForTest()
+        val report = ModelIntegrityGate.report(context, setOf(ModelIntegrityChecker.AUDIO_MODEL))
+        val silence = wav("onn-smoke-silence.wav", 0)
+        val tone = wav("onn-smoke-tone.wav", 1)
+        val speechLike = wav("onn-smoke-speechlike.wav", 2)
         try {
             LiteRTInferenceEngine(MemoryMappedModelLoader(context)).use { engine ->
                 val classifier = AudioClassifier(context, engine)
@@ -85,11 +111,21 @@ class PackagedInferenceTest {
                 assertFalse(empty.isAiGenerated); assertEquals(-1f, empty.score, 0f)
                 val diagnostic = classifier.analyze(Uri.fromFile(tone))
                 assertEquals(AnalysisStatus.INCONCLUSIVE, diagnostic.status)
-                assertFalse(diagnostic.isAiGenerated); assertFalse(diagnostic.modelValidated)
+                assertFalse(diagnostic.isAiGenerated)
+                assertEquals(report.validated, diagnostic.modelValidated)
                 assertTrue(diagnostic.reason, diagnostic.score.isFinite() && diagnostic.score in 0f..1f)
                 assertTrue(diagnostic.analyzedDurationMs in 3500..4000)
                 assertTrue(diagnostic.totalDurationMs >= diagnostic.analyzedDurationMs)
+                val speechResult = classifier.analyze(Uri.fromFile(speechLike))
+                assertTrue(speechResult.score.isFinite() && speechResult.score in 0f..1f)
+                if (report.validated) {
+                    assertEquals(AnalysisStatus.SUCCESS, speechResult.status)
+                    assertTrue(speechResult.modelValidated)
+                } else {
+                    assertEquals(AnalysisStatus.INCONCLUSIVE, speechResult.status)
+                }
             }
-        } finally { silence.delete(); tone.delete() }
+        } finally { silence.delete(); tone.delete(); speechLike.delete() }
     }
 }
+

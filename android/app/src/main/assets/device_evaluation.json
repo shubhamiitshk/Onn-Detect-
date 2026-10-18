@@ -1,0 +1,31 @@
+{
+  "release_id": "onn-20261018-v2",
+  "passed": true,
+  "source_snapshot_sha256": "3676a385f28de15b747bcc65ee7130fabb496986eb95b1e80416f80ea7302794",
+  "fusion_kotlin_sha256": "b09be4376408d2552bfc0a0a266056f6194f37a59fc6370939b788413b8616a1",
+  "fusion_revision": "onn-20261018-v2",
+  "kotlin_parity_passed": true,
+  "offline_verified": true,
+  "models": {
+    "srm_forensic_cnn_int8.tflite": {
+      "sha256": "5ed1aadf54a5fc707aac6d223bdcf72048d639961551b94711a2bac5ebf519fc",
+      "frontend_id": "rgb-exif-srgb-whitealpha-pow2cap1024-bilinear-square-v2-size128-float32",
+      "parity_passed": true,
+      "desktop_agreement": 0.9825,
+      "desktop_mae": 0.010754442699253559,
+      "desktop_max_error": 0.055780522525310516,
+      "latency_ms_p50": 12.182999998913147,
+      "latency_ms_p95": 2196.3374100003375
+    },
+    "lcnn_audio_int8.tflite": {
+      "sha256": "aa70068465ce65255d65fc73560aeac3759725b74933ed08e176e1342c485fc1",
+      "frontend_id": "lfcc-v3-sr16000-f128-c40-nfft512-hop160-topdbnone-resampler-quadratic_window_sinc_v1-float64stft-float32",
+      "parity_passed": true,
+      "desktop_agreement": 0.9925,
+      "desktop_mae": 0.00654950627591461,
+      "desktop_max_error": 0.0756072998046875,
+      "latency_ms_p50": 8.718850000150269,
+      "latency_ms_p95": 10.968210000464747
+    }
+  }
+}

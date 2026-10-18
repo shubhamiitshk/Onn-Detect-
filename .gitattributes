@@ -4,3 +4,5 @@
 android/gradlew text eol=lf
 *.tflite binary
 *.jar binary
+android/app/src/main/assets/** -text
+android/app/src/main/java/com/onndetect/detection/fusion/XGBoostMetaClassifier.kt -text

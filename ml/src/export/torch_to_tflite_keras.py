@@ -81,29 +81,31 @@ def build_keras_srm(pt_model, input_size: int = 32) -> tf.keras.Model:
 
     inp = tf.keras.Input((input_size, input_size, 3), name="input")
     # SRM fixed filters + tanh (frozen in PyTorch)
+    srm_out = int(pt.srm.conv.out_channels)
     srm_layer = tf.keras.layers.Conv2D(
-        3, 5, strides=1, padding="same", use_bias=False,
+        srm_out, 5, strides=1, padding="same", use_bias=False,
         trainable=False, name="srm_conv")
     x = srm_layer(inp)
     srm_layer.set_weights([pt.srm.conv.weight.detach().numpy()
                            .transpose(2, 3, 1, 0)])
     x = tf.keras.layers.Activation("tanh", name="srm_tanh")(x)
 
-    # Backbone stem: Conv2d(3,16,3,s2,p1) + BN + Hardswish.
+    # Backbone stem: Conv2d(srm_out,stem_out,3,s2,p1) + BN + Hardswish.
     # PyTorch pads symmetrically (+-1); Keras SAME with stride 2 pads
     # asymmetrically (bottom/right), shifting the sampling grid. Replicate
     # PT exactly: explicit ZeroPadding2D + valid conv.
+    stem_out = int(pt.backbone[0].out_channels)
     x = tf.keras.layers.ZeroPadding2D(1, name="stem_pad")(x)
-    c1 = tf.keras.layers.Conv2D(16, 3, strides=2, padding="valid",
+    c1 = tf.keras.layers.Conv2D(stem_out, 3, strides=2, padding="valid",
                                 use_bias=False, name="stem_conv")
     x = c1(x); _set_conv(c1, pt.backbone[0])
     b1 = _bn("stem_bn"); x = b1(x); _set_bn(b1, pt.backbone[1])
     x = tf.keras.layers.Activation(_hard_swish, name="stem_hswish")(x)
 
-    # DepthwiseSeparableBlocks: backbone indices 3..6
-    ds_specs = [(16, 32, 1), (32, 64, 2), (64, 128, 2), (128, 256, 2)]
-    for i, (cin, cout, stride) in enumerate(ds_specs):
-        pt_block = pt.backbone[3 + i]          # .depthwise / .pointwise Sequentials
+    # DepthwiseSeparableBlocks: backbone indices 3..N
+    for i, pt_block in enumerate(pt.backbone[3:]):
+        cout = int(pt_block.pointwise[0].out_channels)
+        stride = int(pt_block.depthwise[0].stride[0])
         if stride == 2:
             x = tf.keras.layers.ZeroPadding2D(1, name=f"ds{i}_pad")(x)
             dw_padding = "valid"
@@ -123,7 +125,7 @@ def build_keras_srm(pt_model, input_size: int = 32) -> tf.keras.Model:
 
     # Head: GAP -> Dense(64)+ReLU -> Dropout(skip) -> Dense(1)+Sigmoid
     x = tf.keras.layers.GlobalAveragePooling2D(name="gap")(x)
-    d1 = tf.keras.layers.Dense(64, activation="relu", name="fc1")
+    d1 = tf.keras.layers.Dense(int(pt.head[2].out_features), activation="relu", name="fc1")
     x = d1(x); _set_dense(d1, pt.head[2])
     d2 = tf.keras.layers.Dense(1, activation="sigmoid", name="fc2")
     out = d2(x); _set_dense(d2, pt.head[5])

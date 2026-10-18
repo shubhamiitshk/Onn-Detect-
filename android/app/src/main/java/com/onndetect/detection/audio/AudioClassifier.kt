@@ -49,12 +49,64 @@ class AudioClassifier(private val context: Context, private val engine: LiteRTIn
             val features = lfcc.extractBuffer(decoded.pcm, ::check)
             check(); onStage("Audio model diagnostics...")
             val score = engine.predict(MODEL_FILE, features, ::check)
-            // This product accepts general audio, but the network is a speech
-            // countermeasure. A validated speech/music routing gate is needed
-            // before its score can be used as a general-file verdict.
-            return outcome(score, AnalysisStatus.INCONCLUSIVE, if (!report.validated) report.validationReason else
-                "Speech-content routing and file-level sampled-window calibration are not validated")
+            if (!report.validated) {
+                return outcome(score, AnalysisStatus.INCONCLUSIVE, report.validationReason)
+            }
+            if (!SpeechContentGate.isSpeechLike(decoded.pcm, decoded.validSamples, TARGET_RATE)) {
+                return outcome(score, AnalysisStatus.INCONCLUSIVE,
+                    "Audio does not exhibit speech-like syllabic modulation; speech countermeasure abstains on stationary or non-speech audio")
+            }
+            return outcome(score, AnalysisStatus.SUCCESS, null)
         } catch (e: CancellationException) { throw e }
         catch (e: Exception) { return Verdict(-1f, false, null, AnalysisFailurePolicy.status(e), e.message ?: "Audio analysis failed") }
     }
 }
+
+/** Rejects stationary tones and unmodulated noise before speech classification. */
+internal object SpeechContentGate {
+    fun isSpeechLike(pcm: FloatArray, validSamples: Int, sampleRate: Int = 16000): Boolean {
+        val n = validSamples.coerceAtMost(pcm.size)
+        val frameLen = (sampleRate / 50).coerceAtLeast(64)
+        val numFrames = n / frameLen
+        if (numFrames < 10) return false
+        val energies = FloatArray(numFrames)
+        val zcrs = FloatArray(numFrames)
+        var sumE = 0.0
+        var sumZ = 0.0
+        for (f in 0 until numFrames) {
+            val base = f * frameLen
+            var eSq = 0.0
+            var zc = 0
+            for (i in 0 until frameLen) {
+                val s = pcm[base + i]
+                if (!s.isFinite()) return false
+                eSq += s.toDouble() * s.toDouble()
+                if (i > 0 && (s >= 0f) != (pcm[base + i - 1] >= 0f)) zc++
+            }
+            val rms = kotlin.math.sqrt(eSq / frameLen).toFloat()
+            val zcr = zc.toFloat() / (frameLen - 1)
+            energies[f] = rms
+            zcrs[f] = zcr
+            sumE += rms
+            sumZ += zcr
+        }
+        val meanE = (sumE / numFrames).toFloat()
+        if (meanE < 1e-4f) return false
+        val meanZ = (sumZ / numFrames).toFloat()
+        var varE = 0.0
+        var varZ = 0.0
+        var activeFrames = 0
+        for (f in 0 until numFrames) {
+            val de = energies[f] - meanE
+            val dz = zcrs[f] - meanZ
+            varE += de * de
+            varZ += dz * dz
+            if (energies[f] > 0.15f * meanE) activeFrames++
+        }
+        val cvE = (kotlin.math.sqrt(varE / numFrames) / meanE).toFloat()
+        val stdZ = kotlin.math.sqrt(varZ / numFrames).toFloat()
+        val activeRatio = activeFrames.toFloat() / numFrames
+        return cvE >= 0.20f && stdZ >= 0.015f && activeRatio in 0.15f..0.99f
+    }
+}
+
