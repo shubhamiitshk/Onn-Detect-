@@ -40,8 +40,11 @@ def load_model(path, cls, frontend=None):
     state = load_verified_checkpoint(path)
     if frontend is not None and state["contract"]["frontend_id"] != frontend:
         raise ValueError("Checkpoint frontend is incompatible")
-    model = cls()
-    model.load_state_dict(state["state_dict"])
+    if hasattr(cls, "from_pretrained"):
+        model = cls.from_pretrained(path)
+    else:
+        model = cls()
+        model.load_state_dict(state["state_dict"])
     model.cpu().eval()
     return model, state
 

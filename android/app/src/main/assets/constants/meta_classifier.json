@@ -11,13 +11,13 @@
     "lip_sync_corr",
     "landmark_jitter"
   ],
-  "decision_threshold": 0.44642606377601624,
-  "calibration_auc": 0.934,
-  "test_auc": 0.9440125,
-  "test_accuracy": 0.86,
-  "n_trees": 37,
-  "base_margin_intercept": -3.910188106637236e-08,
-  "release_id": "onn-20261018-v2",
-  "fusion_model_hash": "e4efac85bb77d91874e07b0df13a2439592631cdef19e6e3054430265c9f98b1",
-  "visual_model_hash": "5ed1aadf54a5fc707aac6d223bdcf72048d639961551b94711a2bac5ebf519fc"
+  "decision_threshold": 0.499289333820343,
+  "calibration_auc": 0.5920625,
+  "test_auc": 0.6555,
+  "test_accuracy": 0.6,
+  "n_trees": 4,
+  "base_margin_intercept": -2.838335417393312e-10,
+  "release_id": "onn-20261019-v4",
+  "fusion_model_hash": "24c1e897b0f1485255173b384793785c696d9eb6f4f24baa724fe7c589487144",
+  "visual_model_hash": "c76c6d48af7668c170a3e63efc849629765f5b1f346e5d6aa6cf2f7edefa42aa"
 }

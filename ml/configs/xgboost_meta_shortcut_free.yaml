@@ -1,0 +1,20 @@
+model:
+  name: XGBoostMetaClassifier
+  type: xgboost
+training:
+  n_estimators: 40
+  max_depth: 3
+  learning_rate: 0.1
+  subsample: 0.8
+  colsample_bytree: 0.8
+  eval_metric: auc
+  early_stopping_rounds: 5
+shortcuts:
+  neutralize_container_features: true
+  neutral_resolution: 0.5
+  neutral_compression: 1.0
+data:
+  samples_per_split: 8000
+  require_independent_stacking: true
+logging:
+  output_dir: exported

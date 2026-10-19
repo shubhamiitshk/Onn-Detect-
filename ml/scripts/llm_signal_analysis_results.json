@@ -1,0 +1,130 @@
+{
+  "standalone": {
+    "current_srm_score": {
+      "auc": 0.6721624999999999,
+      "auc_ci95": [
+        0.6238109374999999,
+        0.7222224999999999
+      ],
+      "eer": 0.3625,
+      "tpr_at_fpr_1pct": 0.025,
+      "balanced_acc": 0.6375
+    },
+    "current_fft_score": {
+      "auc": 0.5012875,
+      "auc_ci95": [
+        0.44254625,
+        0.5564487499999999
+      ],
+      "eer": 0.525,
+      "tpr_at_fpr_1pct": 0.0,
+      "balanced_acc": 0.475
+    },
+    "current_kl_score": {
+      "auc": 0.41204999999999997,
+      "auc_ci95": [
+        0.3541071875,
+        0.47056375000000006
+      ],
+      "eer": 0.565,
+      "tpr_at_fpr_1pct": 0.0,
+      "balanced_acc": 0.435
+    },
+    "current_flatness_score": {
+      "auc": 0.6134750000000001,
+      "auc_ci95": [
+        0.560643125,
+        0.6664424999999999
+      ],
+      "eer": 0.41000000000000003,
+      "tpr_at_fpr_1pct": 0.02,
+      "balanced_acc": 0.59
+    },
+    "current_4signal_fusion": {
+      "auc": 0.6995750000000001,
+      "auc_ci95": [
+        0.6507693750000001,
+        0.7505312500000001
+      ],
+      "eer": 0.345,
+      "tpr_at_fpr_1pct": 0.04,
+      "balanced_acc": 0.655
+    },
+    "zs_smolvlm_256m": {
+      "auc": 0.5892499999999999,
+      "auc_ci95": [
+        0.534069375,
+        0.647735625
+      ],
+      "eer": 0.44499999999999995,
+      "tpr_at_fpr_1pct": 0.025,
+      "balanced_acc": 0.555
+    },
+    "zs_smolvlm_500m": {
+      "auc": 0.5496249999999999,
+      "auc_ci95": [
+        0.489095,
+        0.6034062499999999
+      ],
+      "eer": 0.475,
+      "tpr_at_fpr_1pct": 0.045,
+      "balanced_acc": 0.525
+    },
+    "probe_mobileclip2_s0": {
+      "auc": 0.8850750000000001,
+      "auc_ci95": [
+        0.852221875,
+        0.9143012499999998
+      ],
+      "eer": 0.20499999999999996,
+      "tpr_at_fpr_1pct": 0.3,
+      "balanced_acc": 0.795,
+      "embedding_dim": 512
+    },
+    "probe_smolvlm500_vision": {
+      "auc": 0.8692,
+      "auc_ci95": [
+        0.8349975,
+        0.903853125
+      ],
+      "eer": 0.22499999999999998,
+      "tpr_at_fpr_1pct": 0.235,
+      "balanced_acc": 0.775,
+      "embedding_dim": 768
+    }
+  },
+  "fusion": {
+    "current_plus_probe_mobileclip2_s0": {
+      "auc": 0.895675,
+      "auc_ci95": [
+        0.8635743750000001,
+        0.923475
+      ],
+      "delta_auc_vs_current": 0.19609999999999994,
+      "delta_ci95": [
+        0.147343125,
+        0.24558437499999994
+      ],
+      "p_value": 0.0,
+      "eer": 0.18500000000000003,
+      "tpr_at_fpr_1pct": 0.235,
+      "balanced_acc": 0.815
+    },
+    "current_plus_probe_smolvlm500_vision": {
+      "auc": 0.88005,
+      "auc_ci95": [
+        0.8463224999999999,
+        0.9135012499999999
+      ],
+      "delta_auc_vs_current": 0.18047499999999994,
+      "delta_ci95": [
+        0.12996562499999995,
+        0.23002812500000003
+      ],
+      "p_value": 0.0,
+      "eer": 0.21999999999999997,
+      "tpr_at_fpr_1pct": 0.16,
+      "balanced_acc": 0.78
+    }
+  }
+}

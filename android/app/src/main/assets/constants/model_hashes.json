@@ -1,7 +1,7 @@
 {
   "algorithm": "sha256",
   "models": {
-    "srm_forensic_cnn_int8.tflite": "5ed1aadf54a5fc707aac6d223bdcf72048d639961551b94711a2bac5ebf519fc",
-    "lcnn_audio_int8.tflite": "aa70068465ce65255d65fc73560aeac3759725b74933ed08e176e1342c485fc1"
+    "srm_forensic_cnn_int8.tflite": "c76c6d48af7668c170a3e63efc849629765f5b1f346e5d6aa6cf2f7edefa42aa",
+    "lcnn_audio_int8.tflite": "21e500c4b7c096a1acd1133394f35fae2d2b35f578edbcb0551dc8a4c83c10e7"
   }
 }

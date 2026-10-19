@@ -1,16 +1,24 @@
+import os
+import numpy as np
 import torch
 import torch.nn as nn
-import os
+from PIL import Image
+
 
 class SRMLayer(nn.Module):
     """
-    Fixed Spatial Rich Model (SRM) Filter layer to extract high-frequency noise
-    and color-opponent demosaicing/synthesis residuals.
+    Fixed Spatial Rich Model (SRM) + Optional Neighboring Pixel Relationships (NPR)
+    filter bank to extract high-frequency noise, color-opponent demosaicing residuals,
+    and local 2x2 upsampling grid interdependence (Tan et al., CVPR 2024).
+
+    Fully compatible with `build_keras_srm` in `ml/src/export/torch_to_tflite_keras.py`,
+    which reads `srm_out = int(pt.srm.conv.out_channels)` dynamically.
     """
-    def __init__(self):
+    def __init__(self, include_npr: bool = False):
         super(SRMLayer, self).__init__()
-        # 12 output channels (7 luminance high-pass + 3 per-channel + 2 chroma-opponent), 3 input channels, 5x5 kernel
-        self.conv = nn.Conv2d(3, 12, kernel_size=5, padding=2, bias=False)
+        self.include_npr = include_npr
+        out_channels = 16 if include_npr else 12
+        self.conv = nn.Conv2d(3, out_channels, kernel_size=5, padding=2, bias=False)
 
         # 1. 5x5 Laplacian-like center-surround
         f1 = torch.tensor([
@@ -72,7 +80,7 @@ class SRMLayer(nn.Module):
             [ 0,  0,  0,  0,  0]
         ], dtype=torch.float32) / 4.0
 
-        weight = torch.zeros((12, 3, 5, 5), dtype=torch.float32)
+        weight = torch.zeros((out_channels, 3, 5, 5), dtype=torch.float32)
         luma_filters = [f1, f2, f2_v, f3, f3_anti, f_kv, f_chk]
         for idx, filt in enumerate(luma_filters):
             for in_c in range(3):
@@ -89,26 +97,36 @@ class SRMLayer(nn.Module):
         weight[11, 2, :, :] = 0.5 * f_lap3
         weight[11, 1, :, :] = -0.5 * f_lap3
 
+        if include_npr:
+            # 12..15: Neighboring Pixel Relationships (NPR) 2x2 sub-grid operators
+            # embedded in 5x5 kernels to capture local diffusion/GAN upsampling correlations.
+            npr_h = torch.zeros((5, 5), dtype=torch.float32)
+            npr_h[2, 2], npr_h[2, 3] = 1.0, -1.0
+            npr_v = torch.zeros((5, 5), dtype=torch.float32)
+            npr_v[2, 2], npr_v[3, 2] = 1.0, -1.0
+            npr_d1 = torch.zeros((5, 5), dtype=torch.float32)
+            npr_d1[2, 2], npr_d1[3, 3] = 1.0, -1.0
+            npr_d2 = torch.zeros((5, 5), dtype=torch.float32)
+            npr_d2[2, 3], npr_d2[3, 2] = 1.0, -1.0
+            for offset, npr_k in enumerate([npr_h, npr_v, npr_d1, npr_d2]):
+                for in_c in range(3):
+                    weight[12 + offset, in_c, :, :] = npr_k / 3.0
+
         self.conv.weight = nn.Parameter(weight, requires_grad=False)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # Pass through the fixed filters and normalize to [-1, 1] using tanh
         return torch.tanh(self.conv(x))
 
 
 class DepthwiseSeparableBlock(nn.Module):
-    """
-    MobileNetV3-inspired Depthwise Separable Convolution Block.
-    """
+    """MobileNetV3-inspired Depthwise Separable Convolution Block."""
     def __init__(self, in_channels: int, out_channels: int, stride: int = 1):
         super(DepthwiseSeparableBlock, self).__init__()
-        # Depthwise
         self.depthwise = nn.Sequential(
             nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=stride, padding=1, groups=in_channels, bias=False),
             nn.BatchNorm2d(in_channels),
             nn.Hardswish(inplace=True)
         )
-        # Pointwise
         self.pointwise = nn.Sequential(
             nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=1, padding=0, bias=False),
             nn.BatchNorm2d(out_channels),
@@ -123,35 +141,30 @@ class DepthwiseSeparableBlock(nn.Module):
 
 class SRMForensicCNN(nn.Module):
     """
-    Lightweight CNN for detecting AI-generated images via noise & chrominance residual analysis.
-    Designed for on-device inference with highly restricted parameter count.
+    Lightweight CNN for detecting AI-generated images via noise, chrominance,
+    and Neighboring Pixel Relationship (NPR) residual analysis.
     """
-    def __init__(self):
+    def __init__(self, include_npr: bool = False):
         super(SRMForensicCNN, self).__init__()
-        
-        # 1. SRM Filter Layer (Frozen, 12 forensic channels)
-        self.srm = SRMLayer()
-        
+        self.include_npr = include_npr
+        srm_channels = 16 if include_npr else 12
+
+        # 1. SRM (+ optional NPR) Filter Layer (Frozen)
+        self.srm = SRMLayer(include_npr=include_npr)
+
         # 2. CNN Backbone (MobileNetV3-inspired)
         self.backbone = nn.Sequential(
-            # Stem
-            nn.Conv2d(12, 32, kernel_size=3, stride=2, padding=1, bias=False),
+            nn.Conv2d(srm_channels, 32, kernel_size=3, stride=2, padding=1, bias=False),
             nn.BatchNorm2d(32),
             nn.Hardswish(inplace=True),
-            
-            # Stage 1
             DepthwiseSeparableBlock(32, 32, stride=1),
             DepthwiseSeparableBlock(32, 64, stride=2),
-            
-            # Stage 2
             DepthwiseSeparableBlock(64, 64, stride=1),
             DepthwiseSeparableBlock(64, 128, stride=2),
-            
-            # Stage 3
             DepthwiseSeparableBlock(128, 128, stride=1),
             DepthwiseSeparableBlock(128, 256, stride=2)
         )
-        
+
         # 3. Classifier Head
         self.head = nn.Sequential(
             nn.AdaptiveAvgPool2d(1),
@@ -164,64 +177,69 @@ class SRMForensicCNN(nn.Module):
         )
 
     def forward(self, x: torch.Tensor, return_logits: bool = False) -> torch.Tensor:
-        """
-        Forward pass.
-        Args:
-            x (torch.Tensor): Input image tensor of shape (B, 3, 224, 224)
-        Returns:
-            torch.Tensor: Probabilities of shape (B, 1) [0=real, 1=AI-generated]
-        """
         x = self.srm(x)
         x = self.backbone(x)
         x = self.head[:-1](x) if return_logits else self.head(x)
         return x
 
-    def forward_logits(self, x):
+    def forward_logits(self, x: torch.Tensor) -> torch.Tensor:
         return self.forward(x, return_logits=True)
 
     def count_parameters(self) -> int:
-        """Counts the total number of trainable parameters."""
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
 
     @classmethod
     def from_pretrained(cls, checkpoint_path: str) -> "SRMForensicCNN":
-        """
-        Loads the model from a given checkpoint path.
-        """
-        model = cls()
         if not os.path.exists(checkpoint_path):
             raise FileNotFoundError(f"Checkpoint not found at {checkpoint_path}")
-        
+
         from training.checkpoint import load_verified_checkpoint
         checkpoint = load_verified_checkpoint(checkpoint_path)
-        if checkpoint['contract'].get('architecture') != cls.__name__:
-            raise ValueError('Checkpoint architecture mismatch')
-        state_dict = checkpoint['state_dict']
+        if checkpoint["contract"].get("architecture") != cls.__name__:
+            raise ValueError("Checkpoint architecture mismatch")
+        state_dict = checkpoint["state_dict"]
+        srm_weight = state_dict.get("srm.conv.weight")
+        use_npr = srm_weight is not None and int(srm_weight.shape[0]) == 16
+        model = cls(include_npr=use_npr)
         model.load_state_dict(state_dict)
         return model
 
 
-if __name__ == "__main__":
-    model = SRMForensicCNN()
-    
-    # Verify input/output shapes
-    dummy_input = torch.randn(1, 3, 224, 224)
-    out = model(dummy_input)
-    
-    # Calculate parameter count and sizes
-    total_params = model.count_parameters()
-    
-    # FP32 takes 4 bytes per param, INT8 takes 1 byte per param
-    fp32_size_mb = (total_params * 4) / (1024 ** 2)
-    int8_size_mb = total_params / (1024 ** 2)
-    
-    print("="*50)
-    print("SRM Forensic CNN Model Summary")
-    print("="*50)
-    print(model)
-    print("="*50)
-    print(f"Output Shape:      {out.shape}")
-    print(f"Trainable Params:  {total_params:,}")
-    print(f"Est. Size (FP32):  {fp32_size_mb:.2f} MB")
-    print(f"Est. Size (INT8):  {int8_size_mb:.2f} MB")
-    print("="*50)
+def extract_high_low_texture_patches(
+    img: Image.Image,
+    patch_size: int = 128,
+    grid_stride: int = 64,
+) -> tuple[Image.Image, Image.Image]:
+    """PatchCraft-inspired native-resolution patch selector.
+
+    Extracts the highest-gradient (rich texture) and lowest-gradient (smooth background)
+    native-resolution crops BEFORE any global bilinear downsampling so high-frequency
+    SRM/NPR synthesis residuals are preserved.
+    """
+    rgb = img.convert("RGB")
+    w, h = rgb.size
+    if w < patch_size or h < patch_size:
+        resized = rgb.resize((patch_size, patch_size), Image.Resampling.BILINEAR)
+        return resized, resized
+
+    arr = np.asarray(rgb, dtype=np.float32)
+    luma = 0.299 * arr[..., 0] + 0.587 * arr[..., 1] + 0.114 * arr[..., 2]
+    gx = np.abs(np.diff(luma, axis=1, append=luma[:, -1:]))
+    gy = np.abs(np.diff(luma, axis=0, append=luma[-1:, :]))
+    energy = gx + gy
+
+    best_hi, best_lo = -1.0, float("inf")
+    hi_box = lo_box = (0, 0, patch_size, patch_size)
+
+    ys = list(range(0, h - patch_size + 1, grid_stride)) or [0]
+    xs = list(range(0, w - patch_size + 1, grid_stride)) or [0]
+    for y in ys:
+        for x in xs:
+            score = float(energy[y : y + patch_size, x : x + patch_size].mean())
+            box = (x, y, x + patch_size, y + patch_size)
+            if score > best_hi:
+                best_hi, hi_box = score, box
+            if score < best_lo:
+                best_lo, lo_box = score, box
+
+    return rgb.crop(hi_box), rgb.crop(lo_box)

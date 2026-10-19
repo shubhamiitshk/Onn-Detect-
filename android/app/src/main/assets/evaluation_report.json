@@ -1,52 +1,52 @@
 {
-  "release_id": "onn-20261018-v2",
+  "release_id": "onn-20261019-v4",
   "models": {
     "srm_forensic_cnn_int8.tflite": {
-      "fp32_max_error": 3.5762786865234375e-07,
+      "fp32_max_error": 2.980232238769531e-07,
       "parity": {
-        "mae": 0.010754442699253559,
-        "max_error": 0.055780522525310516,
-        "agreement": 0.9825,
-        "threshold": 0.5630994439125061,
-        "reference_auc": 0.617425,
-        "candidate_auc": 0.6160750000000002,
-        "reference_tpr_at_fpr_1pct": 0.065,
-        "candidate_tpr_at_fpr_1pct": 0.065,
+        "mae": 0.003920392468571663,
+        "max_error": 0.02079904079437256,
+        "agreement": 0.9875,
+        "threshold": 0.5112629532814026,
+        "reference_auc": 0.6194999999999999,
+        "candidate_auc": 0.618025,
+        "reference_tpr_at_fpr_1pct": 0.05,
+        "candidate_tpr_at_fpr_1pct": 0.05,
         "n_real": 200,
         "n_fake": 200,
         "passed": true
       },
       "calibration": {
-        "model_hash": "5ed1aadf54a5fc707aac6d223bdcf72048d639961551b94711a2bac5ebf519fc",
+        "model_hash": "c76c6d48af7668c170a3e63efc849629765f5b1f346e5d6aa6cf2f7edefa42aa",
         "frontend_id": "rgb-exif-srgb-whitealpha-pow2cap1024-bilinear-square-v2-size128-float32",
-        "threshold": 0.5703125,
-        "auc": 0.6160750000000002,
+        "threshold": 0.51953125,
+        "auc": 0.618025,
         "n_calibration": 400,
         "split_manifest_hash": "9b0400fcc82e08d117c5cb245fd2c3081b3ba8ed9fd2f169a5455248c84c9312"
       },
-      "checkpoint_sha256": "6625d5f039f970240451fa9fb6387afbc0cc41ce471a86427072728ebb0836fd",
-      "test_auc": 0.6718375000000001,
-      "test_eer": 0.3625,
-      "test_accuracy": 0.6325,
+      "checkpoint_sha256": "d23f9fa3adb2a8a99a6fd7ed8764dd5e6e648dcaadbe83a09ee2dd4ba9df0a74",
+      "test_auc": 0.5817749999999999,
+      "test_eer": 0.4325,
+      "test_accuracy": 0.5675,
       "test": {
-        "auc": 0.6718375000000001,
-        "eer": 0.3625,
-        "accuracy": 0.6325,
-        "balanced_accuracy": 0.6325000000000001,
-        "threshold": 0.5703125,
+        "auc": 0.5817749999999999,
+        "eer": 0.4325,
+        "accuracy": 0.5675,
+        "balanced_accuracy": 0.5675,
+        "threshold": 0.51953125,
         "n_real": 200,
         "n_fake": 200,
-        "tpr": 0.59,
-        "fpr": 0.325,
+        "tpr": 0.55,
+        "fpr": 0.415,
         "tpr_wilson_95pct": [
-          0.5207645903369208,
-          0.6558432509151711
+          0.48075615138475697,
+          0.6173593159775166
         ],
         "fpr_wilson_95pct": [
-          0.2639157153923429,
-          0.3926801488397004
+          0.34894285449757567,
+          0.4842608509865596
         ],
-        "tpr_at_fpr_1pct": 0.025,
+        "tpr_at_fpr_1pct": 0.02,
         "tpr_at_fpr_0_1pct": 0.0,
         "uncertainty_note": "Wilson intervals assume independent examples; recording/source clustering can widen uncertainty.",
         "n_independent_declared_groups": 400,
@@ -62,25 +62,25 @@
               "n_real": 33,
               "n_fake": 0,
               "tpr": null,
-              "fpr": 0.3333333333333333
+              "fpr": 0.21212121212121213
             },
             "laion": {
               "n_real": 81,
               "n_fake": 0,
               "tpr": null,
-              "fpr": 0.37037037037037035
+              "fpr": 0.5802469135802469
             },
             "openfake": {
               "n_real": 0,
               "n_fake": 200,
-              "tpr": 0.59,
+              "tpr": 0.55,
               "fpr": null
             },
             "pexels": {
               "n_real": 69,
               "n_fake": 0,
               "tpr": null,
-              "fpr": 0.2898550724637681
+              "fpr": 0.36231884057971014
             }
           },
           "generator": {
@@ -99,7 +99,7 @@
             "anima-preview2": {
               "n_real": 0,
               "n_fake": 1,
-              "tpr": 1.0,
+              "tpr": 0.0,
               "fpr": null
             },
             "animagine-xl-3.0": {
@@ -135,7 +135,7 @@
             "cyberrealistic-pony-v14.1": {
               "n_real": 0,
               "n_fake": 1,
-              "tpr": 1.0,
+              "tpr": 0.0,
               "fpr": null
             },
             "cyberrealistic-pony-v15.0": {
@@ -159,7 +159,7 @@
             "cyberrealistic-xl-v9.0": {
               "n_real": 0,
               "n_fake": 1,
-              "tpr": 1.0,
+              "tpr": 0.0,
               "fpr": null
             },
             "dalle-3": {
@@ -177,7 +177,7 @@
             "flux-1.1-pro": {
               "n_real": 0,
               "n_fake": 3,
-              "tpr": 0.6666666666666666,
+              "tpr": 0.3333333333333333,
               "fpr": null
             },
             "flux-amateursnapshotphotos": {
@@ -201,61 +201,61 @@
             "flux.1-dev": {
               "n_real": 0,
               "n_fake": 12,
-              "tpr": 0.5,
+              "tpr": 0.5833333333333334,
               "fpr": null
             },
             "flux.1-schnell": {
               "n_real": 0,
               "n_fake": 4,
-              "tpr": 0.75,
+              "tpr": 0.5,
               "fpr": null
             },
             "flux.2-dev": {
               "n_real": 0,
               "n_fake": 2,
-              "tpr": 1.0,
+              "tpr": 0.5,
               "fpr": null
             },
             "flux.2-klein-4b": {
               "n_real": 0,
               "n_fake": 3,
-              "tpr": 0.6666666666666666,
+              "tpr": 1.0,
               "fpr": null
             },
             "flux.2-klein-9b": {
               "n_real": 0,
               "n_fake": 9,
-              "tpr": 0.7777777777777778,
+              "tpr": 1.0,
               "fpr": null
             },
             "flux.2-klein-base-4b": {
               "n_real": 0,
               "n_fake": 2,
-              "tpr": 0.5,
+              "tpr": 1.0,
               "fpr": null
             },
             "gpt-image-1": {
               "n_real": 0,
               "n_fake": 3,
-              "tpr": 0.0,
+              "tpr": 0.3333333333333333,
               "fpr": null
             },
             "gpt-image-1.5": {
               "n_real": 0,
               "n_fake": 5,
-              "tpr": 0.8,
+              "tpr": 0.2,
               "fpr": null
             },
             "gpt-image-2": {
               "n_real": 0,
               "n_fake": 1,
-              "tpr": 0.0,
+              "tpr": 1.0,
               "fpr": null
             },
             "grok-2-image-1212": {
               "n_real": 0,
               "n_fake": 1,
-              "tpr": 1.0,
+              "tpr": 0.0,
               "fpr": null
             },
             "hidream-i1-full": {
@@ -267,19 +267,19 @@
             "ideogram-3.0": {
               "n_real": 0,
               "n_fake": 3,
-              "tpr": 0.0,
+              "tpr": 0.3333333333333333,
               "fpr": null
             },
             "illustrious": {
               "n_real": 0,
               "n_fake": 6,
-              "tpr": 0.6666666666666666,
+              "tpr": 0.8333333333333334,
               "fpr": null
             },
             "imagen-3.0-002": {
               "n_real": 0,
               "n_fake": 1,
-              "tpr": 1.0,
+              "tpr": 0.0,
               "fpr": null
             },
             "imagen-4.0": {
@@ -291,7 +291,7 @@
             "midjourney-6": {
               "n_real": 0,
               "n_fake": 5,
-              "tpr": 0.6,
+              "tpr": 0.2,
               "fpr": null
             },
             "midjourney-7": {
@@ -303,7 +303,7 @@
             "mystic": {
               "n_real": 0,
               "n_fake": 3,
-              "tpr": 0.0,
+              "tpr": 0.6666666666666666,
               "fpr": null
             },
             "nano-banana-2": {
@@ -321,7 +321,7 @@
             "one-obsession-17-red-sdxl": {
               "n_real": 0,
               "n_fake": 1,
-              "tpr": 0.0,
+              "tpr": 1.0,
               "fpr": null
             },
             "playground-v2.5-1024px-aesthetic": {
@@ -340,7 +340,7 @@
               "n_real": 200,
               "n_fake": 0,
               "tpr": null,
-              "fpr": 0.325
+              "fpr": 0.415
             },
             "realistic_vision_v5.1_novae": {
               "n_real": 0,
@@ -351,37 +351,37 @@
             "recraft-v3": {
               "n_real": 0,
               "n_fake": 1,
-              "tpr": 0.0,
+              "tpr": 1.0,
               "fpr": null
             },
             "sd-1.5": {
               "n_real": 0,
               "n_fake": 4,
-              "tpr": 0.75,
+              "tpr": 0.5,
               "fpr": null
             },
             "sd-1.5-dreamshaper": {
               "n_real": 0,
               "n_fake": 5,
-              "tpr": 0.8,
+              "tpr": 0.2,
               "fpr": null
             },
             "sd-1.5-epicdream": {
               "n_real": 0,
               "n_fake": 3,
-              "tpr": 0.3333333333333333,
+              "tpr": 0.0,
               "fpr": null
             },
             "sd-2.1": {
               "n_real": 0,
               "n_fake": 12,
-              "tpr": 0.8333333333333334,
+              "tpr": 0.3333333333333333,
               "fpr": null
             },
             "sd-3.5": {
               "n_real": 0,
               "n_fake": 15,
-              "tpr": 0.4666666666666667,
+              "tpr": 0.6666666666666666,
               "fpr": null
             },
             "sd-turbo": {
@@ -411,7 +411,7 @@
             "sdxl-epic-realism": {
               "n_real": 0,
               "n_fake": 6,
-              "tpr": 0.3333333333333333,
+              "tpr": 0.16666666666666666,
               "fpr": null
             },
             "sdxl-juggernaut": {
@@ -423,13 +423,13 @@
             "sdxl-realvis-v5": {
               "n_real": 0,
               "n_fake": 4,
-              "tpr": 0.75,
+              "tpr": 0.25,
               "fpr": null
             },
             "sdxl-touchofrealism": {
               "n_real": 0,
               "n_fake": 4,
-              "tpr": 0.5,
+              "tpr": 0.0,
               "fpr": null
             },
             "sdxl-turbo": {
@@ -507,7 +507,7 @@
             "z-image-turbo": {
               "n_real": 0,
               "n_fake": 10,
-              "tpr": 0.3,
+              "tpr": 0.8,
               "fpr": null
             }
           }
@@ -920,12 +920,12 @@
     "lcnn_audio_int8.tflite": {
       "fp32_max_error": 1.4901161193847656e-07,
       "parity": {
-        "mae": 0.00654950627591461,
-        "max_error": 0.0756072998046875,
-        "agreement": 0.9925,
+        "mae": 0.0069105169270187615,
+        "max_error": 0.08327257633209229,
+        "agreement": 0.9875,
         "threshold": 0.36052772402763367,
         "reference_auc": 0.8650749999999999,
-        "candidate_auc": 0.86415,
+        "candidate_auc": 0.8644625,
         "reference_tpr_at_fpr_1pct": 0.355,
         "candidate_tpr_at_fpr_1pct": 0.34,
         "n_real": 200,
@@ -933,37 +933,37 @@
         "passed": true
       },
       "calibration": {
-        "model_hash": "aa70068465ce65255d65fc73560aeac3759725b74933ed08e176e1342c485fc1",
+        "model_hash": "21e500c4b7c096a1acd1133394f35fae2d2b35f578edbcb0551dc8a4c83c10e7",
         "frontend_id": "lfcc-v3-sr16000-f128-c40-nfft512-hop160-topdbnone-resampler-quadratic_window_sinc_v1-float64stft-float32",
         "threshold": 0.375,
-        "auc": 0.86415,
+        "auc": 0.8644625,
         "n_calibration": 400,
         "split_manifest_hash": "6d56263cfdce0b8d1fc8f83cdef9261b91438a5a511e83a3401892be1e1fb524"
       },
-      "checkpoint_sha256": "3b5bea8c9382587e641bc2272b79aa91f01ed61c92b0e6b7eadc15653cb1ab52",
-      "test_auc": 0.875575,
-      "test_eer": 0.19749999999999998,
-      "test_accuracy": 0.8375,
+      "checkpoint_sha256": "002b07b6ffe9c4ade55854274f1e16e94068c0ea6571c2003a2ff07f8c426a30",
+      "test_auc": 0.8756125,
+      "test_eer": 0.19249999999999998,
+      "test_accuracy": 0.84,
       "test": {
-        "auc": 0.875575,
-        "eer": 0.19749999999999998,
-        "accuracy": 0.8375,
-        "balanced_accuracy": 0.8375,
+        "auc": 0.8756125,
+        "eer": 0.19249999999999998,
+        "accuracy": 0.84,
+        "balanced_accuracy": 0.8400000000000001,
         "threshold": 0.375,
         "n_real": 200,
         "n_fake": 200,
         "tpr": 0.795,
-        "fpr": 0.12,
+        "fpr": 0.115,
         "tpr_wilson_95pct": [
           0.7337430194757748,
           0.8451382379616379
         ],
         "fpr_wilson_95pct": [
-          0.08197992706375512,
-          0.17234252098296743
+          0.07786373232561955,
+          0.16664716898487572
         ],
-        "tpr_at_fpr_1pct": 0.6,
-        "tpr_at_fpr_0_1pct": 0.345,
+        "tpr_at_fpr_1pct": 0.605,
+        "tpr_at_fpr_0_1pct": 0.35,
         "uncertainty_note": "Wilson intervals assume independent examples; recording/source clustering can widen uncertainty.",
         "n_independent_declared_groups": 42,
         "groups": {
@@ -972,7 +972,7 @@
               "n_real": 130,
               "n_fake": 130,
               "tpr": 0.6923076923076923,
-              "fpr": 0.046153846153846156
+              "fpr": 0.038461538461538464
             },
             "inthewild": {
               "n_real": 70,
@@ -1064,7 +1064,7 @@
               "n_real": 200,
               "n_fake": 0,
               "tpr": null,
-              "fpr": 0.12
+              "fpr": 0.115
             },
             "in_the_wild_tts_vc": {
               "n_real": 0,
@@ -1258,7 +1258,7 @@
               "n_real": 3,
               "n_fake": 0,
               "tpr": null,
-              "fpr": 0.3333333333333333
+              "fpr": 0.0
             },
             "asv_LA_0061": {
               "n_real": 5,
@@ -1735,5 +1735,5 @@
     }
   },
   "status": "desktop_validation_only",
-  "source_snapshot_sha256": "3676a385f28de15b747bcc65ee7130fabb496986eb95b1e80416f80ea7302794"
+  "source_snapshot_sha256": "348a0ef2cd0bb943f124efbbde9317e22dca81c329f5a886b15631989a146595"
 }

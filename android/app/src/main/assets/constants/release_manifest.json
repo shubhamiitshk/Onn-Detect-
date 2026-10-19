@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
-  "release_id": "onn-20261018-v2",
+  "release_id": "onn-20261019-v4",
   "validated": true,
   "validation_status": "desktop_and_independent_device_validation_passed",
   "score_convention": "real=0_fake=1",
   "models": {
     "srm_forensic_cnn_int8.tflite": {
-      "sha256": "5ed1aadf54a5fc707aac6d223bdcf72048d639961551b94711a2bac5ebf519fc",
+      "sha256": "c76c6d48af7668c170a3e63efc849629765f5b1f346e5d6aa6cf2f7edefa42aa",
       "input_shape": [
         1,
         128,
@@ -22,7 +22,7 @@
       "quantization": "full-int8"
     },
     "lcnn_audio_int8.tflite": {
-      "sha256": "aa70068465ce65255d65fc73560aeac3759725b74933ed08e176e1342c485fc1",
+      "sha256": "21e500c4b7c096a1acd1133394f35fae2d2b35f578edbcb0551dc8a4c83c10e7",
       "input_shape": [
         1,
         401,
@@ -39,34 +39,34 @@
     }
   },
   "artifacts": {
-    "models/srm_forensic_cnn_int8.tflite": "5ed1aadf54a5fc707aac6d223bdcf72048d639961551b94711a2bac5ebf519fc",
-    "models/lcnn_audio_int8.tflite": "aa70068465ce65255d65fc73560aeac3759725b74933ed08e176e1342c485fc1",
-    "constants/lcnn_audio_threshold.json": "cacd502d36162f4c366863b2d4d7ec357108b78944cd7910fccd8033e8a40b3a",
-    "source_snapshot.json": "3676a385f28de15b747bcc65ee7130fabb496986eb95b1e80416f80ea7302794",
-    "evaluation_report.json": "8afc0aa2216bc0581cc57cc640d19ab7cb03ee9c14670fc026f2087ea91019a0",
-    "constants/meta_classifier.json": "0298fb631a897b8a060970f35fcda49dca5e3ed7f23488fc3ccb2ce2fb638c46",
-    "constants/model_hashes.json": "7092192c01cf3b33695814b2c402fa5bf97acc76179f6284caddf8d129ebc7d3",
+    "models/srm_forensic_cnn_int8.tflite": "c76c6d48af7668c170a3e63efc849629765f5b1f346e5d6aa6cf2f7edefa42aa",
+    "models/lcnn_audio_int8.tflite": "21e500c4b7c096a1acd1133394f35fae2d2b35f578edbcb0551dc8a4c83c10e7",
+    "constants/lcnn_audio_threshold.json": "fee4a51d67335fff018a83e5d2105974be9836a2972ebc1796154cf64e7e33c4",
+    "source_snapshot.json": "348a0ef2cd0bb943f124efbbde9317e22dca81c329f5a886b15631989a146595",
+    "evaluation_report.json": "0a043bcbd4d7aa8b89b5a5404189f2df7f739a5298ceadf22b892f4b31ee620c",
+    "constants/meta_classifier.json": "31ef711fdf861a920bdf2cfa15a95a3a9a082f878295485485d434da9dabc7c4",
+    "constants/model_hashes.json": "70489faec47afc885c430a4faa03b685dbd2d8b5b86b7fbdd6cbeb01403ce66e",
     "constants/natural_diff_histogram.json": "471e7ea7b96b4bb98ba07fb0a72397392e8f9910ec21106ce7221039b0240b98",
-    "fusion/meta_results.json": "3e696f6d96e84f1f1a35bdecbe1ed6eb8d0ee60a4fefdcfee5fdf152f25aea79",
-    "fusion/xgboost_meta.json": "e4efac85bb77d91874e07b0df13a2439592631cdef19e6e3054430265c9f98b1",
-    "fusion/XGBoostMetaClassifier.kt": "b09be4376408d2552bfc0a0a266056f6194f37a59fc6370939b788413b8616a1",
-    "device_evaluation.json": "5a202552d3135ebc0dc410b772068d186d5cc9b7c81198ef48adee6015c58521"
+    "fusion/meta_results.json": "7f3743f32e67accee41d41c8c2dce32247d8f449f4ca6c3009c935082529b4da",
+    "fusion/xgboost_meta.json": "24c1e897b0f1485255173b384793785c696d9eb6f4f24baa724fe7c589487144",
+    "fusion/XGBoostMetaClassifier.kt": "63ea73f85946b39bd9cc06afaf117296901f2063593d4a4a5d23664abceca759",
+    "device_evaluation.json": "6ab0fcbbcdf6656390be85cfbe154e1292a808f76117d3b32d1078e5d929ec89"
   },
   "calibration": {
     "srm_forensic_cnn_int8.tflite": {
-      "threshold": 0.44642606377601624,
-      "auc": 0.934,
+      "threshold": 0.499289333820343,
+      "auc": 0.5920625,
       "n_calibration": 400,
       "split_manifest_hash": "9b0400fcc82e08d117c5cb245fd2c3081b3ba8ed9fd2f169a5455248c84c9312",
-      "model_hash": "5ed1aadf54a5fc707aac6d223bdcf72048d639961551b94711a2bac5ebf519fc",
+      "model_hash": "c76c6d48af7668c170a3e63efc849629765f5b1f346e5d6aa6cf2f7edefa42aa",
       "frontend_id": "rgb-exif-srgb-whitealpha-pow2cap1024-bilinear-square-v2-size128-float32",
-      "fusion_model_hash": "e4efac85bb77d91874e07b0df13a2439592631cdef19e6e3054430265c9f98b1"
+      "fusion_model_hash": "24c1e897b0f1485255173b384793785c696d9eb6f4f24baa724fe7c589487144"
     },
     "lcnn_audio_int8.tflite": {
-      "model_hash": "aa70068465ce65255d65fc73560aeac3759725b74933ed08e176e1342c485fc1",
+      "model_hash": "21e500c4b7c096a1acd1133394f35fae2d2b35f578edbcb0551dc8a4c83c10e7",
       "frontend_id": "lfcc-v3-sr16000-f128-c40-nfft512-hop160-topdbnone-resampler-quadratic_window_sinc_v1-float64stft-float32",
       "threshold": 0.375,
-      "auc": 0.86415,
+      "auc": 0.8644625,
       "n_calibration": 400,
       "split_manifest_hash": "6d56263cfdce0b8d1fc8f83cdef9261b91438a5a511e83a3401892be1e1fb524"
     }
@@ -77,11 +77,11 @@
   },
   "device_validation": {
     "passed": true,
-    "report_hash": "5a202552d3135ebc0dc410b772068d186d5cc9b7c81198ef48adee6015c58521"
+    "report_hash": "6ab0fcbbcdf6656390be85cfbe154e1292a808f76117d3b32d1078e5d929ec89"
   },
-  "source_commit": "a683620ba886bfa6904d8ca2c19c80312b29b742",
-  "source_snapshot_sha256": "3676a385f28de15b747bcc65ee7130fabb496986eb95b1e80416f80ea7302794",
+  "source_commit": "0c22c68b7f84344a35d468e4ada313a137b14542",
+  "source_snapshot_sha256": "348a0ef2cd0bb943f124efbbde9317e22dca81c329f5a886b15631989a146595",
   "source_dirty": true,
-  "evaluation_report_hash": "8afc0aa2216bc0581cc57cc640d19ab7cb03ee9c14670fc026f2087ea91019a0",
-  "fusion_revision": "onn-20261018-v2"
+  "evaluation_report_hash": "0a043bcbd4d7aa8b89b5a5404189f2df7f739a5298ceadf22b892f4b31ee620c",
+  "fusion_revision": "onn-20261019-v4"
 }

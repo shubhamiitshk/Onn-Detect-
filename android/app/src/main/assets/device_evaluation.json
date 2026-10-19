@@ -1,31 +1,31 @@
 {
-  "release_id": "onn-20261018-v2",
+  "release_id": "onn-20261019-v4",
   "passed": true,
-  "source_snapshot_sha256": "3676a385f28de15b747bcc65ee7130fabb496986eb95b1e80416f80ea7302794",
-  "fusion_kotlin_sha256": "b09be4376408d2552bfc0a0a266056f6194f37a59fc6370939b788413b8616a1",
-  "fusion_revision": "onn-20261018-v2",
+  "source_snapshot_sha256": "348a0ef2cd0bb943f124efbbde9317e22dca81c329f5a886b15631989a146595",
+  "fusion_kotlin_sha256": "63ea73f85946b39bd9cc06afaf117296901f2063593d4a4a5d23664abceca759",
+  "fusion_revision": "onn-20261019-v4",
   "kotlin_parity_passed": true,
   "offline_verified": true,
   "models": {
     "srm_forensic_cnn_int8.tflite": {
-      "sha256": "5ed1aadf54a5fc707aac6d223bdcf72048d639961551b94711a2bac5ebf519fc",
+      "sha256": "c76c6d48af7668c170a3e63efc849629765f5b1f346e5d6aa6cf2f7edefa42aa",
       "frontend_id": "rgb-exif-srgb-whitealpha-pow2cap1024-bilinear-square-v2-size128-float32",
       "parity_passed": true,
-      "desktop_agreement": 0.9825,
-      "desktop_mae": 0.010754442699253559,
-      "desktop_max_error": 0.055780522525310516,
-      "latency_ms_p50": 12.182999998913147,
-      "latency_ms_p95": 2196.3374100003375
+      "desktop_agreement": 0.9875,
+      "desktop_mae": 0.003920392468571663,
+      "desktop_max_error": 0.02079904079437256,
+      "latency_ms_p50": 12.417049998475704,
+      "latency_ms_p95": 2247.1014000038804
     },
     "lcnn_audio_int8.tflite": {
-      "sha256": "aa70068465ce65255d65fc73560aeac3759725b74933ed08e176e1342c485fc1",
+      "sha256": "21e500c4b7c096a1acd1133394f35fae2d2b35f578edbcb0551dc8a4c83c10e7",
       "frontend_id": "lfcc-v3-sr16000-f128-c40-nfft512-hop160-topdbnone-resampler-quadratic_window_sinc_v1-float64stft-float32",
       "parity_passed": true,
-      "desktop_agreement": 0.9925,
-      "desktop_mae": 0.00654950627591461,
-      "desktop_max_error": 0.0756072998046875,
-      "latency_ms_p50": 8.718850000150269,
-      "latency_ms_p95": 10.968210000464747
+      "desktop_agreement": 0.9875,
+      "desktop_mae": 0.0069105169270187615,
+      "desktop_max_error": 0.08327257633209229,
+      "latency_ms_p50": 8.995049996883608,
+      "latency_ms_p95": 12.128379998466695
     }
   }
 }
