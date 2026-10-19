@@ -1,14 +1,25 @@
 package com.onndetect.ui.screens.result
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
@@ -16,6 +27,7 @@ import com.onndetect.R
 import com.onndetect.data.local.ScanHistoryEntity
 import com.onndetect.data.local.SignalBreakdownJson
 import com.onndetect.ui.components.*
+import com.onndetect.ui.theme.*
 import org.json.JSONObject
 import java.text.DateFormat
 import java.util.Date
@@ -23,39 +35,415 @@ import java.util.Date
 @Composable
 fun ResultScreen(navController: NavController, viewModel: ResultViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    Column(Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text(stringResource(R.string.result_title), style = MaterialTheme.typography.headlineSmall)
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(BackgroundVoid)
+            .safeDrawingPadding()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // Result Top Bar
+        ResultTopBar(onBackClick = { navController.popBackStack() })
+
         when (val current = state) {
-            ResultState.Loading -> CircularProgressIndicator()
-            ResultState.NotFound -> Text(stringResource(R.string.result_not_found))
-            is ResultState.Error -> { Text(stringResource(R.string.history_read_failed)); Button(onClick = viewModel::reload) { Text(stringResource(R.string.retry)) } }
-            is ResultState.Ready -> AssessmentDetails(current.entry)
+            ResultState.Loading -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(300.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        CircularProgressIndicator(color = CyberCyan)
+                        Text(
+                            text = "Loading forensic assessment...",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TextSecondary
+                        )
+                    }
+                }
+            }
+            ResultState.NotFound -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(SurfaceCard)
+                        .border(1.dp, BorderSubtle, RoundedCornerShape(16.dp))
+                        .padding(24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.result_not_found),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = TextPrimary
+                        )
+                        Button(
+                            onClick = { navController.popBackStack() },
+                            colors = ButtonDefaults.buttonColors(containerColor = SurfaceElevated)
+                        ) {
+                            Text(stringResource(R.string.back), color = CyberCyan)
+                        }
+                    }
+                }
+            }
+            is ResultState.Error -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(SyntheticRedContainer.copy(alpha = 0.5f))
+                        .border(1.dp, SyntheticRed.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+                        .padding(20.dp)
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(
+                            text = stringResource(R.string.history_read_failed),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = SyntheticRed
+                        )
+                        Button(
+                            onClick = viewModel::reload,
+                            colors = ButtonDefaults.buttonColors(containerColor = SyntheticRed)
+                        ) {
+                            Text(stringResource(R.string.retry), color = Color.White)
+                        }
+                    }
+                }
+            }
+            is ResultState.Ready -> {
+                AssessmentDetails(
+                    e = current.entry,
+                    onDoneClick = { navController.popBackStack() },
+                    onHistoryClick = { navController.navigate("history") }
+                )
+            }
         }
-        Button(onClick = { navController.popBackStack() }) { Text(stringResource(R.string.done)) }
     }
 }
+
 @Composable
-fun AssessmentDetails(e: ScanHistoryEntity) {
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(assessmentLabel(e.verdict, e.modelValidated), style = MaterialTheme.typography.headlineMedium)
-            Text(DateFormat.getDateTimeInstance().format(Date(e.timestamp)), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            e.reason?.let { Text(it) }
-            Text(stringResource(R.string.result_limitations), style = MaterialTheme.typography.bodyMedium)
+fun AssessmentDetails(
+    e: ScanHistoryEntity,
+    onDoneClick: () -> Unit = {},
+    onHistoryClick: () -> Unit = {}
+) {
+    // 1. Verdict Banner
+    ForensicVerdictCard(
+        verdict = e.verdict,
+        validated = e.modelValidated,
+        score = e.score,
+        reason = e.reason
+    )
+
+    // 2. Confidence Gauge
+    val evidence = remember(e.evidenceJson) {
+        runCatching { JSONObject(e.evidenceJson ?: "{}") }.getOrDefault(JSONObject())
+    }
+    val threshold = remember(evidence) {
+        evidence.optDouble("threshold", 0.499).toFloat()
+    }
+    ConfidenceMeter(score = e.score, threshold = threshold)
+
+    // 3. Multi-Signal Decomposition
+    val decodedSignals = remember(e.signalsJson) { SignalBreakdownJson.decode(e.signalsJson) }
+    decodedSignals?.let {
+        SignalBreakdownCard(signals = it)
+    }
+
+    // 4. Forensic Evidence & Metadata Container
+    EvidenceMetadataCard(e = e, evidence = evidence)
+
+    // 5. Limitations Notice
+    LimitationsCard()
+
+    // 6. Action Buttons
+    Column(
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier.padding(top = 8.dp)
+    ) {
+        Button(
+            onClick = onDoneClick,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = CyberCyan,
+                contentColor = Color(0xFF070A10)
+            ),
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.done),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        OutlinedButton(
+            onClick = onHistoryClick,
+            colors = ButtonDefaults.outlinedButtonColors(
+                contentColor = TextSecondary
+            ),
+            border = androidx.compose.foundation.BorderStroke(1.dp, BorderSubtle),
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+        ) {
+            Text(
+                text = "View in Audit History",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium
+            )
         }
     }
-    ConfidenceMeter(e.score)
-    SignalBreakdownJson.decode(e.signalsJson)?.let { SignalBreakdownCard(it) }
-    val evidence = remember(e.evidenceJson) { runCatching { JSONObject(e.evidenceJson ?: "{}") }.getOrDefault(JSONObject()) }
-    if (e.scanMode == "AUDIO_ONLY" && evidence.optLong("totalDurationMs") > 0) Text(stringResource(R.string.coverage_audio,
-        evidence.optLong("analyzedDurationMs") / 1000f, evidence.optLong("totalDurationMs") / 1000f))
-    if (e.scanMode == "VIDEO_ONLY" && evidence.optLong("analyzedDurationMs") > 0) Text(stringResource(R.string.coverage_video_audio, evidence.optLong("analyzedDurationMs") / 1000f))
-    if (e.scanMode == "VIDEO_ONLY") evidence.optJSONArray("timestampsMs")?.takeIf { it.length() > 0 }?.let {
-        Text(pluralStringResource(R.plurals.coverage_frames, it.length(), it.length()))
+}
+
+@Composable
+private fun EvidenceMetadataCard(e: ScanHistoryEntity, evidence: JSONObject) {
+    val modelVersion = evidence.optString("modelVersion", "onn-20261019-v4")
+    val minEdge = evidence.optInt("resolutionMinEdge", 0)
+    val isBlurry = evidence.optBoolean("blurry", false)
+    val isDark = evidence.optBoolean("dark", false)
+    val provenance = evidence.optString("provenance", "not verified")
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(SurfaceCard)
+            .border(1.dp, BorderSubtle, RoundedCornerShape(20.dp))
+            .padding(20.dp)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            // Header Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "FORENSIC TELEMETRY",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = TextPrimary,
+                    fontWeight = FontWeight.SemiBold
+                )
+
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(SurfaceHighlight)
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = modelVersion,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = CyberCyan,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+
+            // Quality alert banner if blurry or dark
+            if (isBlurry || isDark) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(WarningAmberContainer.copy(alpha = 0.5f))
+                        .border(1.dp, WarningAmber.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("⚠️", fontSize = 14.sp)
+                    Text(
+                        text = stringResource(R.string.quality_warning),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = WarningAmber
+                    )
+                }
+            }
+
+            // Grid rows
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                MetadataRow(
+                    label = "Modality",
+                    value = e.scanMode.replace('_', ' ')
+                )
+                MetadataRow(
+                    label = "Processing Time",
+                    value = stringResource(R.string.processing_duration, e.durationMs)
+                )
+                MetadataRow(
+                    label = "Scan Timestamp",
+                    value = DateFormat.getDateTimeInstance().format(Date(e.timestamp))
+                )
+
+                if (minEdge > 0) {
+                    MetadataRow(
+                        label = "Shorter Edge Resolution",
+                        value = "${minEdge} px"
+                    )
+                }
+
+                if (e.scanMode == "AUDIO_ONLY" && evidence.optLong("totalDurationMs") > 0) {
+                    MetadataRow(
+                        label = "Audio Coverage",
+                        value = stringResource(
+                            R.string.coverage_audio,
+                            evidence.optLong("analyzedDurationMs") / 1000f,
+                            evidence.optLong("totalDurationMs") / 1000f
+                        )
+                    )
+                }
+
+                if (e.scanMode == "VIDEO_ONLY") {
+                    if (evidence.optLong("analyzedDurationMs") > 0) {
+                        MetadataRow(
+                            label = "Speech Coverage",
+                            value = stringResource(
+                                R.string.coverage_video_audio,
+                                evidence.optLong("analyzedDurationMs") / 1000f
+                            )
+                        )
+                    }
+                    val frameArray = evidence.optJSONArray("timestampsMs")
+                    if (frameArray != null && frameArray.length() > 0) {
+                        MetadataRow(
+                            label = "Video Frame Coverage",
+                            value = pluralStringResource(
+                                R.plurals.coverage_frames,
+                                frameArray.length(),
+                                frameArray.length()
+                            )
+                        )
+                    }
+                }
+
+                MetadataRow(
+                    label = "Provenance (C2PA)",
+                    value = provenance
+                )
+            }
+        }
     }
-    if (evidence.optInt("resolutionMinEdge") > 0) Text(stringResource(R.string.source_resolution, evidence.optInt("resolutionMinEdge")))
-    if (evidence.optBoolean("blurry") || evidence.optBoolean("dark")) Text(stringResource(R.string.quality_warning))
-    Text(stringResource(R.string.provenance_unverified), color = MaterialTheme.colorScheme.onSurfaceVariant)
-    Text(stringResource(R.string.processing_duration, e.durationMs), style = MaterialTheme.typography.bodySmall)
+}
+
+@Composable
+private fun MetadataRow(label: String, value: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(SurfaceElevated)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = TextTertiary
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodySmall,
+            color = TextPrimary,
+            fontWeight = FontWeight.Medium
+        )
+    }
+}
+
+@Composable
+private fun LimitationsCard() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(SurfaceElevated)
+            .border(1.dp, BorderSubtle, RoundedCornerShape(16.dp))
+            .padding(16.dp)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("ℹ", color = CyberCyan, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    text = "FORENSIC NOTICE & LIMITATIONS",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = CyberCyan,
+                    letterSpacing = 1.sp
+                )
+            }
+            Text(
+                text = stringResource(R.string.result_limitations),
+                style = MaterialTheme.typography.bodySmall,
+                color = TextSecondary,
+                lineHeight = 18.sp
+            )
+            Text(
+                text = stringResource(R.string.provenance_unverified),
+                style = MaterialTheme.typography.bodySmall,
+                color = TextTertiary,
+                lineHeight = 16.sp
+            )
+        }
+    }
+}
+
+@Composable
+private fun ResultTopBar(onBackClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(42.dp)
+                .clip(CircleShape)
+                .background(SurfaceCard)
+                .border(1.dp, BorderSubtle, CircleShape)
+                .clickable(onClick = onBackClick)
+        ) {
+            Text(
+                text = "←",
+                color = TextPrimary,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.result_title).uppercase(),
+                style = MaterialTheme.typography.titleMedium,
+                color = TextPrimary,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.2.sp
+            )
+            Text(
+                text = "Local Forensic Analysis Report",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextTertiary
+            )
+        }
+    }
 }

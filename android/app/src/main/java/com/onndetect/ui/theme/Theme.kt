@@ -4,36 +4,49 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 
-// Enforce Dark Mode for the Cyber Forensic Aesthetic
 private val ForensicColorScheme = darkColorScheme(
     primary = CyberCyan,
-    onPrimary = BackgroundObsidian,
+    onPrimary = BackgroundVoid,
     primaryContainer = DeepIndigo,
     onPrimaryContainer = TextPrimary,
-    
+
     secondary = NeonPurple,
-    onSecondary = BackgroundObsidian,
-    
+    onSecondary = BackgroundVoid,
+    secondaryContainer = SurfaceElevated,
+    onSecondaryContainer = NeonPurpleLight,
+
     tertiary = AuthenticGreen,
-    onTertiary = BackgroundObsidian,
-    
-    error = FakeRed,
+    onTertiary = BackgroundVoid,
+    tertiaryContainer = AuthenticGreenContainer,
+    onTertiaryContainer = AuthenticGreenLight,
+
+    error = SyntheticRed,
     onError = TextPrimary,
-    errorContainer = FakeRed.copy(alpha = 0.2f),
-    
-    background = BackgroundObsidian,
+    errorContainer = SyntheticRedContainer,
+    onErrorContainer = SyntheticRedLight,
+
+    background = BackgroundVoid,
     onBackground = TextPrimary,
-    
-    surface = SurfaceSlate,
+
+    surface = SurfaceCard,
     onSurface = TextPrimary,
-    
-    surfaceVariant = SurfaceVariantDark,
+
+    surfaceVariant = SurfaceElevated,
     onSurfaceVariant = TextSecondary,
-    
-    outline = OutlineDark
+
+    surfaceContainer = SurfaceCard,
+    surfaceContainerHigh = SurfaceElevated,
+    surfaceContainerHighest = SurfaceHighlight,
+
+    outline = BorderSubtle,
+    outlineVariant = BorderLight
 )
 
 @Composable
 fun OnnDetectTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = ForensicColorScheme, typography = Typography, content = content)
+    MaterialTheme(
+        colorScheme = ForensicColorScheme,
+        typography = Typography,
+        content = content
+    )
 }
