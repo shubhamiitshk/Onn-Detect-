@@ -58,11 +58,27 @@ The retained ten-feature schema is:
 
 ```text
 0 srm_score        1 fft_score       2 kl_score        3 flatness_score
-4 resolution_norm 5 is_compressed   6 exif_anomaly    7 c2pa_present
+4 resolution_norm 5 is_compressed   6 semantic_probe_score 7 c2pa_present
 8 lip_sync_corr   9 landmark_jitter
 ```
 
-Unverified/unavailable contextual slots stay fixed at `0.1`, `0.05`, `0.9`, and `0.1`. They are compatibility constants, not evidence of authenticity. A new fusion export must use the same extractor and independently calibrated quantized base scores. The current tree's `RELEASE_ID` is `legacy-unvalidated`; runtime cannot promote it merely by replacing a threshold file. Generated trees validate feature count/finiteness and carry their release revision.
+Slot 6 carries the Engine C ("Lite C") semantic measurement and is
+**unavailable (`NaN`)** when the probe did not run — never a neutral
+constant, because a tree that splits on `0.1` cannot distinguish "low
+anomaly" from "not measured". The booster learns a missing branch for that
+case and the Kotlin transpiler emits it. Slots 7–9 stay fixed at `0.05`,
+`0.9`, and `0.1`; they are compatibility constants, not evidence of
+authenticity. A new fusion export must use the same extractor and
+independently calibrated quantized base scores. Generated trees validate
+feature count/finiteness (NaN permitted in the designated optional slot
+only) and carry their release revision.
+
+Engine C ("Lite C") is an **optional** second engine. A release may ship it
+or not. When present it is held to the same standard as the required models:
+hash-bound in the release manifest, calibrated on a declared split, and
+covered by both the desktop parity report and the independent device report.
+When absent, the pipeline behaves exactly as it did before the dual engine
+existed. See `docs/DUAL_ENGINE_CASCADE.md`.
 
 Neural training uses explicit independent `train`, `val`, `calibration`, and sealed `test` partitions. Visual stacking adds independent `stacking` and `fusion_val` partitions. Dataset manifests bind source/revision, semantic real=0/fake=1 labels, file hashes, and authoritative source/group identities. A missing split or corrupt sample is an error, never an implicit fallback to the dataset root or replacement silence/image.
 

@@ -1,5 +1,5 @@
 {
-  "release_id": "onn-20261019-v4",
+  "release_id": "onn-20261020-v6",
   "features": [
     "srm_score",
     "fft_score",
@@ -7,17 +7,17 @@
     "flatness_score",
     "resolution_norm",
     "is_compressed",
-    "exif_anomaly",
+    "semantic_probe_score",
     "c2pa_present",
     "lip_sync_corr",
     "landmark_jitter"
   ],
   "identity": {
     "dataset_manifest_hash": "9b0400fcc82e08d117c5cb245fd2c3081b3ba8ed9fd2f169a5455248c84c9312",
-    "visual_model_hash": "c76c6d48af7668c170a3e63efc849629765f5b1f346e5d6aa6cf2f7edefa42aa",
-    "checkpoint_hash": "d23f9fa3adb2a8a99a6fd7ed8764dd5e6e648dcaadbe83a09ee2dd4ba9df0a74",
+    "visual_model_hash": "d74a657c454e00f2181f4a3d98fa981ca63daf51d23e978da19c60c59e9b37c1",
+    "checkpoint_hash": "6ad7c47a04582d7162ec54337b4ab27c694e53b92cc824447a2c63541d26080d",
     "baseline_hash": "471e7ea7b96b4bb98ba07fb0a72397392e8f9910ec21106ce7221039b0240b98",
-    "feature_source_hash": "bf1dab78293966b2244fe40ba9bd8112122d1f7920f6298ec1300b74392b5ea1",
+    "feature_source_hash": "b1c5dcfebba9bedd69c4d5d5f442b6b2acfec8f7a2de7e76ee7746c7624a8ba2",
     "feature_schema": [
       "srm_score",
       "fft_score",
@@ -25,7 +25,7 @@
       "flatness_score",
       "resolution_norm",
       "is_compressed",
-      "exif_anomaly",
+      "semantic_probe_score",
       "c2pa_present",
       "lip_sync_corr",
       "landmark_jitter"
@@ -33,28 +33,28 @@
     "input_size": 128,
     "block_format_resolution_shortcuts": true
   },
-  "test_auc": 0.6555,
-  "laundered_test_auc": 0.6359625000000001,
+  "test_auc": 0.7152375,
+  "laundered_test_auc": 0.696975,
   "test": {
-    "auc": 0.6555,
-    "eer": 0.38250000000000006,
-    "accuracy": 0.6,
-    "balanced_accuracy": 0.6000000000000001,
-    "threshold": 0.499289333820343,
+    "auc": 0.7152375,
+    "eer": 0.35,
+    "accuracy": 0.6475,
+    "balanced_accuracy": 0.6475,
+    "threshold": 0.5121619701385498,
     "n_real": 200,
     "n_fake": 200,
-    "tpr": 0.515,
-    "fpr": 0.315,
+    "tpr": 0.645,
+    "fpr": 0.35,
     "tpr_wilson_95pct": [
-      0.44610849192745716,
-      0.5833261482812249
+      0.5765211307549043,
+      0.7080137245956883
     ],
     "fpr_wilson_95pct": [
-      0.2546232099022851,
-      0.3823495608573036
+      0.28728824127358077,
+      0.4183653566395992
     ],
-    "tpr_at_fpr_1pct": 0.0,
-    "tpr_at_fpr_0_1pct": 0.0,
+    "tpr_at_fpr_1pct": 0.04,
+    "tpr_at_fpr_0_1pct": 0.005,
     "uncertainty_note": "Wilson intervals assume independent examples; recording/source clustering can widen uncertainty.",
     "n_independent_declared_groups": 400,
     "groups": {
@@ -63,31 +63,31 @@
           "n_real": 17,
           "n_fake": 0,
           "tpr": null,
-          "fpr": 0.17647058823529413
+          "fpr": 0.29411764705882354
         },
         "imagenet": {
           "n_real": 33,
           "n_fake": 0,
           "tpr": null,
-          "fpr": 0.24242424242424243
+          "fpr": 0.15151515151515152
         },
         "laion": {
           "n_real": 81,
           "n_fake": 0,
           "tpr": null,
-          "fpr": 0.43209876543209874
+          "fpr": 0.4444444444444444
         },
         "openfake": {
           "n_real": 0,
           "n_fake": 200,
-          "tpr": 0.515,
+          "tpr": 0.645,
           "fpr": null
         },
         "pexels": {
           "n_real": 69,
           "n_fake": 0,
           "tpr": null,
-          "fpr": 0.2463768115942029
+          "fpr": 0.34782608695652173
         }
       },
       "generator": {
@@ -100,7 +100,7 @@
         "anima-preview": {
           "n_real": 0,
           "n_fake": 1,
-          "tpr": 1.0,
+          "tpr": 0.0,
           "fpr": null
         },
         "anima-preview2": {
@@ -118,7 +118,7 @@
         "animagine-xl-3.1": {
           "n_real": 0,
           "n_fake": 1,
-          "tpr": 0.0,
+          "tpr": 1.0,
           "fpr": null
         },
         "animagine-xl-4.0": {
@@ -130,7 +130,7 @@
         "chroma": {
           "n_real": 0,
           "n_fake": 1,
-          "tpr": 0.0,
+          "tpr": 1.0,
           "fpr": null
         },
         "cyberrealistic-pony-v14.0": {
@@ -142,7 +142,7 @@
         "cyberrealistic-pony-v14.1": {
           "n_real": 0,
           "n_fake": 1,
-          "tpr": 0.0,
+          "tpr": 1.0,
           "fpr": null
         },
         "cyberrealistic-pony-v15.0": {
@@ -172,7 +172,7 @@
         "dalle-3": {
           "n_real": 0,
           "n_fake": 4,
-          "tpr": 0.75,
+          "tpr": 1.0,
           "fpr": null
         },
         "ernie-image": {
@@ -196,7 +196,7 @@
         "flux-mvc5000": {
           "n_real": 0,
           "n_fake": 2,
-          "tpr": 0.5,
+          "tpr": 1.0,
           "fpr": null
         },
         "flux-realism": {
@@ -208,19 +208,19 @@
         "flux.1-dev": {
           "n_real": 0,
           "n_fake": 12,
-          "tpr": 0.5,
+          "tpr": 0.5833333333333334,
           "fpr": null
         },
         "flux.1-schnell": {
           "n_real": 0,
           "n_fake": 4,
-          "tpr": 0.5,
+          "tpr": 0.75,
           "fpr": null
         },
         "flux.2-dev": {
           "n_real": 0,
           "n_fake": 2,
-          "tpr": 0.5,
+          "tpr": 1.0,
           "fpr": null
         },
         "flux.2-klein-4b": {
@@ -232,13 +232,13 @@
         "flux.2-klein-9b": {
           "n_real": 0,
           "n_fake": 9,
-          "tpr": 0.5555555555555556,
+          "tpr": 1.0,
           "fpr": null
         },
         "flux.2-klein-base-4b": {
           "n_real": 0,
           "n_fake": 2,
-          "tpr": 0.5,
+          "tpr": 1.0,
           "fpr": null
         },
         "gpt-image-1": {
@@ -250,7 +250,7 @@
         "gpt-image-1.5": {
           "n_real": 0,
           "n_fake": 5,
-          "tpr": 0.6,
+          "tpr": 0.8,
           "fpr": null
         },
         "gpt-image-2": {
@@ -262,31 +262,31 @@
         "grok-2-image-1212": {
           "n_real": 0,
           "n_fake": 1,
-          "tpr": 0.0,
+          "tpr": 1.0,
           "fpr": null
         },
         "hidream-i1-full": {
           "n_real": 0,
           "n_fake": 4,
-          "tpr": 0.75,
+          "tpr": 1.0,
           "fpr": null
         },
         "ideogram-3.0": {
           "n_real": 0,
           "n_fake": 3,
-          "tpr": 0.0,
+          "tpr": 0.6666666666666666,
           "fpr": null
         },
         "illustrious": {
           "n_real": 0,
           "n_fake": 6,
-          "tpr": 0.6666666666666666,
+          "tpr": 1.0,
           "fpr": null
         },
         "imagen-3.0-002": {
           "n_real": 0,
           "n_fake": 1,
-          "tpr": 0.0,
+          "tpr": 1.0,
           "fpr": null
         },
         "imagen-4.0": {
@@ -298,7 +298,7 @@
         "midjourney-6": {
           "n_real": 0,
           "n_fake": 5,
-          "tpr": 0.0,
+          "tpr": 0.2,
           "fpr": null
         },
         "midjourney-7": {
@@ -310,7 +310,7 @@
         "mystic": {
           "n_real": 0,
           "n_fake": 3,
-          "tpr": 0.3333333333333333,
+          "tpr": 0.6666666666666666,
           "fpr": null
         },
         "nano-banana-2": {
@@ -322,7 +322,7 @@
         "novaanimexl_ilv140": {
           "n_real": 0,
           "n_fake": 1,
-          "tpr": 1.0,
+          "tpr": 0.0,
           "fpr": null
         },
         "one-obsession-17-red-sdxl": {
@@ -334,49 +334,49 @@
         "playground-v2.5-1024px-aesthetic": {
           "n_real": 0,
           "n_fake": 2,
-          "tpr": 1.0,
+          "tpr": 0.5,
           "fpr": null
         },
         "qwen-image": {
           "n_real": 0,
           "n_fake": 1,
-          "tpr": 1.0,
+          "tpr": 0.0,
           "fpr": null
         },
         "real": {
           "n_real": 200,
           "n_fake": 0,
           "tpr": null,
-          "fpr": 0.315
+          "fpr": 0.35
         },
         "realistic_vision_v5.1_novae": {
           "n_real": 0,
           "n_fake": 2,
-          "tpr": 1.0,
+          "tpr": 0.0,
           "fpr": null
         },
         "recraft-v3": {
           "n_real": 0,
           "n_fake": 1,
-          "tpr": 0.0,
+          "tpr": 1.0,
           "fpr": null
         },
         "sd-1.5": {
           "n_real": 0,
           "n_fake": 4,
-          "tpr": 0.5,
+          "tpr": 0.75,
           "fpr": null
         },
         "sd-1.5-dreamshaper": {
           "n_real": 0,
           "n_fake": 5,
-          "tpr": 0.6,
+          "tpr": 0.8,
           "fpr": null
         },
         "sd-1.5-epicdream": {
           "n_real": 0,
           "n_fake": 3,
-          "tpr": 0.0,
+          "tpr": 0.3333333333333333,
           "fpr": null
         },
         "sd-2.1": {
@@ -400,13 +400,13 @@
         "sd-xl-v1.0-vae-fix": {
           "n_real": 0,
           "n_fake": 2,
-          "tpr": 1.0,
+          "tpr": 0.5,
           "fpr": null
         },
         "sdxl": {
           "n_real": 0,
           "n_fake": 5,
-          "tpr": 0.2,
+          "tpr": 0.4,
           "fpr": null
         },
         "sdxl-1.0": {
@@ -418,7 +418,7 @@
         "sdxl-epic-realism": {
           "n_real": 0,
           "n_fake": 6,
-          "tpr": 0.3333333333333333,
+          "tpr": 0.5,
           "fpr": null
         },
         "sdxl-juggernaut": {
@@ -430,13 +430,13 @@
         "sdxl-realvis-v5": {
           "n_real": 0,
           "n_fake": 4,
-          "tpr": 0.25,
+          "tpr": 0.5,
           "fpr": null
         },
         "sdxl-touchofrealism": {
           "n_real": 0,
           "n_fake": 4,
-          "tpr": 0.0,
+          "tpr": 0.75,
           "fpr": null
         },
         "sdxl-turbo": {
@@ -448,7 +448,7 @@
         "seedream-v4.0": {
           "n_real": 0,
           "n_fake": 2,
-          "tpr": 1.0,
+          "tpr": 0.5,
           "fpr": null
         },
         "seedream-v4.5": {
@@ -460,19 +460,19 @@
         "sora-2": {
           "n_real": 0,
           "n_fake": 1,
-          "tpr": 1.0,
+          "tpr": 0.0,
           "fpr": null
         },
         "stable-diffusion-v1-4": {
           "n_real": 0,
           "n_fake": 2,
-          "tpr": 1.0,
+          "tpr": 0.5,
           "fpr": null
         },
         "stable-diffusion-v1-5": {
           "n_real": 0,
           "n_fake": 2,
-          "tpr": 0.0,
+          "tpr": 0.5,
           "fpr": null
         },
         "stable-diffusion-xl-base-1.0": {
@@ -496,7 +496,7 @@
         "veo-3": {
           "n_real": 0,
           "n_fake": 2,
-          "tpr": 1.0,
+          "tpr": 0.5,
           "fpr": null
         },
         "wan-video-2.2": {
@@ -508,38 +508,38 @@
         "wan-video-2.5": {
           "n_real": 0,
           "n_fake": 1,
-          "tpr": 1.0,
+          "tpr": 0.0,
           "fpr": null
         },
         "z-image-turbo": {
           "n_real": 0,
           "n_fake": 10,
-          "tpr": 0.5,
+          "tpr": 0.9,
           "fpr": null
         }
       }
     }
   },
   "laundered_test": {
-    "auc": 0.6359625000000001,
-    "eer": 0.39,
-    "accuracy": 0.5825,
-    "balanced_accuracy": 0.5825,
-    "threshold": 0.499289333820343,
+    "auc": 0.696975,
+    "eer": 0.3625,
+    "accuracy": 0.63,
+    "balanced_accuracy": 0.63,
+    "threshold": 0.5121619701385498,
     "n_real": 200,
     "n_fake": 200,
-    "tpr": 0.42,
-    "fpr": 0.255,
+    "tpr": 0.485,
+    "fpr": 0.225,
     "tpr_wilson_95pct": [
-      0.35373599161616726,
-      0.4892792606041954
+      0.41667385171877513,
+      0.5538915080725428
     ],
     "fpr_wilson_95pct": [
-      0.1996049517203135,
-      0.3196292582045472
+      0.17262369715089126,
+      0.2877412323566053
     ],
-    "tpr_at_fpr_1pct": 0.02,
-    "tpr_at_fpr_0_1pct": 0.0,
+    "tpr_at_fpr_1pct": 0.04,
+    "tpr_at_fpr_0_1pct": 0.025,
     "uncertainty_note": "Wilson intervals assume independent examples; recording/source clustering can widen uncertainty.",
     "n_independent_declared_groups": 400,
     "groups": {
@@ -554,25 +554,25 @@
           "n_real": 33,
           "n_fake": 0,
           "tpr": null,
-          "fpr": 0.24242424242424243
+          "fpr": 0.09090909090909091
         },
         "laion": {
           "n_real": 81,
           "n_fake": 0,
           "tpr": null,
-          "fpr": 0.35802469135802467
+          "fpr": 0.32098765432098764
         },
         "openfake": {
           "n_real": 0,
           "n_fake": 200,
-          "tpr": 0.42,
+          "tpr": 0.485,
           "fpr": null
         },
         "pexels": {
           "n_real": 69,
           "n_fake": 0,
           "tpr": null,
-          "fpr": 0.15942028985507245
+          "fpr": 0.18840579710144928
         }
       },
       "generator": {
@@ -585,13 +585,13 @@
         "anima-preview": {
           "n_real": 0,
           "n_fake": 1,
-          "tpr": 1.0,
+          "tpr": 0.0,
           "fpr": null
         },
         "anima-preview2": {
           "n_real": 0,
           "n_fake": 1,
-          "tpr": 1.0,
+          "tpr": 0.0,
           "fpr": null
         },
         "animagine-xl-3.0": {
@@ -621,25 +621,25 @@
         "cyberrealistic-pony-v14.0": {
           "n_real": 0,
           "n_fake": 1,
-          "tpr": 1.0,
+          "tpr": 0.0,
           "fpr": null
         },
         "cyberrealistic-pony-v14.1": {
           "n_real": 0,
           "n_fake": 1,
-          "tpr": 0.0,
+          "tpr": 1.0,
           "fpr": null
         },
         "cyberrealistic-pony-v15.0": {
           "n_real": 0,
           "n_fake": 1,
-          "tpr": 0.0,
+          "tpr": 1.0,
           "fpr": null
         },
         "cyberrealistic-pony-v16.0": {
           "n_real": 0,
           "n_fake": 1,
-          "tpr": 0.0,
+          "tpr": 1.0,
           "fpr": null
         },
         "cyberrealistic-pony-v17.0": {
@@ -651,13 +651,13 @@
         "cyberrealistic-xl-v9.0": {
           "n_real": 0,
           "n_fake": 1,
-          "tpr": 1.0,
+          "tpr": 0.0,
           "fpr": null
         },
         "dalle-3": {
           "n_real": 0,
           "n_fake": 4,
-          "tpr": 0.5,
+          "tpr": 0.75,
           "fpr": null
         },
         "ernie-image": {
@@ -669,7 +669,7 @@
         "flux-1.1-pro": {
           "n_real": 0,
           "n_fake": 3,
-          "tpr": 0.0,
+          "tpr": 0.3333333333333333,
           "fpr": null
         },
         "flux-amateursnapshotphotos": {
@@ -693,31 +693,31 @@
         "flux.1-dev": {
           "n_real": 0,
           "n_fake": 12,
-          "tpr": 0.25,
+          "tpr": 0.5833333333333334,
           "fpr": null
         },
         "flux.1-schnell": {
           "n_real": 0,
           "n_fake": 4,
-          "tpr": 0.5,
+          "tpr": 0.75,
           "fpr": null
         },
         "flux.2-dev": {
           "n_real": 0,
           "n_fake": 2,
-          "tpr": 0.5,
+          "tpr": 0.0,
           "fpr": null
         },
         "flux.2-klein-4b": {
           "n_real": 0,
           "n_fake": 3,
-          "tpr": 0.3333333333333333,
+          "tpr": 0.6666666666666666,
           "fpr": null
         },
         "flux.2-klein-9b": {
           "n_real": 0,
           "n_fake": 9,
-          "tpr": 0.4444444444444444,
+          "tpr": 0.7777777777777778,
           "fpr": null
         },
         "flux.2-klein-base-4b": {
@@ -735,13 +735,13 @@
         "gpt-image-1.5": {
           "n_real": 0,
           "n_fake": 5,
-          "tpr": 0.4,
+          "tpr": 0.6,
           "fpr": null
         },
         "gpt-image-2": {
           "n_real": 0,
           "n_fake": 1,
-          "tpr": 1.0,
+          "tpr": 0.0,
           "fpr": null
         },
         "grok-2-image-1212": {
@@ -753,7 +753,7 @@
         "hidream-i1-full": {
           "n_real": 0,
           "n_fake": 4,
-          "tpr": 0.25,
+          "tpr": 0.5,
           "fpr": null
         },
         "ideogram-3.0": {
@@ -765,7 +765,7 @@
         "illustrious": {
           "n_real": 0,
           "n_fake": 6,
-          "tpr": 0.8333333333333334,
+          "tpr": 0.6666666666666666,
           "fpr": null
         },
         "imagen-3.0-002": {
@@ -777,13 +777,13 @@
         "imagen-4.0": {
           "n_real": 0,
           "n_fake": 3,
-          "tpr": 0.6666666666666666,
+          "tpr": 0.3333333333333333,
           "fpr": null
         },
         "midjourney-6": {
           "n_real": 0,
           "n_fake": 5,
-          "tpr": 0.6,
+          "tpr": 0.4,
           "fpr": null
         },
         "midjourney-7": {
@@ -795,7 +795,7 @@
         "mystic": {
           "n_real": 0,
           "n_fake": 3,
-          "tpr": 0.3333333333333333,
+          "tpr": 0.6666666666666666,
           "fpr": null
         },
         "nano-banana-2": {
@@ -819,25 +819,25 @@
         "playground-v2.5-1024px-aesthetic": {
           "n_real": 0,
           "n_fake": 2,
-          "tpr": 0.5,
+          "tpr": 0.0,
           "fpr": null
         },
         "qwen-image": {
           "n_real": 0,
           "n_fake": 1,
-          "tpr": 0.0,
+          "tpr": 1.0,
           "fpr": null
         },
         "real": {
           "n_real": 200,
           "n_fake": 0,
           "tpr": null,
-          "fpr": 0.255
+          "fpr": 0.225
         },
         "realistic_vision_v5.1_novae": {
           "n_real": 0,
           "n_fake": 2,
-          "tpr": 0.5,
+          "tpr": 0.0,
           "fpr": null
         },
         "recraft-v3": {
@@ -855,7 +855,7 @@
         "sd-1.5-dreamshaper": {
           "n_real": 0,
           "n_fake": 5,
-          "tpr": 0.4,
+          "tpr": 0.6,
           "fpr": null
         },
         "sd-1.5-epicdream": {
@@ -867,7 +867,7 @@
         "sd-2.1": {
           "n_real": 0,
           "n_fake": 12,
-          "tpr": 0.3333333333333333,
+          "tpr": 0.4166666666666667,
           "fpr": null
         },
         "sd-3.5": {
@@ -885,7 +885,7 @@
         "sd-xl-v1.0-vae-fix": {
           "n_real": 0,
           "n_fake": 2,
-          "tpr": 1.0,
+          "tpr": 0.5,
           "fpr": null
         },
         "sdxl": {
@@ -897,31 +897,31 @@
         "sdxl-1.0": {
           "n_real": 0,
           "n_fake": 1,
-          "tpr": 0.0,
+          "tpr": 1.0,
           "fpr": null
         },
         "sdxl-epic-realism": {
           "n_real": 0,
           "n_fake": 6,
-          "tpr": 0.3333333333333333,
+          "tpr": 0.16666666666666666,
           "fpr": null
         },
         "sdxl-juggernaut": {
           "n_real": 0,
           "n_fake": 5,
-          "tpr": 0.6,
+          "tpr": 0.8,
           "fpr": null
         },
         "sdxl-realvis-v5": {
           "n_real": 0,
           "n_fake": 4,
-          "tpr": 0.5,
+          "tpr": 0.25,
           "fpr": null
         },
         "sdxl-touchofrealism": {
           "n_real": 0,
           "n_fake": 4,
-          "tpr": 0.0,
+          "tpr": 0.5,
           "fpr": null
         },
         "sdxl-turbo": {
@@ -933,13 +933,13 @@
         "seedream-v4.0": {
           "n_real": 0,
           "n_fake": 2,
-          "tpr": 1.0,
+          "tpr": 0.0,
           "fpr": null
         },
         "seedream-v4.5": {
           "n_real": 0,
           "n_fake": 1,
-          "tpr": 0.0,
+          "tpr": 1.0,
           "fpr": null
         },
         "sora-2": {
@@ -957,7 +957,7 @@
         "stable-diffusion-v1-5": {
           "n_real": 0,
           "n_fake": 2,
-          "tpr": 0.0,
+          "tpr": 0.5,
           "fpr": null
         },
         "stable-diffusion-xl-base-1.0": {
@@ -975,13 +975,13 @@
         "tiny-random-sana": {
           "n_real": 0,
           "n_fake": 2,
-          "tpr": 0.0,
+          "tpr": 1.0,
           "fpr": null
         },
         "veo-3": {
           "n_real": 0,
           "n_fake": 2,
-          "tpr": 0.5,
+          "tpr": 0.0,
           "fpr": null
         },
         "wan-video-2.2": {
@@ -999,25 +999,39 @@
         "z-image-turbo": {
           "n_real": 0,
           "n_fake": 10,
-          "tpr": 0.5,
+          "tpr": 0.7,
           "fpr": null
         }
       }
     }
   },
   "test_scope": "all_sealed_test_files",
-  "test_accuracy": 0.6,
-  "laundered_test_accuracy": 0.5825,
-  "base_margin_intercept": -2.838335417393312e-10,
-  "n_trees": 4,
-  "model_hash": "24c1e897b0f1485255173b384793785c696d9eb6f4f24baa724fe7c589487144",
-  "kotlin_hash": "63ea73f85946b39bd9cc06afaf117296901f2063593d4a4a5d23664abceca759",
+  "test_accuracy": 0.6475,
+  "laundered_test_accuracy": 0.63,
+  "base_margin_intercept": 3.465838095684237e-09,
+  "n_trees": 14,
+  "model_hash": "96c0178d1b04b6183e153245751cb22b9caec722f689d72c34e0c8f8b1366329",
+  "kotlin_hash": "0f18e26e626c43d9be96ca1ef9f4ba5ea5cf06756acaf894e6588b031a1b442a",
+  "dual_engine": {
+    "engine_c_tflite": "D:\\onn_data\\runs\\release_v6\\bundle\\models\\semantic_probe_int8.tflite",
+    "engine_c_sha256": "38d1b692c3023b52b0e139d0a17257d3742019e8cc7edd1d8bb636ff91048d79",
+    "engine_c_input_size": 224,
+    "semantic_probe_feature_index": 6,
+    "optional_feature_indices": [
+      6
+    ],
+    "cascade_mask_rate": 0.25,
+    "cascade_artifacts": {
+      "constants/cascade_policy.json": "32dc856deb93e488b51bed43c63e86de34dc13df07707632f4a1417bf3332eeb",
+      "constants/semantic_probe_threshold.json": "71c98c96f0e7a298246c946c04fa2ff3612617845c80bd763fd1f5ca8edd4d65"
+    }
+  },
   "calibration": {
-    "threshold": 0.499289333820343,
-    "auc": 0.5920625,
+    "threshold": 0.5121619701385498,
+    "auc": 0.6705749999999999,
     "n_calibration": 400,
     "split_manifest_hash": "9b0400fcc82e08d117c5cb245fd2c3081b3ba8ed9fd2f169a5455248c84c9312",
-    "model_hash": "24c1e897b0f1485255173b384793785c696d9eb6f4f24baa724fe7c589487144",
+    "model_hash": "96c0178d1b04b6183e153245751cb22b9caec722f689d72c34e0c8f8b1366329",
     "frontend_id": "rgb-exif-srgb-whitealpha-pow2cap1024-bilinear-square-v2-size128-float32"
   },
   "validation_status": "numpy_tree_parity_passed_requires_jvm_and_device_evaluation"

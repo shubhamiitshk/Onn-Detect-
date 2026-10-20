@@ -75,13 +75,19 @@ def validate_models_real(pytorch_model, tflite_path, modality, real_images=None,
     if labels is None or threshold is None:
         raise ValueError("Export parity requires explicit labels and the calibrated operational threshold")
     pytorch_model.cpu().eval()
-    values = real_images if modality == "visual" else real_specs_pt
+    if modality in ("visual", "cascade"):
+        values = real_images
+    else:
+        values = real_specs_pt
     values = values[:num_samples]
     ref, cand = [], []
     for value in values:
         if modality == "visual":
             x = np.asarray(value, dtype=np.float32) / 255.0
             x = x[None]
+        elif modality == "cascade":
+            # Engine C inputs are already CLIP-normalized CHW tensors.
+            x = np.transpose(np.asarray(value, dtype=np.float32), (1, 2, 0))[None]
         elif modality == "audio":
             x = np.transpose(np.asarray(value, dtype=np.float32), (0, 2, 3, 1))
         else:
@@ -91,3 +97,4 @@ def validate_models_real(pytorch_model, tflite_path, modality, real_images=None,
             ref.append(float(pytorch_model(torch.from_numpy(pt)).reshape(-1)[0]))
         cand.append(_run_tflite(tflite_path, x))
     return compare_scores(labels[:len(ref)], ref, cand, threshold, min_agreement=min_agreement)
+

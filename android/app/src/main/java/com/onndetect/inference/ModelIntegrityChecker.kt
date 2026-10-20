@@ -8,10 +8,27 @@ import java.security.MessageDigest
 object ModelIntegrityChecker {
     const val IMAGE_MODEL = "srm_forensic_cnn_int8.tflite"
     const val AUDIO_MODEL = "lcnn_audio_int8.tflite"
+
+    /**
+     * Engine C ("Lite C") - the OPTIONAL semantic second engine.
+     *
+     * A release may or may not ship it. When it does, it is held to exactly
+     * the same standard as the required models: hash-bound in the release
+     * manifest, calibrated on a declared split, and covered by both the
+     * desktop parity report and the independent device report. When it does
+     * not, the pipeline behaves exactly as it did before the dual engine
+     * existed - fusion slot 6 stays unavailable and the tree takes its
+     * learned missing branch.
+     */
+    const val CASCADE_MODEL = "semantic_probe_int8.tflite"
     val REQUIRED_MODELS = setOf(IMAGE_MODEL, AUDIO_MODEL)
+    val OPTIONAL_MODELS = setOf(CASCADE_MODEL)
+    val KNOWN_MODELS = REQUIRED_MODELS + OPTIONAL_MODELS
+
     data class Report(val allOk: Boolean, val failures: List<String>, val validated: Boolean = false,
         val validationReason: String = "Release lineage/calibration is unavailable", val releaseId: String = "unknown",
-        val frontendId: String = "unknown", val threshold: Float? = null)
+        val frontendId: String = "unknown", val threshold: Float? = null,
+        val cascadeValidated: Boolean = false)
 
     fun verifyAllModels(context: Context): Boolean = verifyAllModelsDetailed(context).allOk
     fun verifyAllModelsDetailed(context: Context): Report = verifyModelsDetailed(context, REQUIRED_MODELS)
@@ -84,6 +101,7 @@ object ModelIntegrityChecker {
             require(release.get("validated") is Boolean) { "validated must be a Boolean" }
             if (release.get("validated") != true) return Report(true, emptyList(), false,
                 release.optString("validation_status", "Unvalidated legacy detector"), releaseId)
+
             require(release.getString("source_commit").matches(Regex("[a-fA-F0-9]{40}")))
             val dataHashes = release.getJSONObject("data_manifest_hashes")
             require(dataHashes.length() > 0 && dataHashes.keys().asSequence().all { validHash(dataHashes.getString(it)) })
@@ -123,9 +141,51 @@ object ModelIntegrityChecker {
                 val tested = device.getJSONObject("models").getJSONObject(name)
                 require(tested.getString("sha256") == model.getString("sha256") && tested.getString("frontend_id") == model.getString("frontend_id") && tested.get("parity_passed") == true) { "Device model/frontend linkage mismatch" }
             }
+            // â”€â”€ Optional Engine C ("Lite C") second engine â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            // When the release declares it, it is held to the SAME standard as
+            // the required models. When it is absent, nothing about the
+            // primary detector changes - the pipeline simply keeps slot 6
+            // unavailable.
+            val calibrations = release.getJSONObject("calibration")
+            var cascadeValidated = false
+            if (models.has(CASCADE_MODEL)) {
+                val cascade = models.getJSONObject(CASCADE_MODEL)
+                require(cascade.getString("sha256").equals(hashes.getJSONObject("models").getString(CASCADE_MODEL), true)) { "Cascade model hash linkage mismatch" }
+                require(cascade.getString("dtype") == "FLOAT32")
+                val cascadeShape = cascade.getJSONArray("input_shape")
+                positiveShape(cascadeShape)
+                require(cascadeShape.length() == 4 && cascadeShape.getInt(0) == 1 &&
+                    cascadeShape.getInt(1) == cascadeShape.getInt(2) && cascadeShape.getInt(3) == 3) { "Cascade model input shape invalid" }
+                val cascadeOut = cascade.getJSONArray("output_shape")
+                positiveShape(cascadeOut)
+                require(cascadeOut.length() == 2 && cascadeOut.getInt(0) == 1 && cascadeOut.getInt(1) == 1) { "Cascade model output shape invalid" }
+                require(cascade.getString("frontend_id") ==
+                    "clip-appearance-bicubic${cascadeShape.getInt(1)}-clipnorm-meanstd-float32") { "Cascade frontend contract mismatch" }
+                val desktopCascade = evaluation.getJSONObject("models").getJSONObject(CASCADE_MODEL)
+                require(desktopCascade.getJSONObject("parity").get("passed") == true) { "Desktop cascade parity missing" }
+                val desktopCascadeCalibration = desktopCascade.getJSONObject("calibration")
+                require(desktopCascadeCalibration.getString("model_hash") == cascade.getString("sha256") &&
+                    desktopCascadeCalibration.getString("frontend_id") == cascade.getString("frontend_id")) { "Desktop cascade model/frontend linkage mismatch" }
+                val testedCascade = device.getJSONObject("models").getJSONObject(CASCADE_MODEL)
+                require(testedCascade.getString("sha256") == cascade.getString("sha256") &&
+                    testedCascade.getString("frontend_id") == cascade.getString("frontend_id") &&
+                    testedCascade.get("parity_passed") == true) { "Device cascade model/frontend linkage mismatch" }
+                val cascadeCalibration = calibrations.getJSONObject(CASCADE_MODEL)
+                require(cascadeCalibration.getString("model_hash") == cascade.getString("sha256") &&
+                    cascadeCalibration.getString("frontend_id") == cascade.getString("frontend_id")) { "Cascade calibration lineage mismatch" }
+                val cascadeThreshold = numeric(cascadeCalibration, "threshold").toFloat()
+                val cascadeAuc = numeric(cascadeCalibration, "auc")
+                require(cascadeThreshold.isFinite() && cascadeThreshold in 0f..1f &&
+                    cascadeAuc.isFinite() && cascadeAuc > 0.5 && cascadeAuc <= 1.0) { "Cascade calibration is at/below chance" }
+                require(integer(cascadeCalibration, "n_calibration") >= 100 &&
+                    validHash(cascadeCalibration.getString("split_manifest_hash"))) { "Cascade calibration lineage invalid" }
+                require(dataHashes.keys().asSequence().any { dataHashes.getString(it) == cascadeCalibration.getString("split_manifest_hash") }) { "Cascade calibration split lineage mismatch" }
+                require(kotlin.math.abs(cascadeThreshold - numeric(read("constants/semantic_probe_threshold.json"), "threshold_at_eer").toFloat()) < 1e-6f) { "Cascade threshold asset/release mismatch" }
+                cascadeValidated = true
+            }
+
             if (IMAGE_MODEL in required) require(release.getString("fusion_revision") == com.onndetect.detection.fusion.XGBoostMetaClassifier.RELEASE_ID &&
                 com.onndetect.detection.fusion.XGBoostMetaClassifier.RELEASE_ID != "legacy-unvalidated") { "Fusion lineage mismatch" }
-            val calibrations = release.getJSONObject("calibration")
             var threshold: Float? = null
             var frontend = "unknown"
             required.forEach { name ->
@@ -148,7 +208,7 @@ object ModelIntegrityChecker {
                 require(kotlin.math.abs(t - constantThreshold) < 1e-6f) { "Calibration asset/release threshold mismatch" }
                 threshold = t
             }
-            Report(true, emptyList(), true, "Validated release", releaseId, frontend, threshold)
+            Report(true, emptyList(), true, "Validated release", releaseId, frontend, threshold, cascadeValidated)
         } catch (e: Exception) { Report(false, listOf("Release contract invalid: ${e.message}")) }
     }
 

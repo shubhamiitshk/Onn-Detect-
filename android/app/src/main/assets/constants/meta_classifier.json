@@ -6,18 +6,18 @@
     "flatness_score",
     "resolution_norm",
     "is_compressed",
-    "exif_anomaly",
+    "semantic_probe_score",
     "c2pa_present",
     "lip_sync_corr",
     "landmark_jitter"
   ],
-  "decision_threshold": 0.499289333820343,
-  "calibration_auc": 0.5920625,
-  "test_auc": 0.6555,
-  "test_accuracy": 0.6,
-  "n_trees": 4,
-  "base_margin_intercept": -2.838335417393312e-10,
-  "release_id": "onn-20261019-v4",
-  "fusion_model_hash": "24c1e897b0f1485255173b384793785c696d9eb6f4f24baa724fe7c589487144",
-  "visual_model_hash": "c76c6d48af7668c170a3e63efc849629765f5b1f346e5d6aa6cf2f7edefa42aa"
+  "decision_threshold": 0.5121619701385498,
+  "calibration_auc": 0.6705749999999999,
+  "test_auc": 0.7152375,
+  "test_accuracy": 0.6475,
+  "n_trees": 14,
+  "base_margin_intercept": 3.465838095684237e-09,
+  "release_id": "onn-20261020-v6",
+  "fusion_model_hash": "96c0178d1b04b6183e153245751cb22b9caec722f689d72c34e0c8f8b1366329",
+  "visual_model_hash": "d74a657c454e00f2181f4a3d98fa981ca63daf51d23e978da19c60c59e9b37c1"
 }

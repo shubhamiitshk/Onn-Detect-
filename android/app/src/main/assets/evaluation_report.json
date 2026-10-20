@@ -1,52 +1,52 @@
 {
-  "release_id": "onn-20261019-v4",
+  "release_id": "onn-20261020-v6",
   "models": {
     "srm_forensic_cnn_int8.tflite": {
-      "fp32_max_error": 2.980232238769531e-07,
+      "fp32_max_error": 4.172325134277344e-07,
       "parity": {
-        "mae": 0.003920392468571663,
-        "max_error": 0.02079904079437256,
-        "agreement": 0.9875,
-        "threshold": 0.5112629532814026,
-        "reference_auc": 0.6194999999999999,
-        "candidate_auc": 0.618025,
-        "reference_tpr_at_fpr_1pct": 0.05,
-        "candidate_tpr_at_fpr_1pct": 0.05,
+        "mae": 0.012132794801145793,
+        "max_error": 0.07213257998228073,
+        "agreement": 0.985,
+        "threshold": 0.5165783762931824,
+        "reference_auc": 0.6016750000000001,
+        "candidate_auc": 0.6033000000000001,
+        "reference_tpr_at_fpr_1pct": 0.045,
+        "candidate_tpr_at_fpr_1pct": 0.035,
         "n_real": 200,
         "n_fake": 200,
         "passed": true
       },
       "calibration": {
-        "model_hash": "c76c6d48af7668c170a3e63efc849629765f5b1f346e5d6aa6cf2f7edefa42aa",
+        "model_hash": "d74a657c454e00f2181f4a3d98fa981ca63daf51d23e978da19c60c59e9b37c1",
         "frontend_id": "rgb-exif-srgb-whitealpha-pow2cap1024-bilinear-square-v2-size128-float32",
-        "threshold": 0.51953125,
-        "auc": 0.618025,
+        "threshold": 0.53125,
+        "auc": 0.6033000000000001,
         "n_calibration": 400,
         "split_manifest_hash": "9b0400fcc82e08d117c5cb245fd2c3081b3ba8ed9fd2f169a5455248c84c9312"
       },
-      "checkpoint_sha256": "d23f9fa3adb2a8a99a6fd7ed8764dd5e6e648dcaadbe83a09ee2dd4ba9df0a74",
-      "test_auc": 0.5817749999999999,
-      "test_eer": 0.4325,
-      "test_accuracy": 0.5675,
+      "checkpoint_sha256": "6ad7c47a04582d7162ec54337b4ab27c694e53b92cc824447a2c63541d26080d",
+      "test_auc": 0.6584375,
+      "test_eer": 0.395,
+      "test_accuracy": 0.6175,
       "test": {
-        "auc": 0.5817749999999999,
-        "eer": 0.4325,
-        "accuracy": 0.5675,
-        "balanced_accuracy": 0.5675,
-        "threshold": 0.51953125,
+        "auc": 0.6584375,
+        "eer": 0.395,
+        "accuracy": 0.6175,
+        "balanced_accuracy": 0.6174999999999999,
+        "threshold": 0.53125,
         "n_real": 200,
         "n_fake": 200,
-        "tpr": 0.55,
-        "fpr": 0.415,
+        "tpr": 0.57,
+        "fpr": 0.335,
         "tpr_wilson_95pct": [
-          0.48075615138475697,
-          0.6173593159775166
+          0.5007048776415268,
+          0.6366567766656557
         ],
         "fpr_wilson_95pct": [
-          0.34894285449757567,
-          0.4842608509865596
+          0.2732408697841632,
+          0.40297808792033485
         ],
-        "tpr_at_fpr_1pct": 0.02,
+        "tpr_at_fpr_1pct": 0.075,
         "tpr_at_fpr_0_1pct": 0.0,
         "uncertainty_note": "Wilson intervals assume independent examples; recording/source clustering can widen uncertainty.",
         "n_independent_declared_groups": 400,
@@ -62,25 +62,25 @@
               "n_real": 33,
               "n_fake": 0,
               "tpr": null,
-              "fpr": 0.21212121212121213
+              "fpr": 0.18181818181818182
             },
             "laion": {
               "n_real": 81,
               "n_fake": 0,
               "tpr": null,
-              "fpr": 0.5802469135802469
+              "fpr": 0.5185185185185185
             },
             "openfake": {
               "n_real": 0,
               "n_fake": 200,
-              "tpr": 0.55,
+              "tpr": 0.57,
               "fpr": null
             },
             "pexels": {
               "n_real": 69,
               "n_fake": 0,
               "tpr": null,
-              "fpr": 0.36231884057971014
+              "fpr": 0.21739130434782608
             }
           },
           "generator": {
@@ -111,7 +111,7 @@
             "animagine-xl-3.1": {
               "n_real": 0,
               "n_fake": 1,
-              "tpr": 1.0,
+              "tpr": 0.0,
               "fpr": null
             },
             "animagine-xl-4.0": {
@@ -135,7 +135,7 @@
             "cyberrealistic-pony-v14.1": {
               "n_real": 0,
               "n_fake": 1,
-              "tpr": 0.0,
+              "tpr": 1.0,
               "fpr": null
             },
             "cyberrealistic-pony-v15.0": {
@@ -201,13 +201,13 @@
             "flux.1-dev": {
               "n_real": 0,
               "n_fake": 12,
-              "tpr": 0.5833333333333334,
+              "tpr": 0.8333333333333334,
               "fpr": null
             },
             "flux.1-schnell": {
               "n_real": 0,
               "n_fake": 4,
-              "tpr": 0.5,
+              "tpr": 0.75,
               "fpr": null
             },
             "flux.2-dev": {
@@ -219,49 +219,49 @@
             "flux.2-klein-4b": {
               "n_real": 0,
               "n_fake": 3,
-              "tpr": 1.0,
+              "tpr": 0.6666666666666666,
               "fpr": null
             },
             "flux.2-klein-9b": {
               "n_real": 0,
               "n_fake": 9,
-              "tpr": 1.0,
+              "tpr": 0.7777777777777778,
               "fpr": null
             },
             "flux.2-klein-base-4b": {
               "n_real": 0,
               "n_fake": 2,
-              "tpr": 1.0,
+              "tpr": 0.5,
               "fpr": null
             },
             "gpt-image-1": {
               "n_real": 0,
               "n_fake": 3,
-              "tpr": 0.3333333333333333,
+              "tpr": 0.0,
               "fpr": null
             },
             "gpt-image-1.5": {
               "n_real": 0,
               "n_fake": 5,
-              "tpr": 0.2,
+              "tpr": 0.6,
               "fpr": null
             },
             "gpt-image-2": {
               "n_real": 0,
               "n_fake": 1,
-              "tpr": 1.0,
+              "tpr": 0.0,
               "fpr": null
             },
             "grok-2-image-1212": {
               "n_real": 0,
               "n_fake": 1,
-              "tpr": 0.0,
+              "tpr": 1.0,
               "fpr": null
             },
             "hidream-i1-full": {
               "n_real": 0,
               "n_fake": 4,
-              "tpr": 0.75,
+              "tpr": 1.0,
               "fpr": null
             },
             "ideogram-3.0": {
@@ -273,7 +273,7 @@
             "illustrious": {
               "n_real": 0,
               "n_fake": 6,
-              "tpr": 0.8333333333333334,
+              "tpr": 0.6666666666666666,
               "fpr": null
             },
             "imagen-3.0-002": {
@@ -303,7 +303,7 @@
             "mystic": {
               "n_real": 0,
               "n_fake": 3,
-              "tpr": 0.6666666666666666,
+              "tpr": 0.3333333333333333,
               "fpr": null
             },
             "nano-banana-2": {
@@ -321,7 +321,7 @@
             "one-obsession-17-red-sdxl": {
               "n_real": 0,
               "n_fake": 1,
-              "tpr": 1.0,
+              "tpr": 0.0,
               "fpr": null
             },
             "playground-v2.5-1024px-aesthetic": {
@@ -340,7 +340,7 @@
               "n_real": 200,
               "n_fake": 0,
               "tpr": null,
-              "fpr": 0.415
+              "fpr": 0.335
             },
             "realistic_vision_v5.1_novae": {
               "n_real": 0,
@@ -357,31 +357,31 @@
             "sd-1.5": {
               "n_real": 0,
               "n_fake": 4,
-              "tpr": 0.5,
+              "tpr": 0.75,
               "fpr": null
             },
             "sd-1.5-dreamshaper": {
               "n_real": 0,
               "n_fake": 5,
-              "tpr": 0.2,
+              "tpr": 0.4,
               "fpr": null
             },
             "sd-1.5-epicdream": {
               "n_real": 0,
               "n_fake": 3,
-              "tpr": 0.0,
+              "tpr": 0.6666666666666666,
               "fpr": null
             },
             "sd-2.1": {
               "n_real": 0,
               "n_fake": 12,
-              "tpr": 0.3333333333333333,
+              "tpr": 0.4166666666666667,
               "fpr": null
             },
             "sd-3.5": {
               "n_real": 0,
               "n_fake": 15,
-              "tpr": 0.6666666666666666,
+              "tpr": 0.5333333333333333,
               "fpr": null
             },
             "sd-turbo": {
@@ -399,7 +399,7 @@
             "sdxl": {
               "n_real": 0,
               "n_fake": 5,
-              "tpr": 0.4,
+              "tpr": 0.8,
               "fpr": null
             },
             "sdxl-1.0": {
@@ -411,37 +411,37 @@
             "sdxl-epic-realism": {
               "n_real": 0,
               "n_fake": 6,
-              "tpr": 0.16666666666666666,
+              "tpr": 0.5,
               "fpr": null
             },
             "sdxl-juggernaut": {
               "n_real": 0,
               "n_fake": 5,
-              "tpr": 1.0,
+              "tpr": 0.8,
               "fpr": null
             },
             "sdxl-realvis-v5": {
               "n_real": 0,
               "n_fake": 4,
-              "tpr": 0.25,
+              "tpr": 0.75,
               "fpr": null
             },
             "sdxl-touchofrealism": {
               "n_real": 0,
               "n_fake": 4,
-              "tpr": 0.0,
+              "tpr": 0.5,
               "fpr": null
             },
             "sdxl-turbo": {
               "n_real": 0,
               "n_fake": 2,
-              "tpr": 1.0,
+              "tpr": 0.5,
               "fpr": null
             },
             "seedream-v4.0": {
               "n_real": 0,
               "n_fake": 2,
-              "tpr": 1.0,
+              "tpr": 0.5,
               "fpr": null
             },
             "seedream-v4.5": {
@@ -489,7 +489,7 @@
             "veo-3": {
               "n_real": 0,
               "n_fake": 2,
-              "tpr": 1.0,
+              "tpr": 0.5,
               "fpr": null
             },
             "wan-video-2.2": {
@@ -507,7 +507,7 @@
             "z-image-turbo": {
               "n_real": 0,
               "n_fake": 10,
-              "tpr": 0.8,
+              "tpr": 0.6,
               "fpr": null
             }
           }
@@ -918,14 +918,14 @@
       ]
     },
     "lcnn_audio_int8.tflite": {
-      "fp32_max_error": 1.4901161193847656e-07,
+      "fp32_max_error": 1.1920928955078125e-07,
       "parity": {
-        "mae": 0.0069105169270187615,
+        "mae": 0.0068034690478816625,
         "max_error": 0.08327257633209229,
-        "agreement": 0.9875,
+        "agreement": 0.99,
         "threshold": 0.36052772402763367,
         "reference_auc": 0.8650749999999999,
-        "candidate_auc": 0.8644625,
+        "candidate_auc": 0.8646,
         "reference_tpr_at_fpr_1pct": 0.355,
         "candidate_tpr_at_fpr_1pct": 0.34,
         "n_real": 200,
@@ -933,20 +933,20 @@
         "passed": true
       },
       "calibration": {
-        "model_hash": "21e500c4b7c096a1acd1133394f35fae2d2b35f578edbcb0551dc8a4c83c10e7",
+        "model_hash": "56607bbfcf0c5b1bfab69d19f70e675116f6ed91356cbb8aed4d2483dcabba21",
         "frontend_id": "lfcc-v3-sr16000-f128-c40-nfft512-hop160-topdbnone-resampler-quadratic_window_sinc_v1-float64stft-float32",
         "threshold": 0.375,
-        "auc": 0.8644625,
+        "auc": 0.8646,
         "n_calibration": 400,
         "split_manifest_hash": "6d56263cfdce0b8d1fc8f83cdef9261b91438a5a511e83a3401892be1e1fb524"
       },
-      "checkpoint_sha256": "002b07b6ffe9c4ade55854274f1e16e94068c0ea6571c2003a2ff07f8c426a30",
-      "test_auc": 0.8756125,
-      "test_eer": 0.19249999999999998,
+      "checkpoint_sha256": "0c5dd8813c74980f7e15e578346d11106361acf9f1a42196f85a08c94922b3ad",
+      "test_auc": 0.8749499999999999,
+      "test_eer": 0.19499999999999998,
       "test_accuracy": 0.84,
       "test": {
-        "auc": 0.8756125,
-        "eer": 0.19249999999999998,
+        "auc": 0.8749499999999999,
+        "eer": 0.19499999999999998,
         "accuracy": 0.84,
         "balanced_accuracy": 0.8400000000000001,
         "threshold": 0.375,
@@ -962,7 +962,7 @@
           0.07786373232561955,
           0.16664716898487572
         ],
-        "tpr_at_fpr_1pct": 0.605,
+        "tpr_at_fpr_1pct": 0.595,
         "tpr_at_fpr_0_1pct": 0.35,
         "uncertainty_note": "Wilson intervals assume independent examples; recording/source clustering can widen uncertainty.",
         "n_independent_declared_groups": 42,
@@ -972,13 +972,13 @@
               "n_real": 130,
               "n_fake": 130,
               "tpr": 0.6923076923076923,
-              "fpr": 0.038461538461538464
+              "fpr": 0.046153846153846156
             },
             "inthewild": {
               "n_real": 70,
               "n_fake": 70,
               "tpr": 0.9857142857142858,
-              "fpr": 0.2571428571428571
+              "fpr": 0.24285714285714285
             }
           },
           "generator": {
@@ -1258,7 +1258,7 @@
               "n_real": 3,
               "n_fake": 0,
               "tpr": null,
-              "fpr": 0.0
+              "fpr": 0.3333333333333333
             },
             "asv_LA_0061": {
               "n_real": 5,
@@ -1306,7 +1306,7 @@
               "n_real": 15,
               "n_fake": 15,
               "tpr": 1.0,
-              "fpr": 0.2
+              "fpr": 0.13333333333333333
             },
             "itw_Jerry_Seinfeld": {
               "n_real": 8,
@@ -1732,8 +1732,917 @@
         "test\\real\\in_the_wild_tts_vc\\inthewild_0068_8614956597.wav",
         "test\\real\\in_the_wild_tts_vc\\inthewild_0069_d40aacca61.wav"
       ]
+    },
+    "semantic_probe_int8.tflite": {
+      "fp32_max_error": 0.0,
+      "parity": {
+        "passed": true,
+        "agreement": 1.0,
+        "mae": 0.0,
+        "max_error": 0.0
+      },
+      "calibration": {
+        "model_hash": "38d1b692c3023b52b0e139d0a17257d3742019e8cc7edd1d8bb636ff91048d79",
+        "frontend_id": "clip-appearance-bicubic224-clipnorm-meanstd-float32",
+        "threshold": 0.51953125,
+        "auc": 0.6604125000000001,
+        "n_calibration": 400,
+        "split_manifest_hash": "9b0400fcc82e08d117c5cb245fd2c3081b3ba8ed9fd2f169a5455248c84c9312"
+      },
+      "checkpoint_sha256": "38d1b692c3023b52b0e139d0a17257d3742019e8cc7edd1d8bb636ff91048d79",
+      "test_auc": 0.6871375,
+      "test_eer": 0.3875,
+      "test_accuracy": 0.6175,
+      "test": {
+        "auc": 0.6871375,
+        "eer": 0.3875,
+        "accuracy": 0.6175,
+        "balanced_accuracy": 0.6174999999999999,
+        "threshold": 0.51953125,
+        "n_real": 200,
+        "n_fake": 200,
+        "tpr": 0.585,
+        "fpr": 0.35,
+        "tpr_wilson_95pct": [
+          0.5157391490134403,
+          0.6510571455024242
+        ],
+        "fpr_wilson_95pct": [
+          0.28728824127358077,
+          0.4183653566395992
+        ],
+        "tpr_at_fpr_1pct": 0.065,
+        "tpr_at_fpr_0_1pct": 0.03,
+        "uncertainty_note": "Wilson intervals assume independent examples; recording/source clustering can widen uncertainty.",
+        "n_independent_declared_groups": 400,
+        "groups": {
+          "source": {
+            "docci": {
+              "n_real": 17,
+              "n_fake": 0,
+              "tpr": null,
+              "fpr": 0.17647058823529413
+            },
+            "imagenet": {
+              "n_real": 33,
+              "n_fake": 0,
+              "tpr": null,
+              "fpr": 0.06060606060606061
+            },
+            "laion": {
+              "n_real": 81,
+              "n_fake": 0,
+              "tpr": null,
+              "fpr": 0.5185185185185185
+            },
+            "openfake": {
+              "n_real": 0,
+              "n_fake": 200,
+              "tpr": 0.585,
+              "fpr": null
+            },
+            "pexels": {
+              "n_real": 69,
+              "n_fake": 0,
+              "tpr": null,
+              "fpr": 0.3333333333333333
+            }
+          },
+          "generator": {
+            "amateur-photography-v6": {
+              "n_real": 0,
+              "n_fake": 1,
+              "tpr": 1.0,
+              "fpr": null
+            },
+            "anima-preview": {
+              "n_real": 0,
+              "n_fake": 1,
+              "tpr": 0.0,
+              "fpr": null
+            },
+            "anima-preview2": {
+              "n_real": 0,
+              "n_fake": 1,
+              "tpr": 0.0,
+              "fpr": null
+            },
+            "animagine-xl-3.0": {
+              "n_real": 0,
+              "n_fake": 1,
+              "tpr": 0.0,
+              "fpr": null
+            },
+            "animagine-xl-3.1": {
+              "n_real": 0,
+              "n_fake": 1,
+              "tpr": 1.0,
+              "fpr": null
+            },
+            "animagine-xl-4.0": {
+              "n_real": 0,
+              "n_fake": 2,
+              "tpr": 1.0,
+              "fpr": null
+            },
+            "chroma": {
+              "n_real": 0,
+              "n_fake": 1,
+              "tpr": 0.0,
+              "fpr": null
+            },
+            "cyberrealistic-pony-v14.0": {
+              "n_real": 0,
+              "n_fake": 1,
+              "tpr": 0.0,
+              "fpr": null
+            },
+            "cyberrealistic-pony-v14.1": {
+              "n_real": 0,
+              "n_fake": 1,
+              "tpr": 1.0,
+              "fpr": null
+            },
+            "cyberrealistic-pony-v15.0": {
+              "n_real": 0,
+              "n_fake": 1,
+              "tpr": 1.0,
+              "fpr": null
+            },
+            "cyberrealistic-pony-v16.0": {
+              "n_real": 0,
+              "n_fake": 1,
+              "tpr": 1.0,
+              "fpr": null
+            },
+            "cyberrealistic-pony-v17.0": {
+              "n_real": 0,
+              "n_fake": 1,
+              "tpr": 0.0,
+              "fpr": null
+            },
+            "cyberrealistic-xl-v9.0": {
+              "n_real": 0,
+              "n_fake": 1,
+              "tpr": 0.0,
+              "fpr": null
+            },
+            "dalle-3": {
+              "n_real": 0,
+              "n_fake": 4,
+              "tpr": 1.0,
+              "fpr": null
+            },
+            "ernie-image": {
+              "n_real": 0,
+              "n_fake": 1,
+              "tpr": 0.0,
+              "fpr": null
+            },
+            "flux-1.1-pro": {
+              "n_real": 0,
+              "n_fake": 3,
+              "tpr": 0.6666666666666666,
+              "fpr": null
+            },
+            "flux-amateursnapshotphotos": {
+              "n_real": 0,
+              "n_fake": 1,
+              "tpr": 1.0,
+              "fpr": null
+            },
+            "flux-mvc5000": {
+              "n_real": 0,
+              "n_fake": 2,
+              "tpr": 1.0,
+              "fpr": null
+            },
+            "flux-realism": {
+              "n_real": 0,
+              "n_fake": 1,
+              "tpr": 0.0,
+              "fpr": null
+            },
+            "flux.1-dev": {
+              "n_real": 0,
+              "n_fake": 12,
+              "tpr": 0.75,
+              "fpr": null
+            },
+            "flux.1-schnell": {
+              "n_real": 0,
+              "n_fake": 4,
+              "tpr": 0.75,
+              "fpr": null
+            },
+            "flux.2-dev": {
+              "n_real": 0,
+              "n_fake": 2,
+              "tpr": 0.5,
+              "fpr": null
+            },
+            "flux.2-klein-4b": {
+              "n_real": 0,
+              "n_fake": 3,
+              "tpr": 1.0,
+              "fpr": null
+            },
+            "flux.2-klein-9b": {
+              "n_real": 0,
+              "n_fake": 9,
+              "tpr": 0.7777777777777778,
+              "fpr": null
+            },
+            "flux.2-klein-base-4b": {
+              "n_real": 0,
+              "n_fake": 2,
+              "tpr": 1.0,
+              "fpr": null
+            },
+            "gpt-image-1": {
+              "n_real": 0,
+              "n_fake": 3,
+              "tpr": 0.3333333333333333,
+              "fpr": null
+            },
+            "gpt-image-1.5": {
+              "n_real": 0,
+              "n_fake": 5,
+              "tpr": 0.6,
+              "fpr": null
+            },
+            "gpt-image-2": {
+              "n_real": 0,
+              "n_fake": 1,
+              "tpr": 0.0,
+              "fpr": null
+            },
+            "grok-2-image-1212": {
+              "n_real": 0,
+              "n_fake": 1,
+              "tpr": 1.0,
+              "fpr": null
+            },
+            "hidream-i1-full": {
+              "n_real": 0,
+              "n_fake": 4,
+              "tpr": 1.0,
+              "fpr": null
+            },
+            "ideogram-3.0": {
+              "n_real": 0,
+              "n_fake": 3,
+              "tpr": 0.6666666666666666,
+              "fpr": null
+            },
+            "illustrious": {
+              "n_real": 0,
+              "n_fake": 6,
+              "tpr": 0.8333333333333334,
+              "fpr": null
+            },
+            "imagen-3.0-002": {
+              "n_real": 0,
+              "n_fake": 1,
+              "tpr": 0.0,
+              "fpr": null
+            },
+            "imagen-4.0": {
+              "n_real": 0,
+              "n_fake": 3,
+              "tpr": 0.6666666666666666,
+              "fpr": null
+            },
+            "midjourney-6": {
+              "n_real": 0,
+              "n_fake": 5,
+              "tpr": 0.0,
+              "fpr": null
+            },
+            "midjourney-7": {
+              "n_real": 0,
+              "n_fake": 3,
+              "tpr": 0.3333333333333333,
+              "fpr": null
+            },
+            "mystic": {
+              "n_real": 0,
+              "n_fake": 3,
+              "tpr": 0.3333333333333333,
+              "fpr": null
+            },
+            "nano-banana-2": {
+              "n_real": 0,
+              "n_fake": 1,
+              "tpr": 1.0,
+              "fpr": null
+            },
+            "novaanimexl_ilv140": {
+              "n_real": 0,
+              "n_fake": 1,
+              "tpr": 0.0,
+              "fpr": null
+            },
+            "one-obsession-17-red-sdxl": {
+              "n_real": 0,
+              "n_fake": 1,
+              "tpr": 1.0,
+              "fpr": null
+            },
+            "playground-v2.5-1024px-aesthetic": {
+              "n_real": 0,
+              "n_fake": 2,
+              "tpr": 0.5,
+              "fpr": null
+            },
+            "qwen-image": {
+              "n_real": 0,
+              "n_fake": 1,
+              "tpr": 0.0,
+              "fpr": null
+            },
+            "real": {
+              "n_real": 200,
+              "n_fake": 0,
+              "tpr": null,
+              "fpr": 0.35
+            },
+            "realistic_vision_v5.1_novae": {
+              "n_real": 0,
+              "n_fake": 2,
+              "tpr": 0.5,
+              "fpr": null
+            },
+            "recraft-v3": {
+              "n_real": 0,
+              "n_fake": 1,
+              "tpr": 1.0,
+              "fpr": null
+            },
+            "sd-1.5": {
+              "n_real": 0,
+              "n_fake": 4,
+              "tpr": 0.75,
+              "fpr": null
+            },
+            "sd-1.5-dreamshaper": {
+              "n_real": 0,
+              "n_fake": 5,
+              "tpr": 0.6,
+              "fpr": null
+            },
+            "sd-1.5-epicdream": {
+              "n_real": 0,
+              "n_fake": 3,
+              "tpr": 0.6666666666666666,
+              "fpr": null
+            },
+            "sd-2.1": {
+              "n_real": 0,
+              "n_fake": 12,
+              "tpr": 0.5,
+              "fpr": null
+            },
+            "sd-3.5": {
+              "n_real": 0,
+              "n_fake": 15,
+              "tpr": 0.4666666666666667,
+              "fpr": null
+            },
+            "sd-turbo": {
+              "n_real": 0,
+              "n_fake": 1,
+              "tpr": 1.0,
+              "fpr": null
+            },
+            "sd-xl-v1.0-vae-fix": {
+              "n_real": 0,
+              "n_fake": 2,
+              "tpr": 0.5,
+              "fpr": null
+            },
+            "sdxl": {
+              "n_real": 0,
+              "n_fake": 5,
+              "tpr": 0.6,
+              "fpr": null
+            },
+            "sdxl-1.0": {
+              "n_real": 0,
+              "n_fake": 1,
+              "tpr": 1.0,
+              "fpr": null
+            },
+            "sdxl-epic-realism": {
+              "n_real": 0,
+              "n_fake": 6,
+              "tpr": 0.16666666666666666,
+              "fpr": null
+            },
+            "sdxl-juggernaut": {
+              "n_real": 0,
+              "n_fake": 5,
+              "tpr": 0.6,
+              "fpr": null
+            },
+            "sdxl-realvis-v5": {
+              "n_real": 0,
+              "n_fake": 4,
+              "tpr": 0.75,
+              "fpr": null
+            },
+            "sdxl-touchofrealism": {
+              "n_real": 0,
+              "n_fake": 4,
+              "tpr": 0.25,
+              "fpr": null
+            },
+            "sdxl-turbo": {
+              "n_real": 0,
+              "n_fake": 2,
+              "tpr": 0.5,
+              "fpr": null
+            },
+            "seedream-v4.0": {
+              "n_real": 0,
+              "n_fake": 2,
+              "tpr": 0.5,
+              "fpr": null
+            },
+            "seedream-v4.5": {
+              "n_real": 0,
+              "n_fake": 1,
+              "tpr": 1.0,
+              "fpr": null
+            },
+            "sora-2": {
+              "n_real": 0,
+              "n_fake": 1,
+              "tpr": 0.0,
+              "fpr": null
+            },
+            "stable-diffusion-v1-4": {
+              "n_real": 0,
+              "n_fake": 2,
+              "tpr": 0.5,
+              "fpr": null
+            },
+            "stable-diffusion-v1-5": {
+              "n_real": 0,
+              "n_fake": 2,
+              "tpr": 0.5,
+              "fpr": null
+            },
+            "stable-diffusion-xl-base-1.0": {
+              "n_real": 0,
+              "n_fake": 1,
+              "tpr": 1.0,
+              "fpr": null
+            },
+            "studio-ghibli-wan2.1-t2v-14b-v1.0": {
+              "n_real": 0,
+              "n_fake": 1,
+              "tpr": 0.0,
+              "fpr": null
+            },
+            "tiny-random-sana": {
+              "n_real": 0,
+              "n_fake": 2,
+              "tpr": 1.0,
+              "fpr": null
+            },
+            "veo-3": {
+              "n_real": 0,
+              "n_fake": 2,
+              "tpr": 0.0,
+              "fpr": null
+            },
+            "wan-video-2.2": {
+              "n_real": 0,
+              "n_fake": 1,
+              "tpr": 0.0,
+              "fpr": null
+            },
+            "wan-video-2.5": {
+              "n_real": 0,
+              "n_fake": 1,
+              "tpr": 0.0,
+              "fpr": null
+            },
+            "z-image-turbo": {
+              "n_real": 0,
+              "n_fake": 10,
+              "tpr": 0.8,
+              "fpr": null
+            }
+          }
+        }
+      },
+      "test_scope": "all_sealed_test_files",
+      "test_ids": [
+        "test\\fake\\amateur-photography-v6\\of_test_0001_e523c918d0.png",
+        "test\\fake\\anima-preview\\of_test_0003_a4926ff074.png",
+        "test\\fake\\anima-preview2\\of_test_0005_225f3f061e.png",
+        "test\\fake\\animagine-xl-3.0\\of_test_3205_70809049d3.jpg",
+        "test\\fake\\animagine-xl-3.1\\of_test_1207_0d947538b9.jpg",
+        "test\\fake\\animagine-xl-4.0\\of_test_0010_4ae32ddc23.jpg",
+        "test\\fake\\animagine-xl-4.0\\of_test_3213_897629c92c.jpg",
+        "test\\fake\\chroma\\of_test_1212_cf3d3b8a74.png",
+        "test\\fake\\cyberrealistic-pony-v14.0\\of_test_1218_4a2db2bc60.jpg",
+        "test\\fake\\cyberrealistic-pony-v14.1\\of_test_3219_439caeef4e.jpg",
+        "test\\fake\\cyberrealistic-pony-v15.0\\of_test_1224_a979e1f221.jpg",
+        "test\\fake\\cyberrealistic-pony-v16.0\\of_test_1226_ea4c09e8f8.jpg",
+        "test\\fake\\cyberrealistic-pony-v17.0\\of_test_0022_351088a258.jpg",
+        "test\\fake\\cyberrealistic-xl-v9.0\\of_test_3235_7fbf1e1190.jpg",
+        "test\\fake\\dalle-3\\of_test_0032_52d16b66f4.jpg",
+        "test\\fake\\dalle-3\\of_test_1233_53541558a4.jpg",
+        "test\\fake\\dalle-3\\of_test_2428_7ec7dcefff.jpg",
+        "test\\fake\\dalle-3\\of_test_2429_9d077e67e7.jpg",
+        "test\\fake\\ernie-image\\of_test_2002_c7e6c42b2f.jpg",
+        "test\\fake\\flux-1.1-pro\\of_test_0043_2e02e622c2.webp",
+        "test\\fake\\flux-1.1-pro\\of_test_0051_5c90872956.webp",
+        "test\\fake\\flux-1.1-pro\\of_test_2437_0f83335384.webp",
+        "test\\fake\\flux-amateursnapshotphotos\\of_test_3243_65e4bb455b.png",
+        "test\\fake\\flux-mvc5000\\of_test_0057_5214535e3a.png",
+        "test\\fake\\flux-mvc5000\\of_test_2442_f8187e2b79.png",
+        "test\\fake\\flux-realism\\of_test_3252_9b991873e2.png",
+        "test\\fake\\flux.1-dev\\of_test_0061_20ef62c621.jpg",
+        "test\\fake\\flux.1-dev\\of_test_0064_f9bd8bb8b2.png",
+        "test\\fake\\flux.1-dev\\of_test_0067_0c506f86b9.jpg",
+        "test\\fake\\flux.1-dev\\of_test_0076_b8cf3ee626.jpg",
+        "test\\fake\\flux.1-dev\\of_test_0100_81461d8464.jpg",
+        "test\\fake\\flux.1-dev\\of_test_0111_08bca845a8.jpg",
+        "test\\fake\\flux.1-dev\\of_test_1255_9bd8533ea3.jpg",
+        "test\\fake\\flux.1-dev\\of_test_1257_8042320c6a.jpg",
+        "test\\fake\\flux.1-dev\\of_test_1258_e72876d63b.jpg",
+        "test\\fake\\flux.1-dev\\of_test_2449_6fcff0a9c4.jpg",
+        "test\\fake\\flux.1-dev\\of_test_2467_f9e54e91ff.jpg",
+        "test\\fake\\flux.1-dev\\of_test_2476_56cff5c14c.jpg",
+        "test\\fake\\flux.1-schnell\\of_test_0124_e82b6d4605.png",
+        "test\\fake\\flux.1-schnell\\of_test_1260_62508caa41.png",
+        "test\\fake\\flux.1-schnell\\of_test_1261_5ceb728420.png",
+        "test\\fake\\flux.1-schnell\\of_test_3254_cd4447a795.png",
+        "test\\fake\\flux.2-dev\\of_test_0138_69d908ba50.jpg",
+        "test\\fake\\flux.2-dev\\of_test_2498_fdf93a25c0.png",
+        "test\\fake\\flux.2-klein-4b\\of_test_1268_b8920dc0cc.jpg",
+        "test\\fake\\flux.2-klein-4b\\of_test_1269_ae6cd6f4be.jpg",
+        "test\\fake\\flux.2-klein-4b\\of_test_2502_a4584689cd.jpg",
+        "test\\fake\\flux.2-klein-9b\\of_test_1610_d84cfc8ac1.jpg",
+        "test\\fake\\flux.2-klein-9b\\of_test_1613_124d665048.jpg",
+        "test\\fake\\flux.2-klein-9b\\of_test_1616_7eaa71340b.jpg",
+        "test\\fake\\flux.2-klein-9b\\of_test_1635_7282c486f9.jpg",
+        "test\\fake\\flux.2-klein-9b\\of_test_1639_be837a6a49.jpg",
+        "test\\fake\\flux.2-klein-9b\\of_test_2006_53222acdad.jpg",
+        "test\\fake\\flux.2-klein-9b\\of_test_2018_cce9f3d3e5.jpg",
+        "test\\fake\\flux.2-klein-9b\\of_test_2030_3c82aa1749.jpg",
+        "test\\fake\\flux.2-klein-9b\\of_test_2039_bf6db445ff.jpg",
+        "test\\fake\\flux.2-klein-base-4b\\of_test_2510_9cd343e300.jpg",
+        "test\\fake\\flux.2-klein-base-4b\\of_test_3263_5828515599.jpg",
+        "test\\fake\\gpt-image-1\\of_test_2518_449bf56d42.jpg",
+        "test\\fake\\gpt-image-1\\of_test_3266_80da0147cd.jpg",
+        "test\\fake\\gpt-image-1\\of_test_3267_49e443e5aa.jpg",
+        "test\\fake\\gpt-image-1.5\\of_test_1659_6dc00cceca.png",
+        "test\\fake\\gpt-image-1.5\\of_test_2048_0652551985.png",
+        "test\\fake\\gpt-image-1.5\\of_test_2052_bb52148d93.png",
+        "test\\fake\\gpt-image-1.5\\of_test_2057_323d5c9535.png",
+        "test\\fake\\gpt-image-1.5\\of_test_2061_1d9bc97dea.jpg",
+        "test\\fake\\gpt-image-2\\of_test_1669_aeac622e58.jpg",
+        "test\\fake\\grok-2-image-1212\\of_test_1278_8eb0441e5f.jpg",
+        "test\\fake\\hidream-i1-full\\of_test_0184_098f069cbf.png",
+        "test\\fake\\hidream-i1-full\\of_test_2522_371d303de0.png",
+        "test\\fake\\hidream-i1-full\\of_test_2529_664ddde95f.png",
+        "test\\fake\\hidream-i1-full\\of_test_2530_2a7a7017d7.png",
+        "test\\fake\\ideogram-3.0\\of_test_0190_2b42222290.png",
+        "test\\fake\\ideogram-3.0\\of_test_0192_00555774d1.png",
+        "test\\fake\\ideogram-3.0\\of_test_1282_bebec0dfaa.png",
+        "test\\fake\\illustrious\\of_test_1691_442f32e240.jpg",
+        "test\\fake\\illustrious\\of_test_1695_aaf1a93007.jpg",
+        "test\\fake\\illustrious\\of_test_2080_d310dfe1cb.jpg",
+        "test\\fake\\illustrious\\of_test_2083_a33657f7bb.png",
+        "test\\fake\\illustrious\\of_test_2086_18bab1f5d9.jpg",
+        "test\\fake\\illustrious\\of_test_2094_4a22c07988.jpg",
+        "test\\fake\\imagen-3.0-002\\of_test_1286_b4dfd7123f.png",
+        "test\\fake\\imagen-4.0\\of_test_0210_40d453f038.png",
+        "test\\fake\\imagen-4.0\\of_test_0212_31f10a77a8.png",
+        "test\\fake\\imagen-4.0\\of_test_2544_161e9651a5.jpg",
+        "test\\fake\\midjourney-6\\of_test_0231_829b7b5fc4.jpg",
+        "test\\fake\\midjourney-6\\of_test_2556_cfda52e3e3.jpg",
+        "test\\fake\\midjourney-6\\of_test_2567_1c8ad60f12.jpg",
+        "test\\fake\\midjourney-6\\of_test_2571_1a0b567ba2.jpg",
+        "test\\fake\\midjourney-6\\of_test_2572_3512e2b58a.jpg",
+        "test\\fake\\midjourney-7\\of_test_1706_4cf1d7d09b.png",
+        "test\\fake\\midjourney-7\\of_test_1713_bfd33e78e6.png",
+        "test\\fake\\midjourney-7\\of_test_2111_d019afd502.png",
+        "test\\fake\\mystic\\of_test_0239_4192bd6551.png",
+        "test\\fake\\mystic\\of_test_2575_15d760ef1a.png",
+        "test\\fake\\mystic\\of_test_3294_4759045790.png",
+        "test\\fake\\nano-banana-2\\of_test_0240_5aa320ba3a.jpg",
+        "test\\fake\\novaanimexl_ilv140\\of_test_3304_bbf00c8139.jpg",
+        "test\\fake\\one-obsession-17-red-sdxl\\of_test_2581_bc25436b01.jpg",
+        "test\\fake\\playground-v2.5-1024px-aesthetic\\of_test_1317_c460a7cec3.jpg",
+        "test\\fake\\playground-v2.5-1024px-aesthetic\\of_test_2587_ddf4e0f32a.jpg",
+        "test\\fake\\qwen-image\\of_test_3308_57400dbdc2.jpg",
+        "test\\fake\\realistic_vision_v5.1_novae\\of_test_0254_29e3b1d63b.jpg",
+        "test\\fake\\realistic_vision_v5.1_novae\\of_test_3310_a5da9b8fc3.jpg",
+        "test\\fake\\recraft-v3\\of_test_2116_4d4f85035f.jpg",
+        "test\\fake\\sd-1.5\\of_test_0259_dc3fee386d.png",
+        "test\\fake\\sd-1.5\\of_test_0266_3a821b0481.png",
+        "test\\fake\\sd-1.5\\of_test_0267_2dab80c4c8.png",
+        "test\\fake\\sd-1.5\\of_test_1325_bb2ee088d4.png",
+        "test\\fake\\sd-1.5-dreamshaper\\of_test_0294_84fde11dd7.png",
+        "test\\fake\\sd-1.5-dreamshaper\\of_test_1327_0747de72e5.png",
+        "test\\fake\\sd-1.5-dreamshaper\\of_test_2603_50a498734f.png",
+        "test\\fake\\sd-1.5-dreamshaper\\of_test_2606_3d4d7ccfed.png",
+        "test\\fake\\sd-1.5-dreamshaper\\of_test_2608_3e4261433c.png",
+        "test\\fake\\sd-1.5-epicdream\\of_test_0297_ea52f3e2be.png",
+        "test\\fake\\sd-1.5-epicdream\\of_test_0305_7203abdba6.png",
+        "test\\fake\\sd-1.5-epicdream\\of_test_2615_7ebcb74f5b.png",
+        "test\\fake\\sd-2.1\\of_test_0315_6be0bbd04d.png",
+        "test\\fake\\sd-2.1\\of_test_0322_b9a59cee42.png",
+        "test\\fake\\sd-2.1\\of_test_0347_39c8dcc8e3.png",
+        "test\\fake\\sd-2.1\\of_test_0352_52dd4112e2.png",
+        "test\\fake\\sd-2.1\\of_test_0357_1ea2f020c7.png",
+        "test\\fake\\sd-2.1\\of_test_0364_3fd054faf1.png",
+        "test\\fake\\sd-2.1\\of_test_0371_785e060c13.png",
+        "test\\fake\\sd-2.1\\of_test_0374_b3d2abc622.png",
+        "test\\fake\\sd-2.1\\of_test_2630_ac3343b523.png",
+        "test\\fake\\sd-2.1\\of_test_2636_0672e1b375.png",
+        "test\\fake\\sd-2.1\\of_test_2638_c9c53f71c8.png",
+        "test\\fake\\sd-2.1\\of_test_2653_49af5a89af.png",
+        "test\\fake\\sd-3.5\\of_test_0408_bd621b24d9.png",
+        "test\\fake\\sd-3.5\\of_test_0416_504bd63e52.png",
+        "test\\fake\\sd-3.5\\of_test_0417_4a86c2b276.png",
+        "test\\fake\\sd-3.5\\of_test_0420_2888df1eba.png",
+        "test\\fake\\sd-3.5\\of_test_0422_0e2658d4e8.png",
+        "test\\fake\\sd-3.5\\of_test_0429_4e14b8c905.png",
+        "test\\fake\\sd-3.5\\of_test_0437_828faac664.png",
+        "test\\fake\\sd-3.5\\of_test_2664_9e3477eb2c.png",
+        "test\\fake\\sd-3.5\\of_test_2666_724cf55f9f.png",
+        "test\\fake\\sd-3.5\\of_test_2672_f5610f0bf7.png",
+        "test\\fake\\sd-3.5\\of_test_2684_727cefdf5f.png",
+        "test\\fake\\sd-3.5\\of_test_2691_feb77fed83.png",
+        "test\\fake\\sd-3.5\\of_test_2698_3ff402579e.png",
+        "test\\fake\\sd-3.5\\of_test_2707_72e737fbd7.png",
+        "test\\fake\\sd-3.5\\of_test_3329_dbb90555ab.png",
+        "test\\fake\\sd-turbo\\of_test_0455_4c16b7eb91.jpg",
+        "test\\fake\\sd-xl-v1.0-vae-fix\\of_test_0458_d186a4e0c3.jpg",
+        "test\\fake\\sd-xl-v1.0-vae-fix\\of_test_2713_27e035270b.jpg",
+        "test\\fake\\sdxl\\of_test_0466_e5041a262e.png",
+        "test\\fake\\sdxl\\of_test_0469_8dbf768eed.png",
+        "test\\fake\\sdxl\\of_test_0474_d52cc518f7.png",
+        "test\\fake\\sdxl\\of_test_0478_b7119712ac.png",
+        "test\\fake\\sdxl\\of_test_2728_784078294f.png",
+        "test\\fake\\sdxl-1.0\\of_test_1345_b77109a40d.jpg",
+        "test\\fake\\sdxl-epic-realism\\of_test_0500_d4d324f6b5.png",
+        "test\\fake\\sdxl-epic-realism\\of_test_0501_91fac4d023.png",
+        "test\\fake\\sdxl-epic-realism\\of_test_0503_0623cff101.png",
+        "test\\fake\\sdxl-epic-realism\\of_test_0513_176f44dc43.png",
+        "test\\fake\\sdxl-epic-realism\\of_test_2737_1db170710f.png",
+        "test\\fake\\sdxl-epic-realism\\of_test_2743_1076224b4d.png",
+        "test\\fake\\sdxl-juggernaut\\of_test_0521_f6c846d0fd.png",
+        "test\\fake\\sdxl-juggernaut\\of_test_1354_9382215890.png",
+        "test\\fake\\sdxl-juggernaut\\of_test_1355_e69773c8d5.png",
+        "test\\fake\\sdxl-juggernaut\\of_test_2751_55f5fe23ff.png",
+        "test\\fake\\sdxl-juggernaut\\of_test_3351_62cd3811e2.png",
+        "test\\fake\\sdxl-realvis-v5\\of_test_0535_f29fbaa452.png",
+        "test\\fake\\sdxl-realvis-v5\\of_test_0546_e00077650f.png",
+        "test\\fake\\sdxl-realvis-v5\\of_test_1360_1928d8aee1.png",
+        "test\\fake\\sdxl-realvis-v5\\of_test_3361_87b7faa142.png",
+        "test\\fake\\sdxl-touchofrealism\\of_test_0549_d07174d412.png",
+        "test\\fake\\sdxl-touchofrealism\\of_test_0551_0fcb2b68fc.png",
+        "test\\fake\\sdxl-touchofrealism\\of_test_0556_c088112622.png",
+        "test\\fake\\sdxl-touchofrealism\\of_test_2783_59a62d7f54.png",
+        "test\\fake\\sdxl-turbo\\of_test_1365_0b5362b854.jpg",
+        "test\\fake\\sdxl-turbo\\of_test_3367_00a31fe5b4.jpg",
+        "test\\fake\\seedream-v4.0\\of_test_1373_5c1a24c0f9.jpg",
+        "test\\fake\\seedream-v4.0\\of_test_3371_923a4da76a.jpg",
+        "test\\fake\\seedream-v4.5\\of_test_3374_8872449b03.jpg",
+        "test\\fake\\sora-2\\of_test_1728_eb0aedd4da.jpg",
+        "test\\fake\\stable-diffusion-v1-4\\of_test_0578_fbf3f44409.jpg",
+        "test\\fake\\stable-diffusion-v1-4\\of_test_0583_5e988ba82a.jpg",
+        "test\\fake\\stable-diffusion-v1-5\\of_test_2794_95c1d38517.jpg",
+        "test\\fake\\stable-diffusion-v1-5\\of_test_3382_0bfc0ec760.jpg",
+        "test\\fake\\stable-diffusion-xl-base-1.0\\of_test_2795_c066ba9f5c.jpg",
+        "test\\fake\\studio-ghibli-wan2.1-t2v-14b-v1.0\\of_test_1391_0a0b9f5af4.jpg",
+        "test\\fake\\tiny-random-sana\\of_test_2797_ce345b97bb.jpg",
+        "test\\fake\\tiny-random-sana\\of_test_2799_0c7056b7bb.jpg",
+        "test\\fake\\veo-3\\of_test_1734_85c34caab8.jpg",
+        "test\\fake\\veo-3\\of_test_2129_e3a8062f10.jpg",
+        "test\\fake\\wan-video-2.2\\of_test_3396_1cbeb4878d.jpg",
+        "test\\fake\\wan-video-2.5\\of_test_2133_9fd744731f.jpg",
+        "test\\fake\\z-image-turbo\\of_test_1742_be015e60a8.png",
+        "test\\fake\\z-image-turbo\\of_test_1746_a032736816.jpg",
+        "test\\fake\\z-image-turbo\\of_test_1748_8c68c50427.jpg",
+        "test\\fake\\z-image-turbo\\of_test_2168_3e9158f988.jpg",
+        "test\\fake\\z-image-turbo\\of_test_2169_1b7747db01.png",
+        "test\\fake\\z-image-turbo\\of_test_2174_a7308c998c.jpg",
+        "test\\fake\\z-image-turbo\\of_test_2187_f7c6828d23.jpg",
+        "test\\fake\\z-image-turbo\\of_test_2188_9febd78597.jpg",
+        "test\\fake\\z-image-turbo\\of_test_2195_3d128f17ab.jpg",
+        "test\\fake\\z-image-turbo\\of_test_2197_d70fea79c5.jpg",
+        "test\\real\\real\\of_test_0617_a027183c50.jpg",
+        "test\\real\\real\\of_test_0622_1fe0eaa467.jpg",
+        "test\\real\\real\\of_test_0626_c7d7c0a6a6.jpg",
+        "test\\real\\real\\of_test_0638_b4ebc64476.jpg",
+        "test\\real\\real\\of_test_0649_76ee553ca3.jpg",
+        "test\\real\\real\\of_test_0656_c47882ba0c.jpg",
+        "test\\real\\real\\of_test_0657_1dcc471ada.jpg",
+        "test\\real\\real\\of_test_0660_0cb80c7cfd.jpg",
+        "test\\real\\real\\of_test_0667_7daab43458.jpg",
+        "test\\real\\real\\of_test_0668_2bd31ff401.jpg",
+        "test\\real\\real\\of_test_0673_4c2334a640.jpg",
+        "test\\real\\real\\of_test_0681_8e8bf80683.jpg",
+        "test\\real\\real\\of_test_0684_7dc4394296.jpg",
+        "test\\real\\real\\of_test_0693_b82ff4feed.jpg",
+        "test\\real\\real\\of_test_0710_617e94dabe.jpg",
+        "test\\real\\real\\of_test_0713_5ba191e2f8.jpg",
+        "test\\real\\real\\of_test_0719_03c5766e09.jpg",
+        "test\\real\\real\\of_test_0739_62f36f0af3.jpg",
+        "test\\real\\real\\of_test_0759_f8f01770c5.jpg",
+        "test\\real\\real\\of_test_0772_70b679487c.jpg",
+        "test\\real\\real\\of_test_0773_780c839af8.jpg",
+        "test\\real\\real\\of_test_0792_f5aeea5658.jpg",
+        "test\\real\\real\\of_test_0793_e147b0ac16.jpg",
+        "test\\real\\real\\of_test_0796_af34fba824.jpg",
+        "test\\real\\real\\of_test_0803_ad6a968488.jpg",
+        "test\\real\\real\\of_test_0804_44c3ef4610.jpg",
+        "test\\real\\real\\of_test_0813_fdb17a9228.jpg",
+        "test\\real\\real\\of_test_0823_3b47b27ab5.jpg",
+        "test\\real\\real\\of_test_0824_c01a4383fd.jpg",
+        "test\\real\\real\\of_test_0836_7d3c3ff41a.jpg",
+        "test\\real\\real\\of_test_0838_bbeca8194e.jpg",
+        "test\\real\\real\\of_test_0841_7fdbc8f1b9.jpg",
+        "test\\real\\real\\of_test_0849_89636ec565.jpg",
+        "test\\real\\real\\of_test_0866_12639afd6b.jpg",
+        "test\\real\\real\\of_test_0870_0435016e66.jpg",
+        "test\\real\\real\\of_test_0873_048b6dc3fd.jpg",
+        "test\\real\\real\\of_test_0879_f07da3bcad.jpg",
+        "test\\real\\real\\of_test_0898_90e7ba98b1.jpg",
+        "test\\real\\real\\of_test_0899_3b7b8942c6.jpg",
+        "test\\real\\real\\of_test_0901_4b35521ce1.jpg",
+        "test\\real\\real\\of_test_0909_13df1067f0.jpg",
+        "test\\real\\real\\of_test_0924_9a2d7a2b81.jpg",
+        "test\\real\\real\\of_test_0926_b1a368e60d.jpg",
+        "test\\real\\real\\of_test_0928_39c255abf7.jpg",
+        "test\\real\\real\\of_test_0948_8165c67ccc.jpg",
+        "test\\real\\real\\of_test_0973_9153d2485a.jpg",
+        "test\\real\\real\\of_test_0974_452dd18229.jpg",
+        "test\\real\\real\\of_test_0979_fefc8fbe0a.jpg",
+        "test\\real\\real\\of_test_0990_4b56dd122b.jpg",
+        "test\\real\\real\\of_test_0998_3a2a22be9d.jpg",
+        "test\\real\\real\\of_test_0999_5d372e4858.jpg",
+        "test\\real\\real\\of_test_1001_c0de620261.jpg",
+        "test\\real\\real\\of_test_1008_3dfa9a5e37.jpg",
+        "test\\real\\real\\of_test_1016_b545d73491.jpg",
+        "test\\real\\real\\of_test_1022_b149287498.jpg",
+        "test\\real\\real\\of_test_1035_49822b9679.jpg",
+        "test\\real\\real\\of_test_1039_b578cc6a9b.jpg",
+        "test\\real\\real\\of_test_1044_8ab47eb41b.jpg",
+        "test\\real\\real\\of_test_1048_feda9b668d.jpg",
+        "test\\real\\real\\of_test_1079_8372ea3eba.jpg",
+        "test\\real\\real\\of_test_1086_de0302fcba.jpg",
+        "test\\real\\real\\of_test_1089_04370d8a50.jpg",
+        "test\\real\\real\\of_test_1093_d71983907a.jpg",
+        "test\\real\\real\\of_test_1100_ea63ee809b.jpg",
+        "test\\real\\real\\of_test_1105_e47f6b7d51.jpg",
+        "test\\real\\real\\of_test_1107_2ea043f5dc.jpg",
+        "test\\real\\real\\of_test_1128_d738702563.jpg",
+        "test\\real\\real\\of_test_1129_f7bb02190a.jpg",
+        "test\\real\\real\\of_test_1134_42eb0ad1f2.jpg",
+        "test\\real\\real\\of_test_1151_f73b6140e8.jpg",
+        "test\\real\\real\\of_test_1165_e77058e4a0.jpg",
+        "test\\real\\real\\of_test_1179_9965160e89.jpg",
+        "test\\real\\real\\of_test_1190_f906e153a0.jpg",
+        "test\\real\\real\\of_test_1195_700148b5ac.jpg",
+        "test\\real\\real\\of_test_1199_37824a386c.jpg",
+        "test\\real\\real\\of_test_1400_df0f3638b2.jpg",
+        "test\\real\\real\\of_test_1406_536710dafa.jpg",
+        "test\\real\\real\\of_test_1423_133e13a6af.jpg",
+        "test\\real\\real\\of_test_1428_efbc2d3648.jpg",
+        "test\\real\\real\\of_test_1438_dde29c4c56.jpg",
+        "test\\real\\real\\of_test_1456_7c009ae620.jpg",
+        "test\\real\\real\\of_test_1468_3f51493c59.jpg",
+        "test\\real\\real\\of_test_1470_9fc0b7c48d.jpg",
+        "test\\real\\real\\of_test_1472_ef10a71281.jpg",
+        "test\\real\\real\\of_test_1476_ec92a68278.jpg",
+        "test\\real\\real\\of_test_1503_c669bc9e4f.jpg",
+        "test\\real\\real\\of_test_1522_51040cecd0.jpg",
+        "test\\real\\real\\of_test_1534_f4abd9d61d.jpg",
+        "test\\real\\real\\of_test_1538_a1d5a62e90.jpg",
+        "test\\real\\real\\of_test_1546_ea22aca668.jpg",
+        "test\\real\\real\\of_test_1551_cf4fbd287b.jpg",
+        "test\\real\\real\\of_test_1588_c015287690.jpg",
+        "test\\real\\real\\of_test_1590_447a80909b.jpg",
+        "test\\real\\real\\of_test_1591_f6c755cc67.jpg",
+        "test\\real\\real\\of_test_1592_a9faa96001.jpg",
+        "test\\real\\real\\of_test_1596_d91bb78629.jpg",
+        "test\\real\\real\\of_test_1597_313b4ac06c.jpg",
+        "test\\real\\real\\of_test_1801_524423babd.jpg",
+        "test\\real\\real\\of_test_1817_4db955947d.jpg",
+        "test\\real\\real\\of_test_1822_80ad58347c.jpg",
+        "test\\real\\real\\of_test_1843_c210a89070.jpg",
+        "test\\real\\real\\of_test_1849_150ccafcc0.jpg",
+        "test\\real\\real\\of_test_1855_429100df51.jpg",
+        "test\\real\\real\\of_test_1856_80c514bf75.jpg",
+        "test\\real\\real\\of_test_1859_11ef9e245a.jpg",
+        "test\\real\\real\\of_test_1883_5d0348e423.jpg",
+        "test\\real\\real\\of_test_1889_27d2831030.jpg",
+        "test\\real\\real\\of_test_1894_c3c1df4ec2.jpg",
+        "test\\real\\real\\of_test_1904_248076323a.jpg",
+        "test\\real\\real\\of_test_1913_c046f9b2c0.jpg",
+        "test\\real\\real\\of_test_1914_957b3542cd.jpg",
+        "test\\real\\real\\of_test_1917_287b7af2db.jpg",
+        "test\\real\\real\\of_test_1930_5a4ddd82a8.jpg",
+        "test\\real\\real\\of_test_1962_a04b008ae8.jpg",
+        "test\\real\\real\\of_test_1977_66033218e8.jpg",
+        "test\\real\\real\\of_test_1990_35a9db05fd.jpg",
+        "test\\real\\real\\of_test_1993_81adfaa2b3.jpg",
+        "test\\real\\real\\of_test_2203_b9d503b1fd.jpg",
+        "test\\real\\real\\of_test_2206_c79d73692e.jpg",
+        "test\\real\\real\\of_test_2207_d004cebf65.jpg",
+        "test\\real\\real\\of_test_2225_7d320659d3.jpg",
+        "test\\real\\real\\of_test_2228_2af898b7d5.jpg",
+        "test\\real\\real\\of_test_2229_0b4f9d8fce.jpg",
+        "test\\real\\real\\of_test_2234_e2f3013514.jpg",
+        "test\\real\\real\\of_test_2241_c0b24ec123.jpg",
+        "test\\real\\real\\of_test_2256_21a9047b4d.jpg",
+        "test\\real\\real\\of_test_2262_45c43b798d.jpg",
+        "test\\real\\real\\of_test_2271_e8f0425705.jpg",
+        "test\\real\\real\\of_test_2276_3f58eb4b5a.jpg",
+        "test\\real\\real\\of_test_2282_d803741572.jpg",
+        "test\\real\\real\\of_test_2289_7f83a665ae.jpg",
+        "test\\real\\real\\of_test_2293_d27b54c7cf.jpg",
+        "test\\real\\real\\of_test_2305_cece612d26.jpg",
+        "test\\real\\real\\of_test_2306_60c01f4dbd.jpg",
+        "test\\real\\real\\of_test_2307_4a8d280d50.jpg",
+        "test\\real\\real\\of_test_2309_7fc51fcfeb.jpg",
+        "test\\real\\real\\of_test_2316_789171aff7.jpg",
+        "test\\real\\real\\of_test_2324_97e01571b0.jpg",
+        "test\\real\\real\\of_test_2326_30f66357a4.jpg",
+        "test\\real\\real\\of_test_2328_0d72e0cf52.jpg",
+        "test\\real\\real\\of_test_2340_afc1527d34.jpg",
+        "test\\real\\real\\of_test_2358_dae0b76fc9.jpg",
+        "test\\real\\real\\of_test_2365_4760b32d66.jpg",
+        "test\\real\\real\\of_test_2374_ddeb354ff4.jpg",
+        "test\\real\\real\\of_test_2375_f3047d03ff.jpg",
+        "test\\real\\real\\of_test_2384_1dc6bc8f14.jpg",
+        "test\\real\\real\\of_test_2387_830bde151c.jpg",
+        "test\\real\\real\\of_test_2826_9e4e1f0312.jpg",
+        "test\\real\\real\\of_test_2827_ce71694960.jpg",
+        "test\\real\\real\\of_test_2840_df1b6e51f3.jpg",
+        "test\\real\\real\\of_test_2842_25381745dc.jpg",
+        "test\\real\\real\\of_test_2850_2929f23142.jpg",
+        "test\\real\\real\\of_test_2861_b66986fff2.jpg",
+        "test\\real\\real\\of_test_2871_3de3fce37e.jpg",
+        "test\\real\\real\\of_test_2875_ce86bd37c1.jpg",
+        "test\\real\\real\\of_test_2886_c3aaca8942.jpg",
+        "test\\real\\real\\of_test_2913_85ef952bb9.jpg",
+        "test\\real\\real\\of_test_2915_7c7f6e7355.jpg",
+        "test\\real\\real\\of_test_2921_49669a4766.jpg",
+        "test\\real\\real\\of_test_2972_02158217d9.jpg",
+        "test\\real\\real\\of_test_2974_d59b650159.webp",
+        "test\\real\\real\\of_test_3007_1d98bc69a0.jpg",
+        "test\\real\\real\\of_test_3014_9e0d1a7910.jpg",
+        "test\\real\\real\\of_test_3016_5c43458155.jpg",
+        "test\\real\\real\\of_test_3028_7b329c950a.jpg",
+        "test\\real\\real\\of_test_3030_4e052c1b14.jpg",
+        "test\\real\\real\\of_test_3076_cc847d4955.jpg",
+        "test\\real\\real\\of_test_3087_8199b3d7d1.jpg",
+        "test\\real\\real\\of_test_3092_2c93b4e3b2.jpg",
+        "test\\real\\real\\of_test_3103_69f104f161.jpg",
+        "test\\real\\real\\of_test_3118_214b9235e1.jpg",
+        "test\\real\\real\\of_test_3122_1dd0369f8f.jpg",
+        "test\\real\\real\\of_test_3153_6bbaf8a14b.jpg",
+        "test\\real\\real\\of_test_3168_9f6fdf2b7a.jpg",
+        "test\\real\\real\\of_test_3169_ad75c7f795.jpg",
+        "test\\real\\real\\of_test_3178_2c762a79b3.jpg",
+        "test\\real\\real\\of_test_3179_6868cb996d.jpg",
+        "test\\real\\real\\of_test_3181_815fb04902.jpg",
+        "test\\real\\real\\of_test_3194_3d2b243b13.jpg",
+        "test\\real\\real\\of_test_3430_03c742f1d7.jpg",
+        "test\\real\\real\\of_test_3443_d66ba7c71e.jpg",
+        "test\\real\\real\\of_test_3448_4665c8f37d.jpg",
+        "test\\real\\real\\of_test_3452_46a4f15bee.jpg",
+        "test\\real\\real\\of_test_3477_f92f9c5773.jpg",
+        "test\\real\\real\\of_test_3480_6e7025d393.jpg",
+        "test\\real\\real\\of_test_3485_0788676d53.jpg",
+        "test\\real\\real\\of_test_3490_16d383d569.jpg",
+        "test\\real\\real\\of_test_3500_9fa1a07b23.jpg",
+        "test\\real\\real\\of_test_3512_e48f2eed11.jpg",
+        "test\\real\\real\\of_test_3520_4b23a14d17.jpg",
+        "test\\real\\real\\of_test_3531_c91f8451b6.jpg",
+        "test\\real\\real\\of_test_3533_c1bdd953d0.jpg",
+        "test\\real\\real\\of_test_3534_54cf7985d3.jpg",
+        "test\\real\\real\\of_test_3556_9f0152db1d.jpg",
+        "test\\real\\real\\of_test_3568_a64efb4f1f.jpg",
+        "test\\real\\real\\of_test_3571_18f36ba9e4.jpg",
+        "test\\real\\real\\of_test_3586_470a14dbaf.jpg",
+        "test\\real\\real\\of_test_3590_99cbb901c0.jpg",
+        "test\\real\\real\\of_test_3591_968a2f6724.jpg",
+        "test\\real\\real\\of_test_3598_e2acf6237d.jpg"
+      ]
     }
   },
   "status": "desktop_validation_only",
-  "source_snapshot_sha256": "348a0ef2cd0bb943f124efbbde9317e22dca81c329f5a886b15631989a146595"
+  "source_snapshot_sha256": "75ca35f80e40dad02325c04118fa5b216c53c4900bbae4c5c8a344c8049da8e0"
 }

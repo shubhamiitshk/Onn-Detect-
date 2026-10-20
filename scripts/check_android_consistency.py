@@ -122,7 +122,7 @@ if py_fe.exists() and kt_meta.exists():
     kt_src = kt_meta.read_text(encoding="utf-8")
     assignments = [node for node in ast.parse(py_src).body if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'FEATURE_NAMES' for t in node.targets)]
     feats = ast.literal_eval(assignments[0].value) if len(assignments) == 1 else []
-    expected_features = ['srm_score', 'fft_score', 'kl_score', 'flatness_score', 'resolution_norm', 'is_compressed', 'exif_anomaly', 'c2pa_present', 'lip_sync_corr', 'landmark_jitter']
+    expected_features = ['srm_score', 'fft_score', 'kl_score', 'flatness_score', 'resolution_norm', 'is_compressed', 'semantic_probe_score', 'c2pa_present', 'lip_sync_corr', 'landmark_jitter']
     if feats != expected_features:
         errors.append('Python fusion feature schema/order changed without a mobile contract migration')
     positions = [kt_src.find(f) for f in expected_features]

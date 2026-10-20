@@ -8,6 +8,8 @@ import com.onndetect.detection.fusion.XGBoostMetaClassifier
 import com.onndetect.detection.visual.FFTSpectralAnalyzer
 import com.onndetect.detection.visual.KLCooccurrenceAnalyzer
 import com.onndetect.detection.visual.SRMForensicAnalyzer
+import com.onndetect.detection.visual.SemanticProbeAnalyzer
+import com.onndetect.detection.visual.CalibrationStore
 import com.onndetect.inference.ModelIntegrityChecker
 import com.onndetect.inference.ModelIntegrityGate
 import com.onndetect.domain.models.*
@@ -39,14 +41,34 @@ class DetectionPipeline @Inject constructor(
     private val exifAnalyzer: com.onndetect.detection.provenance.EXIFAnalyzer,
     private val c2paChecker: com.onndetect.detection.provenance.C2PAManifestChecker,
     private val prnuAnalyzer: com.onndetect.detection.visual.PRNUAnalyzer,
+    private val semanticProbe: SemanticProbeAnalyzer,
     @param:ApplicationContext private val appContext: Context,
 ) {
     companion object {
         const val NEUTRAL_LIP_SYNC = 0.9f
         const val NEUTRAL_JITTER = 0.1f
-        const val NEUTRAL_EXIF = 0.1f
         const val NEUTRAL_C2PA = 0.05f
+
+        /**
+         * Legacy neutral for the former slot-6 constant.
+         *
+         * Slot 6 now carries the Engine C ("Lite C") measurement and is
+         * UNAVAILABLE (NaN) when the probe did not run. A neutral constant is
+         * only safe while nothing is ever measured in the slot, because a
+         * tree that splits on 0.1 cannot tell "low anomaly" from "not run".
+         */
+        const val NEUTRAL_EXIF = 0.1f
+
+        /**
+         * Fusion slot carrying the Engine C ("Lite C") semantic measurement.
+         *
+         * MUST stay identical to `meta_classifier.feature_extractor`
+         * `SEMANTIC_PROBE_INDEX` and to the slot documented in
+         * `XGBoostMetaClassifier.kt`.
+         */
+        const val SEMANTIC_PROBE_INDEX = 6
     }
+
     @Suppress("UNUSED_PARAMETER")
     suspend fun analyzeMedia(bitmap: Bitmap, mode: ScanMode, provenance: ProvenanceInfo? = null,
         sourceUri: android.net.Uri? = null, isCompressed: Boolean = false, originalMinEdge: Int? = null): Flow<ScanProgress> = flow {
@@ -59,13 +81,14 @@ class DetectionPipeline @Inject constructor(
         var signals = SignalBreakdown(-1f, -1f, -1f, -1f, -1f, -1f, -1f, -1f, -1f)
         var quality = QualityInfo(originalMinEdge ?: 0, isCompressed, null, false, false)
         fun result(status: AnalysisStatus, reason: String?, score: Float = -1f,
-            report: ModelIntegrityChecker.Report? = null): ScanResult {
-            val verdict = VerdictPolicy.decide(score, status, report?.validated == true, report?.threshold)
+            report: ModelIntegrityChecker.Report? = null,
+            decisionThreshold: Float? = report?.threshold): ScanResult {
+            val verdict = VerdictPolicy.decide(score, status, report?.validated == true, decisionThreshold)
             return ScanResult(UUID.randomUUID().toString(), mode, System.currentTimeMillis(), score,
                 verdict == DetectionVerdict.SYNTHETIC, 0f, signals, null, provenance, quality,
                 SystemClock.elapsedRealtime() - started, status, verdict, reason, report?.validated == true,
                 report?.releaseId ?: "unknown", report?.frontendId ?: "unknown",
-                if (report?.validated == true) report.releaseId else "unvalidated", report?.threshold)
+                if (report?.validated == true) report.releaseId else "unvalidated", decisionThreshold)
         }
         try {
             emit(ScanProgress("Validating input...", 5f))
@@ -115,11 +138,70 @@ class DetectionPipeline @Inject constructor(
                 emit(ScanProgress("Analysis inconclusive", 100f, result = result(AnalysisStatus.INCONCLUSIVE, reason, report = report)))
                 return@flow
             }
+
+            // ── Engine C ("Lite C"): optional semantic second opinion ────────
+            // The probe runs ONLY when the release manifest declares it AND
+            // it cleared every integrity gate (hash, contract, calibration
+            // above chance, desktop parity, device parity). An unverified
+            // second engine must not be able to influence a verdict.
+            //
+            // When it does not run, slot 6 stays UNAVAILABLE (NaN) and the
+            // fusion tree takes its learned missing branch. A neutral
+            // constant would be read as a real low measurement.
+            var engineCScore: Float? = null
+            if (budget == DegradationLevel.FULL && report.cascadeValidated) {
+                checkStop()
+                emit(ScanProgress("Semantic engine...", 78f))
+                engineCScore = semanticProbe.analyze(bitmap, checkStop)
+                checkStop()
+            }
+
             val features = floatArrayOf(srm, spectral.score, kl, spectral.spectralFlatness,
                 (quality.resolution / 1024f).coerceIn(0f, 1f), if (isCompressed) 1f else 0f,
-                NEUTRAL_EXIF, NEUTRAL_C2PA, NEUTRAL_LIP_SYNC, NEUTRAL_JITTER)
-            val score = signalFusion.fuse(metaClassifier.predict(features), provenance)
-            emit(ScanProgress("Analysis complete", 100f, result = result(AnalysisStatus.SUCCESS, null, score, report)))
+                engineCScore ?: Float.NaN, NEUTRAL_C2PA, NEUTRAL_LIP_SYNC, NEUTRAL_JITTER)
+            val fusedScore = signalFusion.fuse(metaClassifier.predict(features), provenance)
+
+            // ── Cascade arbitration ───────────────────────────────────────────
+            // Engine C is the stronger detector, so it decides when confident.
+            // Engine A arbitrates inside the measured ambiguity band, and a
+            // disagreement abstains rather than picking a winner.
+            //
+            // The reported score and its decision threshold must come from the
+            // SAME engine: the two have different operating points, and
+            // VerdictPolicy compares the score against the threshold. Mixing
+            // them would report a score that contradicts its own verdict.
+            val policy = CascadePolicy.fromAssets(appContext)
+            val decision: CascadeDecision
+            val decisionThreshold: Float
+            if (policy != null && engineCScore != null) {
+                decision = policy.decide(fusedScore, engineCScore)
+                // The cascade always reports Engine C's score, so Engine C's
+                // operating point is always the matching threshold.
+                decisionThreshold = policy.engineCThreshold
+            } else {
+                // Single engine (Engine A alone). Its own threshold applies.
+                val threshold = report.threshold ?: CalibrationStore.metaDecisionThreshold(appContext)
+                decisionThreshold = threshold
+                decision = CascadeDecision(
+                    verdict = if (fusedScore >= threshold) {
+                        DetectionVerdict.SYNTHETIC
+                    } else {
+                        DetectionVerdict.AUTHENTIC
+                    },
+                    score = fusedScore,
+                    escalated = false,
+                    reason = "Single-engine fusion",
+                )
+            }
+
+            if (decision.verdict == DetectionVerdict.INCONCLUSIVE) {
+                emit(ScanProgress("Analysis inconclusive", 100f, result = result(
+                    AnalysisStatus.INCONCLUSIVE, decision.reason, decision.score, report, decisionThreshold)))
+                return@flow
+            }
+
+            emit(ScanProgress("Analysis complete", 100f, result = result(
+                decision.status, null, decision.score, report, decisionThreshold)))
         } catch (e: CancellationException) { throw e }
         catch (e: Exception) {
             emit(ScanProgress("Analysis inconclusive", 100f, result = result(AnalysisStatus.MODEL_FAILURE, e.message ?: "Analysis failed")))

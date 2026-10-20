@@ -1,31 +1,41 @@
 {
-  "release_id": "onn-20261019-v4",
+  "release_id": "onn-20261020-v6",
   "passed": true,
-  "source_snapshot_sha256": "348a0ef2cd0bb943f124efbbde9317e22dca81c329f5a886b15631989a146595",
-  "fusion_kotlin_sha256": "63ea73f85946b39bd9cc06afaf117296901f2063593d4a4a5d23664abceca759",
-  "fusion_revision": "onn-20261019-v4",
+  "source_snapshot_sha256": "75ca35f80e40dad02325c04118fa5b216c53c4900bbae4c5c8a344c8049da8e0",
+  "fusion_kotlin_sha256": "0f18e26e626c43d9be96ca1ef9f4ba5ea5cf06756acaf894e6588b031a1b442a",
+  "fusion_revision": "onn-20261020-v6",
   "kotlin_parity_passed": true,
   "offline_verified": true,
   "models": {
     "srm_forensic_cnn_int8.tflite": {
-      "sha256": "c76c6d48af7668c170a3e63efc849629765f5b1f346e5d6aa6cf2f7edefa42aa",
+      "sha256": "d74a657c454e00f2181f4a3d98fa981ca63daf51d23e978da19c60c59e9b37c1",
       "frontend_id": "rgb-exif-srgb-whitealpha-pow2cap1024-bilinear-square-v2-size128-float32",
       "parity_passed": true,
-      "desktop_agreement": 0.9875,
-      "desktop_mae": 0.003920392468571663,
-      "desktop_max_error": 0.02079904079437256,
-      "latency_ms_p50": 12.417049998475704,
-      "latency_ms_p95": 2247.1014000038804
+      "desktop_agreement": 0.985,
+      "desktop_mae": 0.012132794801145793,
+      "desktop_max_error": 0.07213257998228073,
+      "latency_ms_p50": 13.03060000645928,
+      "latency_ms_p95": 14.949339983286336
     },
     "lcnn_audio_int8.tflite": {
-      "sha256": "21e500c4b7c096a1acd1133394f35fae2d2b35f578edbcb0551dc8a4c83c10e7",
+      "sha256": "56607bbfcf0c5b1bfab69d19f70e675116f6ed91356cbb8aed4d2483dcabba21",
       "frontend_id": "lfcc-v3-sr16000-f128-c40-nfft512-hop160-topdbnone-resampler-quadratic_window_sinc_v1-float64stft-float32",
       "parity_passed": true,
-      "desktop_agreement": 0.9875,
-      "desktop_mae": 0.0069105169270187615,
+      "desktop_agreement": 0.99,
+      "desktop_mae": 0.0068034690478816625,
       "desktop_max_error": 0.08327257633209229,
-      "latency_ms_p50": 8.995049996883608,
-      "latency_ms_p95": 12.128379998466695
+      "latency_ms_p50": 14.76409999304451,
+      "latency_ms_p95": 16.10247998614795
+    },
+    "semantic_probe_int8.tflite": {
+      "sha256": "38d1b692c3023b52b0e139d0a17257d3742019e8cc7edd1d8bb636ff91048d79",
+      "frontend_id": "clip-appearance-bicubic224-clipnorm-meanstd-float32",
+      "parity_passed": true,
+      "desktop_agreement": 1.0,
+      "desktop_mae": 0.0,
+      "desktop_max_error": 0.0,
+      "latency_ms_p50": 26.34009998291731,
+      "latency_ms_p95": 28.934519988251846
     }
   }
 }

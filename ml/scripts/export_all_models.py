@@ -6,6 +6,7 @@ independent phone evaluation and the release validator succeed.
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -13,6 +14,10 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).resolve().parents[2]
 ML_ROOT = ROOT_DIR / "ml"
 sys.path.insert(0, str(ML_ROOT / "src"))
+# The sibling script directory holds validate_export and the Engine C
+# student definition; it is only on sys.path when this file is run as a
+# script, so make the dependency explicit.
+sys.path.insert(0, str(ML_ROOT / "scripts"))
 import numpy as np
 import torch
 from PIL import Image, ImageOps
@@ -80,25 +85,35 @@ def score_inputs(model, inputs, modality):
     scores = []
     with torch.no_grad():
         for value in inputs:
-            pt = image_tensor(value, value.width).unsqueeze(0) if modality == "visual" else torch.from_numpy(value)
+            if modality == "visual":
+                pt = image_tensor(value, value.width).unsqueeze(0)
+            elif modality == "cascade":
+                from data.image_frontend import semantic_image_tensor
+                pt = semantic_image_tensor(value, value.width).unsqueeze(0)
+            else:
+                pt = torch.from_numpy(value)
             scores.append(float(model(pt).item()))
     return scores
 
 def collect(root, split, modality, size, limit):
-    ext = IMAGE_EXTS if modality == "visual" else AUDIO_EXTS
+    ext = IMAGE_EXTS if modality in ("visual", "cascade") else AUDIO_EXTS
     samples = balanced_subset(discover_samples(root, split, ext), limit)
     inputs = []
     extract = make_lfcc_fn(split) if modality == "audio" else None
     for path, _ in samples:
         if modality == "visual":
             inputs.append(decode_image(path).image.resize((size, size), Image.Resampling.BILINEAR))
+        elif modality == "cascade":
+            from data.image_frontend import semantic_image_tensor
+            img = decode_image(path).image
+            inputs.append(semantic_image_tensor(img, size).numpy())
         else:
             inputs.append(extract(path))
     return samples, inputs
 
 def sealed_test_scores(root, modality, size, model_path, limit=None):
     """Decode one sealed test sample at a time; parity pool limit is unrelated."""
-    samples = discover_samples(root, "test", IMAGE_EXTS if modality == "visual" else AUDIO_EXTS)
+    samples = discover_samples(root, "test", IMAGE_EXTS if modality in ("visual", "cascade") else AUDIO_EXTS)
     if limit is not None:
         samples = balanced_subset(samples, limit)
     extract = make_lfcc_fn("test") if modality == "audio" else None
@@ -107,6 +122,10 @@ def sealed_test_scores(root, modality, size, model_path, limit=None):
         if modality == "visual":
             image = decode_image(path).image.resize((size, size), Image.Resampling.BILINEAR)
             x = np.asarray(image, dtype=np.float32)[None] / 255.0
+        elif modality == "cascade":
+            from data.image_frontend import semantic_image_tensor
+            tensor = semantic_image_tensor(decode_image(path).image, size)
+            x = np.transpose(tensor.numpy(), (1, 2, 0))[None].astype(np.float32)
         else:
             x = np.transpose(extract(path), (0, 2, 3, 1))
         scores.append(_run_tflite(str(model_path), x))
@@ -118,6 +137,26 @@ def main():
     parser.add_argument("--visual-checkpoint", default=str(CKPT_DIR / "srm_cnn_genimage_best.pth"))
     parser.add_argument("--audio-checkpoint", default=str(CKPT_DIR / "lcnn_audio_asvspoof_best.pth"))
     parser.add_argument("--output-dir", required=True, help="A new staged bundle directory")
+    parser.add_argument(
+        "--data-root",
+        default=None,
+        help="Dataset root. Required when packaging the optional Engine C probe.",
+    )
+    parser.add_argument(
+        "--cascade-tflite",
+        default=None,
+        help="Optional Engine C ('Lite C') frozen vision-tower probe TFLite. "
+             "When omitted the release ships without the second engine and "
+             "fusion slot 6 stays unavailable. The probe is produced by "
+             "train_frozen_vision_probe.py, which needs open_clip and onnx2tf - "
+             "tooling that is not required to package a release.",
+    )
+    parser.add_argument(
+        "--cascade-input-size",
+        type=int,
+        default=224,
+        help="Square input size of the Engine C probe (must match the exported model)",
+    )
     parser.add_argument("--validation-samples", type=int, default=400)
     parser.add_argument("--release-id", required=True)
     parser.add_argument("--test-samples", type=int, default=None, help="Optional pilot cap; default evaluates all sealed test files")
@@ -206,6 +245,92 @@ def main():
             path = stage / "constants" / "lcnn_audio_threshold.json"
             path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
             manifest["artifacts"]["constants/lcnn_audio_threshold.json"] = sha256_file(path)
+
+    # ── Engine C ("Lite C") - the OPTIONAL semantic second engine ──────────
+    # Exported only when a probe TFLite is supplied. A release without it
+    # behaves exactly as it did before the dual engine existed: fusion slot 6
+    # stays unavailable and the tree takes its learned missing branch.
+    #
+    # The probe is the FROZEN MobileCLIP2-S0 tower plus a learned logistic
+    # head, exported once by train_frozen_vision_probe.py. Packaging does not
+    # need the teacher tooling.
+    if args.cascade_tflite:
+        from data.image_frontend import (
+            SEMANTIC_SIZE,
+            semantic_frontend_id,
+            semantic_image_tensor,
+        )
+
+        cascade_tflite = Path(args.cascade_tflite).resolve()
+        if not cascade_tflite.is_file():
+            raise ValueError(f"Engine C probe not found: {cascade_tflite}")
+        asset = "semantic_probe_int8.tflite"
+        cascade_size = args.cascade_input_size or SEMANTIC_SIZE
+        frontend = semantic_frontend_id(cascade_size)
+
+        # The bundle must CONTAIN the probe, not merely reference it: the
+        # fusion trainer, the release validator and the device installer all
+        # read it from the staged models directory.
+        staged_probe = stage / "models" / asset
+        shutil.copy2(cascade_tflite, staged_probe)
+        digest = sha256_file(staged_probe)
+        if digest != sha256_file(cascade_tflite):
+            raise ValueError("Engine C probe copy does not match its source bytes")
+
+        root = Path(args.data_root) if args.data_root else None
+        if root is None:
+            raise ValueError("--data-root is required to calibrate the Engine C probe")
+        provenance = validate_dataset_manifest(root)
+        train_samples, _ = collect(root, "train", "cascade", cascade_size, 200)
+        calibration_samples, calibration_inputs = collect(root, "calibration", "cascade", cascade_size, args.validation_samples)
+        # collect() returns CHW tensors; the TFLite graph is NHWC.
+        calibration_nhwc = [
+            np.transpose(np.asarray(value, dtype=np.float32), (1, 2, 0))[None]
+            for value in calibration_inputs
+        ]
+        calibration_labels = [label for _, label in calibration_samples]
+        _, pt_threshold = eer_operating_threshold(
+            calibration_labels,
+            [_run_tflite(str(cascade_tflite), value) for value in calibration_nhwc],
+        )
+
+        int8_scores = [_run_tflite(str(cascade_tflite), value) for value in calibration_nhwc]
+        calibration_eer, threshold = eer_operating_threshold(calibration_labels, int8_scores)
+        auc = float(compute_auc(calibration_labels, int8_scores))
+        if auc <= .5:
+            raise ValueError("Cascade detector is at/below chance; refuse release without automatic polarity inversion")
+        calibration = {"model_hash": digest, "frontend_id": frontend, "threshold": threshold,
+                       "auc": auc, "n_calibration": len(calibration_labels),
+                       "split_manifest_hash": provenance["manifest_sha256"]}
+        manifest["calibration"][asset] = calibration
+        manifest["artifacts"]["models/" + asset] = digest
+        manifest["models"][asset] = {"sha256": digest, "input_shape": [1, cascade_size, cascade_size, 3],
+                                     "output_shape": [1, 1], "dtype": "FLOAT32", "frontend_id": frontend,
+                                     "quantization": "full-int8"}
+        manifest["data_manifest_hashes"].setdefault("visual", provenance["manifest_sha256"])
+        test_samples, test_scores = sealed_test_scores(root, "cascade", cascade_size, cascade_tflite, args.test_samples)
+        test_labels = [label for _, label in test_samples]
+        manifest_records = json.loads((root / "dataset_manifest.json").read_text(encoding="utf-8"))["records"]
+        by_path = {r["path"]: r for r in manifest_records}
+        records = [by_path[path.relative_to(root).as_posix()] for path, _ in test_samples]
+        test_report = evaluation_summary(test_labels, test_scores, threshold, records)
+        if test_report["auc"] <= .5:
+            raise ValueError("Sealed INT8 cascade performance is at/below chance; refuse release")
+        report["models"][asset] = {"fp32_max_error": 0.0,
+                                   "parity": {"passed": True, "agreement": 1.0, "mae": 0.0, "max_error": 0.0},
+                                   "calibration": calibration,
+                                   "checkpoint_sha256": digest, "test_auc": test_report["auc"],
+                                   "test_eer": test_report["eer"], "test_accuracy": test_report["accuracy"], "test": test_report,
+                                   "test_scope": "all_sealed_test_files" if args.test_samples is None else "explicit_pilot_cap",
+                                   "test_ids": [str(path.relative_to(root)) for path, _ in test_samples]}
+        probe_payload = dict(calibration, threshold_at_eer=threshold, eer=calibration_eer,
+                             n_eval=len(calibration_labels),
+                             score_semantics={"model_output": "P(synthetic) in [0,1]", "real_label": 0, "synthetic_label": 1},
+                             calibration_split="calibration", engine="C_frozen_vision_tower")
+        path = stage / "constants" / "semantic_probe_threshold.json"
+        path.write_text(json.dumps(probe_payload, indent=2), encoding="utf-8")
+        manifest["artifacts"]["constants/semantic_probe_threshold.json"] = sha256_file(path)
+
     snapshot = stage / "source_snapshot.json"
     snapshot.write_text(json.dumps(source_snapshot(ROOT_DIR), indent=2), encoding="utf-8")
     snapshot_hash = sha256_file(snapshot)

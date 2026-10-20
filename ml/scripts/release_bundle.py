@@ -17,10 +17,16 @@ from data.contracts import sha256_file
 from data.image_frontend import frontend_id
 
 MODEL_NAMES = {'srm_forensic_cnn_int8.tflite', 'lcnn_audio_int8.tflite'}
+# Engine C ("Lite C") - the OPTIONAL semantic second engine. A release may
+# ship it or not. When it is shipped it is held to exactly the same contract
+# as the required models: hash-bound, calibrated on a declared split, and
+# covered by the desktop parity report and the independent device report.
+CASCADE_MODEL_NAMES = {'semantic_probe_int8.tflite'}
 REQUIRED_ARTIFACTS = {'constants/lcnn_audio_threshold.json', 'constants/meta_classifier.json',
                       'constants/natural_diff_histogram.json', 'constants/model_hashes.json',
                       'fusion/XGBoostMetaClassifier.kt', 'fusion/xgboost_meta.json',
                       'fusion/meta_results.json', 'evaluation_report.json', 'source_snapshot.json'}
+CASCADE_ARTIFACTS = {'constants/semantic_probe_threshold.json', 'constants/cascade_policy.json'}
 
 
 def read_object(path):
@@ -48,8 +54,12 @@ def validate_bundle(bundle, require_validated=False):
     if not isinstance(manifest.get('release_id'), str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,127}', manifest['release_id']):
         raise ValueError('Release ID missing')
     models = manifest.get('models', {})
-    if not isinstance(models, dict) or set(models) != MODEL_NAMES:
-        raise ValueError('Release must contain exactly the required neural models')
+    if not isinstance(models, dict) or not MODEL_NAMES.issubset(set(models)):
+        raise ValueError('Release must contain the required neural models')
+    unexpected = set(models) - MODEL_NAMES - CASCADE_MODEL_NAMES
+    if unexpected:
+        raise ValueError(f'Unexpected model contracts: {sorted(unexpected)}')
+    cascade_shipped = bool(CASCADE_MODEL_NAMES & set(models))
     declared = set()
     for name, model in models.items():
         if not isinstance(model, dict):
@@ -72,6 +82,14 @@ def validate_bundle(bundle, require_validated=False):
             expected_frontend = 'lfcc-v3-sr16000-f128-c40-nfft512-hop160-topdbnone-resampler-quadratic_window_sinc_v1-float64stft-float32'
             if shape != [1, 401, 40, 1]:
                 raise ValueError('Unsupported audio shape')
+        elif name in CASCADE_MODEL_NAMES:
+            # Engine C uses the CLIP appearance frontend (bicubic square
+            # resize + CLIP normalization), not the Engine A one. The two
+            # engines must not share a resampling artifact, or the fusion
+            # would measure the same low-level cue twice.
+            if shape[0] != 1 or shape[1] != shape[2] or shape[3] != 3 or not 64 <= shape[1] <= 1024:
+                raise ValueError('Unsupported cascade shape')
+            expected_frontend = f'clip-appearance-bicubic{shape[1]}-clipnorm-meanstd-float32'
         else:
             if shape[0] != 1 or shape[1] != shape[2] or shape[3] != 3 or not 32 <= shape[1] <= 1024:
                 raise ValueError('Unsupported visual shape')
@@ -82,8 +100,9 @@ def validate_bundle(bundle, require_validated=False):
     artifacts = manifest.get('artifacts', {})
     if not isinstance(artifacts, dict):
         raise ValueError('artifacts must be a JSON object')
-    if not REQUIRED_ARTIFACTS <= set(artifacts):
-        raise ValueError(f'Incomplete bundle: missing {sorted(REQUIRED_ARTIFACTS - set(artifacts))}')
+    required_artifacts = REQUIRED_ARTIFACTS | (CASCADE_ARTIFACTS if cascade_shipped else set())
+    if not required_artifacts <= set(artifacts):
+        raise ValueError(f'Incomplete bundle: missing {sorted(required_artifacts - set(artifacts))}')
     for relative, digest in artifacts.items():
         from pathlib import PurePosixPath
         if not isinstance(relative, str) or not relative or "\\" in relative or ":" in relative or PurePosixPath(relative).is_absolute() or ".." in PurePosixPath(relative).parts:
@@ -124,6 +143,15 @@ def validate_bundle(bundle, require_validated=False):
         calibration = entry.get('calibration')
         if not isinstance(calibration, dict) or calibration.get('model_hash') != models[name]['sha256'] or calibration.get('frontend_id') != models[name]['frontend_id']:
             raise ValueError(f'Evaluation report model/frontend lineage differs: {name}')
+    # Engine C is held to the same export-validation standard when shipped.
+    for name in CASCADE_MODEL_NAMES & set(models):
+        entry = report_models.get(name)
+        parity = entry.get('parity') if isinstance(entry, dict) else None
+        if not isinstance(parity, dict) or parity.get('passed') is not True:
+            raise ValueError(f'Missing enforced export validation: {name}')
+        calibration = entry.get('calibration')
+        if not isinstance(calibration, dict) or calibration.get('model_hash') != models[name]['sha256'] or calibration.get('frontend_id') != models[name]['frontend_id']:
+            raise ValueError(f'Evaluation report model/frontend lineage differs: {name}')
     if not re.fullmatch('[0-9a-f]{40}', str(manifest.get('source_commit', ''))):
         raise ValueError('Source commit unavailable')
     data_hashes = manifest.get('data_manifest_hashes')
@@ -148,6 +176,17 @@ def validate_bundle(bundle, require_validated=False):
     audio = read_object(bundle / 'constants/lcnn_audio_threshold.json')
     if audio.get('threshold_at_eer') != manifest['calibration']['lcnn_audio_int8.tflite']['threshold']:
         raise ValueError('Audio operating threshold mismatch')
+    if cascade_shipped:
+        cascade_name = next(iter(CASCADE_MODEL_NAMES & set(models)))
+        probe = read_object(bundle / 'constants/semantic_probe_threshold.json')
+        if probe.get('threshold_at_eer') != manifest['calibration'][cascade_name]['threshold']:
+            raise ValueError('Cascade operating threshold mismatch')
+        policy = read_object(bundle / 'constants/cascade_policy.json')
+        for key in ('engine_a_threshold', 'engine_c_threshold', 'escalate_below', 'escalate_above'):
+            if not isinstance(policy.get(key), (int, float)) or not 0.0 <= policy[key] <= 1.0:
+                raise ValueError(f'Invalid cascade policy field: {key}')
+        if not policy['escalate_below'] <= policy['escalate_above']:
+            raise ValueError('Cascade escalation band is inverted')
     kotlin = (bundle / 'fusion/XGBoostMetaClassifier.kt').read_text(encoding='utf-8')
     revision = manifest.get('fusion_revision')
     if revision != manifest['release_id'] or f'const val RELEASE_ID = {json.dumps(revision)}' not in kotlin:

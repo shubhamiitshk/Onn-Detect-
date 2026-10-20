@@ -10,6 +10,7 @@ import com.onndetect.detection.video.VideoForensicAnalyzer
 import com.onndetect.detection.visual.FFTSpectralAnalyzer
 import com.onndetect.detection.visual.KLCooccurrenceAnalyzer
 import com.onndetect.detection.visual.SRMForensicAnalyzer
+import com.onndetect.detection.visual.SemanticProbeAnalyzer
 import com.onndetect.domain.pipeline.DetectionPipeline
 import com.onndetect.domain.pipeline.SignalFusion
 import com.onndetect.inference.LiteRTInferenceEngine
@@ -54,6 +55,13 @@ object PipelineModule {
     @Provides
     @Singleton
     fun provideMetaClassifier() = XGBoostMetaClassifier()
+
+    @Provides
+    @Singleton
+    fun provideSemanticProbeAnalyzer(
+        @ApplicationContext context: Context,
+        engine: LiteRTInferenceEngine,
+    ) = SemanticProbeAnalyzer(context, engine)
 
     @Provides
     @Singleton

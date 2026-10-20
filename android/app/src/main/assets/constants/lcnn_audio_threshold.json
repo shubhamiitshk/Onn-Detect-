@@ -1,12 +1,12 @@
 {
-  "model_hash": "21e500c4b7c096a1acd1133394f35fae2d2b35f578edbcb0551dc8a4c83c10e7",
+  "model_hash": "56607bbfcf0c5b1bfab69d19f70e675116f6ed91356cbb8aed4d2483dcabba21",
   "frontend_id": "lfcc-v3-sr16000-f128-c40-nfft512-hop160-topdbnone-resampler-quadratic_window_sinc_v1-float64stft-float32",
   "threshold": 0.375,
-  "auc": 0.8644625,
+  "auc": 0.8646,
   "n_calibration": 400,
   "split_manifest_hash": "6d56263cfdce0b8d1fc8f83cdef9261b91438a5a511e83a3401892be1e1fb524",
   "threshold_at_eer": 0.375,
-  "eer": 0.21999999999999997,
+  "eer": 0.22249999999999998,
   "n_eval": 400,
   "score_semantics": {
     "model_output": "P(synthetic) in [0,1]",

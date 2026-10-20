@@ -8,16 +8,24 @@ from PIL import Image
 class SRMLayer(nn.Module):
     """
     Fixed Spatial Rich Model (SRM) + Optional Neighboring Pixel Relationships (NPR)
-    filter bank to extract high-frequency noise, color-opponent demosaicing residuals,
-    and local 2x2 upsampling grid interdependence (Tan et al., CVPR 2024).
+    + Optional RGB/Luminance Low-Pass stem (`out_channels` in {12, 16, 20}).
+
+    - 12 channels (`include_npr=False, include_rgb=False`): Legacy SRM high-pass filters.
+    - 16 channels (`include_npr=True, include_rgb=False`): SRM + 4 NPR 2x2 upsampling
+      residual filters (Tan et al., CVPR 2024).
+    - 20 channels (`include_npr=True, include_rgb=True`): SRM + NPR + 3 centered RGB
+      pass-through filters + 1 5x5 Gaussian/box luminance low-pass filter so the
+      MobileNetV3 backbone sees both high-frequency noise residuals and low/mid-frequency
+      RGB color/lighting structure during vision-tower distillation.
 
     Fully compatible with `build_keras_srm` in `ml/src/export/torch_to_tflite_keras.py`,
     which reads `srm_out = int(pt.srm.conv.out_channels)` dynamically.
     """
-    def __init__(self, include_npr: bool = False):
+    def __init__(self, include_npr: bool = False, include_rgb: bool = False):
         super(SRMLayer, self).__init__()
         self.include_npr = include_npr
-        out_channels = 16 if include_npr else 12
+        self.include_rgb = include_rgb
+        out_channels = 12 + (4 if include_npr else 0) + (4 if include_rgb else 0)
         self.conv = nn.Conv2d(3, out_channels, kernel_size=5, padding=2, bias=False)
 
         # 1. 5x5 Laplacian-like center-surround
@@ -97,9 +105,9 @@ class SRMLayer(nn.Module):
         weight[11, 2, :, :] = 0.5 * f_lap3
         weight[11, 1, :, :] = -0.5 * f_lap3
 
+        cursor = 12
         if include_npr:
             # 12..15: Neighboring Pixel Relationships (NPR) 2x2 sub-grid operators
-            # embedded in 5x5 kernels to capture local diffusion/GAN upsampling correlations.
             npr_h = torch.zeros((5, 5), dtype=torch.float32)
             npr_h[2, 2], npr_h[2, 3] = 1.0, -1.0
             npr_v = torch.zeros((5, 5), dtype=torch.float32)
@@ -110,7 +118,23 @@ class SRMLayer(nn.Module):
             npr_d2[2, 3], npr_d2[3, 2] = 1.0, -1.0
             for offset, npr_k in enumerate([npr_h, npr_v, npr_d1, npr_d2]):
                 for in_c in range(3):
-                    weight[12 + offset, in_c, :, :] = npr_k / 3.0
+                    weight[cursor + offset, in_c, :, :] = npr_k / 3.0
+            cursor += 4
+
+        if include_rgb:
+            # 3 centered RGB pass-through identity kernels + 1 5x5 low-pass luminance kernel
+            # Preserves low/mid-frequency color and shading through tanh(conv(x))
+            for rgb_c in range(3):
+                weight[cursor + rgb_c, rgb_c, 2, 2] = 1.0
+            gauss_5x5 = torch.tensor([
+                [1,  4,  6,  4, 1],
+                [4, 16, 24, 16, 4],
+                [6, 24, 36, 24, 6],
+                [4, 16, 24, 16, 4],
+                [1,  4,  6,  4, 1],
+            ], dtype=torch.float32) / 256.0
+            for in_c in range(3):
+                weight[cursor + 3, in_c, :, :] = gauss_5x5 / 3.0
 
         self.conv.weight = nn.Parameter(weight, requires_grad=False)
 
@@ -142,17 +166,32 @@ class DepthwiseSeparableBlock(nn.Module):
 class SRMForensicCNN(nn.Module):
     """
     Lightweight CNN for detecting AI-generated images via noise, chrominance,
-    and Neighboring Pixel Relationship (NPR) residual analysis.
+    Neighboring Pixel Relationship (NPR) residuals, and optional RGB low-pass cues.
+
+    Auto-adapts its stem and SRM filter bank between 12 channels (legacy SRM),
+    16 channels (SRM + NPR), and 20 channels (SRM + NPR + RGB/Luma) inside
+    `load_state_dict()` so callers like `export_all_models.py` work seamlessly.
     """
-    def __init__(self, include_npr: bool = False):
+    def __init__(self, include_npr: bool = False, include_rgb: bool = False):
         super(SRMForensicCNN, self).__init__()
+        self._configure_channels(include_npr=include_npr, include_rgb=include_rgb)
+
+        # 3. Classifier Head
+        self.head = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Flatten(),
+            nn.Linear(256, 64),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.3),
+            nn.Linear(64, 1),
+            nn.Sigmoid()
+        )
+
+    def _configure_channels(self, include_npr: bool, include_rgb: bool = False) -> None:
         self.include_npr = include_npr
-        srm_channels = 16 if include_npr else 12
-
-        # 1. SRM (+ optional NPR) Filter Layer (Frozen)
-        self.srm = SRMLayer(include_npr=include_npr)
-
-        # 2. CNN Backbone (MobileNetV3-inspired)
+        self.include_rgb = include_rgb
+        srm_channels = 12 + (4 if include_npr else 0) + (4 if include_rgb else 0)
+        self.srm = SRMLayer(include_npr=include_npr, include_rgb=include_rgb)
         self.backbone = nn.Sequential(
             nn.Conv2d(srm_channels, 32, kernel_size=3, stride=2, padding=1, bias=False),
             nn.BatchNorm2d(32),
@@ -165,16 +204,17 @@ class SRMForensicCNN(nn.Module):
             DepthwiseSeparableBlock(128, 256, stride=2)
         )
 
-        # 3. Classifier Head
-        self.head = nn.Sequential(
-            nn.AdaptiveAvgPool2d(1),
-            nn.Flatten(),
-            nn.Linear(256, 64),
-            nn.ReLU(inplace=True),
-            nn.Dropout(0.3),
-            nn.Linear(64, 1),
-            nn.Sigmoid()
-        )
+    def load_state_dict(self, state_dict, strict: bool = True, assign: bool = False):
+        srm_weight = state_dict.get("srm.conv.weight")
+        if srm_weight is not None:
+            ch = int(srm_weight.shape[0])
+            want_npr = ch in (16, 20)
+            want_rgb = ch == 20
+            if want_npr != self.include_npr or want_rgb != self.include_rgb:
+                device = next(self.parameters()).device
+                self._configure_channels(include_npr=want_npr, include_rgb=want_rgb)
+                self.to(device)
+        return super().load_state_dict(state_dict, strict=strict, assign=assign)
 
     def forward(self, x: torch.Tensor, return_logits: bool = False) -> torch.Tensor:
         x = self.srm(x)
@@ -199,8 +239,8 @@ class SRMForensicCNN(nn.Module):
             raise ValueError("Checkpoint architecture mismatch")
         state_dict = checkpoint["state_dict"]
         srm_weight = state_dict.get("srm.conv.weight")
-        use_npr = srm_weight is not None and int(srm_weight.shape[0]) == 16
-        model = cls(include_npr=use_npr)
+        ch = int(srm_weight.shape[0]) if srm_weight is not None else 12
+        model = cls(include_npr=ch in (16, 20), include_rgb=(ch == 20))
         model.load_state_dict(state_dict)
         return model
 

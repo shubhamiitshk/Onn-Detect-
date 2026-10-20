@@ -89,6 +89,29 @@ def visual_calibration_dataset(image_paths, limit=200, input_size=32):
     return generator
 
 
+def semantic_calibration_dataset(image_paths, limit=200, input_size=224):
+    """Yield Engine C ("Lite C") appearance tensors from REAL images.
+
+    The Engine C frontend is bicubic + CLIP mean/std normalization, which is
+    deliberately DIFFERENT from Engine A's bilinear + [0,1] scale. Sharing a
+    resampling artifact between the two engines would make the fusion measure
+    the same low-level cue twice.
+    """
+    from data.image_frontend import semantic_image_tensor, decode_image
+
+    def generator():
+        count = 0
+        for p in image_paths:
+            if count >= limit:
+                break
+            tensor = semantic_image_tensor(decode_image(p).image, input_size)
+            arr = np.transpose(tensor.numpy(), (1, 2, 0))[np.newaxis]
+            yield [arr.astype(np.float32)]
+            count += 1
+
+    return generator
+
+
 def audio_specs_calibration_dataset(specs_pt_layout, limit=50):
     """Yields NHWC (1,T,F,1) LFCC tensors from REAL spectrograms.
 

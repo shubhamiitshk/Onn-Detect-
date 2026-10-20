@@ -195,6 +195,67 @@ def build_keras_lcnn(pt_model, input_frames: int, n_lfcc: int = 40) -> tf.keras.
 # conversion entry points
 # --------------------------------------------------------------------------
 
+def build_keras_semantic_probe(pt_model, input_size: int = 224) -> tf.keras.Model:
+    """Rebuild SemanticProbeCNN channels-last and copy trained weights.
+
+    Architecture (must match `ml/scripts/train_semantic_probe.py`):
+      stem : Conv2D(width, 3, s2) -> BN -> Hardswish
+      6x   : DepthwiseSeparableBlock (depthwise 3x3 s{1,2} -> BN -> Hardswish,
+                                    pointwise 1x1 -> BN -> Hardswish)
+      head : GAP -> Dense(128)+ReLU -> Dropout(skip) -> Dense(1)+Sigmoid
+
+    Unlike Engine A there is no SRM filter bank: the stem sees ordinary RGB
+    so the network is forced to learn appearance/semantics instead of the
+    residual structure Engine A already covers. The two engines must not
+    share an inductive bias, or the fusion buys nothing.
+    """
+    pt = pt_model
+
+    inp = tf.keras.Input((input_size, input_size, 3), name="input")
+
+    # Stem: Conv2d(width, 3, s2, p1) -> BN -> Hardswish
+    width = int(pt.stem[0].out_channels)
+    x = tf.keras.layers.ZeroPadding2D(1, name="stem_pad")(inp)
+    stem_conv = tf.keras.layers.Conv2D(width, 3, strides=2, padding="valid",
+                                        use_bias=False, name="stem_conv")
+    x = stem_conv(x); _set_conv(stem_conv, pt.stem[0])
+    stem_bn = _bn("stem_bn"); x = stem_bn(x); _set_bn(stem_bn, pt.stem[1])
+    x = tf.keras.layers.Activation(_hard_swish, name="stem_hswish")(x)
+
+    # DepthwiseSeparableBlocks
+    for i, pt_block in enumerate(pt.blocks):
+        cout = int(pt_block.pointwise[0].out_channels)
+        stride = int(pt_block.depthwise[0].stride[0])
+        if stride == 2:
+            x = tf.keras.layers.ZeroPadding2D(1, name=f"ds{i}_pad")(x)
+            dw_padding = "valid"
+        else:
+            dw_padding = "same"
+        dw = tf.keras.layers.DepthwiseConv2D(
+            3, strides=stride, padding=dw_padding, use_bias=False,
+            name=f"ds{i}_dw"); x = dw(x); _set_dw(dw, pt_block.depthwise[0])
+        dbn = _bn(f"ds{i}_dw_bn"); x = dbn(x); _set_bn(dbn, pt_block.depthwise[1])
+        x = tf.keras.layers.Activation(_hard_swish, name=f"ds{i}_dw_hsw")(x)
+        pw = tf.keras.layers.Conv2D(
+            cout, 1, strides=1, padding="valid", use_bias=False,
+            name=f"ds{i}_pw"); x = pw(x); _set_conv(pw, pt_block.pointwise[0])
+        pbn = _bn(f"ds{i}_pw_bn"); x = pbn(x); _set_bn(pbn, pt_block.pointwise[1])
+        x = tf.keras.layers.Activation(_hard_swish, name=f"ds{i}_pw_hsw")(x)
+
+    # Head: GAP -> Dense(128)+ReLU -> Dropout(skip) -> Dense(1)+Sigmoid
+    x = tf.keras.layers.GlobalAveragePooling2D(name="gap")(x)
+    d1 = tf.keras.layers.Dense(int(pt.head[2].out_features), activation="relu", name="fc1")
+    x = d1(x); _set_dense(d1, pt.head[2])
+    d2 = tf.keras.layers.Dense(1, activation="sigmoid", name="fc2")
+    out = d2(x); _set_dense(d2, pt.head[5])
+
+    return tf.keras.Model(inp, out, name="semantic_probe_cnn")
+
+
+# ---------------------------------------------------------------------------
+# conversion entry points
+# ---------------------------------------------------------------------------
+
 def keras_parity_check(keras_model, pt_model, inputs_nhwc, modality: str, tolerance: float = 1e-4) -> float:
     """Max |keras - pytorch| over NHWC inputs. Catches weight-transfer bugs
     independently of quantization error."""

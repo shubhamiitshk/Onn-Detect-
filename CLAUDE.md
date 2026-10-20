@@ -11,9 +11,11 @@ Do not label a model score as confidence or a calibrated posterior without evide
 ## Shared contracts
 
 The fusion feature order is:
-srm_score, fft_score, kl_score, flatness_score, resolution_norm, is_compressed, exif_anomaly, c2pa_present, lip_sync_corr, landmark_jitter.
+srm_score, fft_score, kl_score, flatness_score, resolution_norm, is_compressed, semantic_probe_score, c2pa_present, lip_sync_corr, landmark_jitter.
 
-Features 6–9 are fixed unsupported neutral values in this baseline, not measured proof. Model/fusion retraining must version changes across both platforms.
+Slot 6 carries the Engine C ("Lite C") semantic measurement when a validated probe ran, and is unavailable (NaN) when it did not — a neutral constant would read as a real low measurement to any tree that splits on it. Slots 7–9 are fixed unsupported neutral values in this baseline, not measured proof. Model/fusion retraining must version changes across both platforms.
+
+The optional second engine is a distinct second opinion, not a replacement: Engine A reads high-frequency residual structure, Engine C reads appearance/semantics. When both are present, a disagreement between them is evidence of uncertainty and the cascade abstains rather than picking a winner.
 
 Audio uses the versioned LFCC frontend (16kHz, periodic Hann, NFFT512, hop160,128 linear filters,40 coefficients, no top_db, coefficient CMVN over time with sample std), float32 features and quadratic_window_sinc_v1 resampling. A four-second window has401frames. Torchaudio LFCC/resample is not an interchangeable training shortcut.
 

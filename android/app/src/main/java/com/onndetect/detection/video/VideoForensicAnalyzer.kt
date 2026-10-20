@@ -64,7 +64,13 @@ class VideoForensicAnalyzer @Inject constructor(private val context: Context,
                         if (report.validated && srm in 0f..1f && kl in 0f..1f) {
                             val features = floatArrayOf(
                                 srm, spectral.score, kl, spectral.spectralFlatness, resNorm, 1f,
-                                com.onndetect.domain.pipeline.DetectionPipeline.NEUTRAL_EXIF,
+                                // Slot 6 is the Engine C ("Lite C") semantic
+                                // measurement. The video route does not run
+                                // the probe, so the evidence is UNAVAILABLE
+                                // (NaN) - never a neutral constant that would
+                                // read as a real low measurement. The fusion
+                                // tree takes its learned missing branch.
+                                Float.NaN,
                                 com.onndetect.domain.pipeline.DetectionPipeline.NEUTRAL_C2PA,
                                 com.onndetect.domain.pipeline.DetectionPipeline.NEUTRAL_LIP_SYNC,
                                 com.onndetect.domain.pipeline.DetectionPipeline.NEUTRAL_JITTER

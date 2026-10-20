@@ -1,9 +1,21 @@
 """Canonical ten-signal feature extraction for fusion experiments.
 
 RGB resize/feature equations are versioned with the checkpoint and release.
-Features 6-9 use fixed unsupported placeholders; unverified provenance or
-temporal measurements are rejected. Python equations alone do not establish
-Android decoder parity.
+Slot 6 carries the measured semantic-probe score (Engine C, "Lite C") and is
+``NaN`` (unavailable) when no validated probe ran. Slots 7-9 keep fixed
+unsupported placeholders; unverified provenance or temporal measurements are
+rejected. Python equations alone do not establish Android decoder parity.
+
+Slot 6 history
+--------------
+The slot was reserved for a semantic vision backbone from the start
+(``train_xgboost_meta.py --semantic-tflite``) but was held at the neutral
+constant ``NEUTRAL_EXIF = 0.1`` because no second engine existed. A neutral
+constant is only honest while nothing is ever measured there: ``0.1`` reads
+as "low anomaly" to any tree that splits on it. Now that a real measurement
+can occupy the slot, "probe did not run" must be *unavailable* (``NaN``), not
+a plausible-looking number. The XGBoost tree learns a missing branch for
+that case and the Kotlin transpiler emits it.
 """
 
 import json
@@ -26,6 +38,12 @@ NEUTRAL_C2PA = 0.05
 NEUTRAL_LIP_SYNC = 0.9
 NEUTRAL_JITTER = 0.1
 
+# Fusion slot indices. Slot 6 is the optional semantic-probe measurement.
+SEMANTIC_PROBE_INDEX = 6
+# The only slot permitted to be NaN ("evidence unavailable"). Every other slot
+# must carry a finite measurement or a fixed compatibility constant.
+OPTIONAL_FEATURE_INDICES = (SEMANTIC_PROBE_INDEX,)
+
 DEFAULT_BASELINE = [
     0.005, 0.007, 0.012, 0.018, 0.025, 0.038, 0.055, 0.082, 0.120, 0.150,
     0.180,
@@ -35,7 +53,7 @@ DEFAULT_BASELINE = [
 FEATURE_NAMES = [
     "srm_score", "fft_score", "kl_score", "flatness_score",
     "resolution_norm", "is_compressed",
-    "exif_anomaly", "c2pa_present", "lip_sync_corr", "landmark_jitter"
+    "semantic_probe_score", "c2pa_present", "lip_sync_corr", "landmark_jitter"
 ]
 
 
@@ -210,11 +228,18 @@ def extract_visual_features(
     baseline: np.ndarray,
     provenance: dict | None = None,
     input_size: int = 32,
+    semantic_probe_score: float | None = None,
 ) -> np.ndarray:
     """Full canonical feature vector for one image file.
 
     ``provenance`` is reserved and rejects supplied measurements. Unsupported
     features stay at the fixed constants shared with the Android pipeline.
+
+    ``semantic_probe_score`` is the Engine C ("Lite C") measurement for slot 6.
+    ``None`` means the probe did not run and the slot is UNAVAILABLE, which
+    is encoded as ``NaN`` - never as a neutral constant. A neutral value
+    would be read by the fusion tree as "low anomaly" evidence that was
+    never measured.
     """
     from data.image_dataset import image_tensor
     import torch
@@ -236,14 +261,23 @@ def extract_visual_features(
     kscore, _ = kl_score(to_gray_u8(img), baseline)
     res_norm, comp = quality_features(img, img_path, decoded.source_size)
 
-    # Features 6-9 are FIXED unsupported neutral values, not measurements.
+    # Slot 6: measured semantic-probe score, or NaN when unavailable.
+    if semantic_probe_score is None:
+        probe = float("nan")
+    else:
+        probe = float(semantic_probe_score)
+        if not np.isfinite(probe):
+            raise ValueError("Semantic probe score must be finite when supplied")
+        if not 0.0 <= probe <= 1.0:
+            raise ValueError(f"Semantic probe score out of range: {probe}")
+
+    # Features 7-9 are FIXED unsupported neutral values, not measurements.
     prov = {}
-    exif_anomaly = float(prov.get("exif_anomaly", NEUTRAL_EXIF))
     c2pa_present = float(prov.get("c2pa_present", NEUTRAL_C2PA))
     lip_sync_corr = float(prov.get("lip_sync_corr", NEUTRAL_LIP_SYNC))
     landmark_jitter = float(prov.get("landmark_jitter", NEUTRAL_JITTER))
 
     return np.array([
         srm, fscore, kscore, flatness, res_norm, comp,
-        exif_anomaly, c2pa_present, lip_sync_corr, landmark_jitter
+        probe, c2pa_present, lip_sync_corr, landmark_jitter
     ], dtype=np.float32)

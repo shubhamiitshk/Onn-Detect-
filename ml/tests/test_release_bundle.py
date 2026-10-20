@@ -240,5 +240,102 @@ class ReleaseTests(unittest.TestCase):
             self.assertEqual((destination / 'old.txt').read_text(), 'old')
             self.assertEqual(source.read_text(), 'old code')
 
+class CascadeModelContractTests(unittest.TestCase):
+    """Engine C ("Lite C") is optional, but never half-verified.
+
+    A release may ship the second engine or not. When it does, it must clear
+    the same gates as the required models; when it does not, nothing about
+    the required models may change.
+    """
+
+    def _add_cascade(self, root, manifest, frontend=None, shape=(1, 224, 224, 3)):
+        name = next(iter(release_bundle.CASCADE_MODEL_NAMES))
+        path = root / 'models' / name
+        path.write_bytes(b'\0\0\0\0TFL3' + bytes(range(64)))
+        frontend_id = frontend or f'clip-appearance-bicubic{shape[1]}-clipnorm-meanstd-float32'
+        manifest['models'][name] = {'sha256': sha256_file(path), 'input_shape': list(shape),
+                                   'output_shape': [1, 1], 'dtype': 'FLOAT32', 'frontend_id': frontend_id}
+        manifest['calibration'][name] = {'model_hash': sha256_file(path), 'frontend_id': frontend_id,
+                                         'threshold': .5, 'auc': .85, 'n_calibration': 400,
+                                         'split_manifest_hash': 'a' * 64}
+        report_path = root / 'evaluation_report.json'
+        report = json.loads(report_path.read_text(encoding='utf-8'))
+        report['models'][name] = {'parity': {'passed': True},
+                                  'calibration': {'model_hash': sha256_file(path), 'frontend_id': frontend_id}}
+        report_path.write_text(json.dumps(report), encoding='utf-8')
+        manifest['evaluation_report_hash'] = sha256_file(report_path)
+        manifest['artifacts']['evaluation_report.json'] = sha256_file(report_path)
+        (root / 'constants/semantic_probe_threshold.json').write_text(
+            json.dumps({'threshold_at_eer': .5, 'auc': .85, 'n_calibration': 400,
+                        'split_manifest_hash': 'a' * 64, 'model_hash': sha256_file(path),
+                        'frontend_id': frontend_id}), encoding='utf-8')
+        (root / 'constants/cascade_policy.json').write_text(
+            json.dumps({'engine_a_threshold': .5, 'engine_c_threshold': .5,
+                        'escalate_below': .4, 'escalate_above': .6}), encoding='utf-8')
+        manifest['artifacts'] = {
+            path.relative_to(root).as_posix(): sha256_file(path)
+            for path in root.rglob('*') if path.is_file() and path.name != 'release_manifest.json'
+        }
+        (root / 'release_manifest.json').write_text(json.dumps(manifest), encoding='utf-8')
+        return manifest
+
+    def test_a_release_without_the_cascade_model_still_validates(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / 'bundle'
+            fixture(root)
+            manifest = release_bundle.validate_bundle(root)
+            self.assertNotIn(next(iter(release_bundle.CASCADE_MODEL_NAMES)), manifest['models'])
+
+    def test_a_complete_cascade_model_is_accepted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / 'bundle'
+            manifest = fixture(root)
+            self._add_cascade(root, manifest)
+            validated = release_bundle.validate_bundle(root)
+            self.assertIn(next(iter(release_bundle.CASCADE_MODEL_NAMES)), validated['models'])
+
+    def test_a_cascade_model_with_the_wrong_frontend_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / 'bundle'
+            manifest = fixture(root)
+            self._add_cascade(root, manifest, frontend='rgb-exif-srgb-whitealpha-pow2cap1024-bilinear-square-v2-size224-float32')
+            with self.assertRaises(ValueError):
+                release_bundle.validate_bundle(root)
+
+    def test_a_cascade_model_without_its_artifacts_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / 'bundle'
+            manifest = fixture(root)
+            self._add_cascade(root, manifest)
+            (root / 'constants/cascade_policy.json').unlink()
+            manifest['artifacts'].pop('constants/cascade_policy.json', None)
+            (root / 'release_manifest.json').write_text(json.dumps(manifest), encoding='utf-8')
+            with self.assertRaises(ValueError):
+                release_bundle.validate_bundle(root)
+
+    def test_a_cascade_model_at_or_below_chance_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / 'bundle'
+            manifest = fixture(root)
+            self._add_cascade(root, manifest)
+            name = next(iter(release_bundle.CASCADE_MODEL_NAMES))
+            manifest['calibration'][name]['auc'] = 0.5
+            (root / 'release_manifest.json').write_text(json.dumps(manifest), encoding='utf-8')
+            with self.assertRaises(ValueError):
+                release_bundle.validate_bundle(root)
+
+    def test_an_unexpected_model_contract_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / 'bundle'
+            manifest = fixture(root)
+            manifest['models']['not_a_real_model.tflite'] = {
+                'sha256': 'a' * 64, 'input_shape': [1, 32, 32, 3], 'output_shape': [1, 1],
+                'dtype': 'FLOAT32', 'frontend_id': 'x'}
+            (root / 'release_manifest.json').write_text(json.dumps(manifest), encoding='utf-8')
+            with self.assertRaises(ValueError):
+                release_bundle.validate_bundle(root)
+
+
 if __name__ == '__main__':
     unittest.main()
+

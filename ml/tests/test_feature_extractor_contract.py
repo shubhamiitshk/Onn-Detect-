@@ -116,9 +116,54 @@ class FeatureVectorContractTest(unittest.TestCase):
     def test_feature_names_match_the_android_order(self):
         self.assertEqual(fx.FEATURE_NAMES, [
             "srm_score", "fft_score", "kl_score", "flatness_score",
-            "resolution_norm", "is_compressed", "exif_anomaly", "c2pa_present",
+            "resolution_norm", "is_compressed", "semantic_probe_score", "c2pa_present",
             "lip_sync_corr", "landmark_jitter",
         ])
+
+    def test_semantic_probe_slot_is_the_only_optional_slot(self):
+        """Only slot 6 may be unavailable; every other slot must be finite."""
+        self.assertEqual(fx.OPTIONAL_FEATURE_INDICES, (fx.SEMANTIC_PROBE_INDEX,))
+        self.assertEqual(fx.FEATURE_NAMES[fx.SEMANTIC_PROBE_INDEX], "semantic_probe_score")
+
+
+class SemanticProbeSlotTest(unittest.TestCase):
+    """Slot 6 carries a real measurement or is UNAVAILABLE - never a neutral.
+
+    A neutral constant (0.1) is indistinguishable from "low anomaly" to a
+    tree that splits on it, so it must never stand in for a probe that did
+    not run.
+    """
+
+    def test_absent_probe_is_nan_not_a_neutral_constant(self):
+        from meta_classifier.dual_engine import assemble_features
+
+        vector = assemble_features(
+            srm_score=0.4, fft_score=0.2, kl_score=0.1, flatness_score=0.3,
+            resolution_norm=0.5, is_compressed=True, semantic_probe_score=None,
+        )
+        self.assertTrue(np.isnan(vector[fx.SEMANTIC_PROBE_INDEX]))
+        self.assertFalse(np.isnan(vector[0]))
+        self.assertTrue(np.isfinite(vector[[i for i in range(10) if i != fx.SEMANTIC_PROBE_INDEX]]).all())
+
+    def test_present_probe_lands_in_slot_six(self):
+        from meta_classifier.dual_engine import assemble_features
+
+        vector = assemble_features(
+            srm_score=0.4, fft_score=0.2, kl_score=0.1, flatness_score=0.3,
+            resolution_norm=0.5, is_compressed=True, semantic_probe_score=0.87,
+        )
+        self.assertAlmostEqual(float(vector[fx.SEMANTIC_PROBE_INDEX]), 0.87, places=6)
+        self.assertTrue(np.isfinite(vector).all())
+
+    def test_out_of_range_probe_score_is_rejected(self):
+        from meta_classifier.dual_engine import assemble_features
+
+        with self.assertRaises(ValueError):
+            assemble_features(
+                srm_score=0.4, fft_score=0.2, kl_score=0.1, flatness_score=0.3,
+                resolution_norm=0.5, is_compressed=True, semantic_probe_score=1.5,
+            )
+
 
 
 if __name__ == "__main__":

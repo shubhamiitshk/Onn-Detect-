@@ -11,8 +11,12 @@ Upgrades over baseline:
    evaluates the transpiled booster so container/dimension shortcuts can never
    hide a weak visual detector.
 3. Optional Semantic Vision Probe integration (`--semantic-tflite`):
-   Allows injecting a frozen vision-tower probe or distilled student TFLite
-   into slot 6 (`exif_anomaly`, otherwise held at neutral 0.1).
+   Injects Engine C ("Lite C") into slot 6 (`semantic_probe_score`).
+4. Optional cascade-mask training (`--cascade-mask-rate`):
+   Trains the booster on a mixture of probe-present and probe-unavailable rows
+   so the tree learns a real *missing branch* for slot 6. Without this, a
+   deployment where the probe did not run would feed a constant into a branch
+   that was never trained for it.
 """
 
 import io
@@ -36,8 +40,11 @@ from PIL import Image
 from sklearn.metrics import accuracy_score, roc_auc_score
 
 from models.srm_forensic_cnn import SRMForensicCNN
+from validate_export import _run_tflite
 from meta_classifier.feature_extractor import (
     FEATURE_NAMES,
+    OPTIONAL_FEATURE_INDICES,
+    SEMANTIC_PROBE_INDEX,
     calibrate_baseline,
     extract_visual_features,
     load_baseline,
@@ -46,6 +53,7 @@ from meta_classifier.feature_extractor import (
 SHORTCUT_FEATURE_INDICES = (4, 5)  # 4: resolution_norm, 5: is_compressed
 NEUTRAL_RESOLUTION_NORM = 0.5
 NEUTRAL_IS_COMPRESSED = 1.0
+
 
 # ---------------------------------------------------------------------------
 # Kotlin export
@@ -107,9 +115,16 @@ def _emit_kotlin(nodes: dict, nid: int, indent: str, out: list):
 
 def export_to_kotlin(booster: xgb.Booster, feature_names: list[str], output_path: str,
                      intercept: float = 0.0, release_id: str = "unvalidated") -> None:
-    """Export trees as valid Kotlin if/else inference code (real newlines!)."""
+    """Export trees as valid Kotlin if/else inference code (real newlines!).
+
+    Slot 6 (``semantic_probe_score``) is an OPTIONAL measurement: it is NaN
+    when Engine C did not run. Every other slot must be finite. The generated
+    guard therefore permits NaN in the optional slots only, and the emitted
+    comparison operators carry the learned missing branch.
+    """
     dumps = booster.get_dump(dump_format="json")
     n_features = len(feature_names)
+    optional = sorted(OPTIONAL_FEATURE_INDICES)
 
     tokens = [f"{i} {name}" for i, name in enumerate(feature_names)]
     doc_lines, cur = [], ""
@@ -122,6 +137,16 @@ def export_to_kotlin(booster: xgb.Booster, feature_names: list[str], output_path
             cur += piece
     if cur:
         doc_lines.append(f" *   {cur}")
+
+    if optional:
+        optional_list = ", ".join(str(index) for index in optional)
+        guard = (
+            f'        require(features.withIndex().all {{ (i, v) -> '
+            f'(i in listOf({optional_list})) || v.isFinite() }}) '
+            f'{{ "Non-finite feature outside the optional slot" }}'
+        )
+    else:
+        guard = '        require(features.all { it.isFinite() }) { "Non-finite features" }'
 
     lines = [
         "package com.onndetect.detection.fusion",
@@ -139,7 +164,7 @@ def export_to_kotlin(booster: xgb.Booster, feature_names: list[str], output_path
         "    /** @return P(AI-generated) in [0,1]. */",
         "    fun predict(features: FloatArray): Float {",
         f'        require(features.size == {n_features}) {{ "Feature schema mismatch" }}',
-        '        require(features.all { it.isFinite() }) { "Non-finite features" }',
+        guard,
         f"        var margin = {repr(float(intercept))}f",
     ]
 
@@ -246,9 +271,17 @@ def extract_laundered_features(
     input_size: int,
     max_side: int = 512,
     jpeg_quality: int = 85,
+    semantic_tflite: str | None = None,
+    semantic_input_size: int = 224,
 ) -> np.ndarray:
-    """Re-encode every sample to uniform JPEG (max_side, jpeg_quality) and extract features."""
-    from data.image_frontend import decode_image
+    """Re-encode every sample to uniform JPEG (max_side, jpeg_quality) and extract features.
+
+    When Engine C is part of the release it must also be measured on the
+    LAUNDERED image, not on the original. Scoring the original would hide a
+    probe that cannot survive re-encoding - exactly the property this
+    evaluation exists to test.
+    """
+    from data.image_frontend import decode_image, semantic_image_tensor
 
     rows = []
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -263,7 +296,15 @@ def extract_laundered_features(
                     Image.Resampling.BILINEAR,
                 )
             decoded.convert("RGB").save(tmp_path, format="JPEG", quality=jpeg_quality)
-            rows.append(extract_visual_features(str(tmp_path), model, torch.device("cpu"), baseline, input_size=input_size))
+            vec = extract_visual_features(str(tmp_path), model, torch.device("cpu"), baseline, input_size=input_size)
+            if semantic_tflite:
+                laundered = decode_image(str(tmp_path)).image
+                sem_t = np.transpose(
+                    semantic_image_tensor(laundered, semantic_input_size).unsqueeze(0).numpy(),
+                    (0, 2, 3, 1),
+                )
+                vec[SEMANTIC_PROBE_INDEX] = float(_run_tflite(semantic_tflite, sem_t))
+            rows.append(vec)
     return np.stack(rows).astype(np.float32)
 
 
@@ -287,7 +328,29 @@ def main():
     parser.add_argument("--config", default=str(Path(SCRIPT_DIR).parent / "configs" / "xgboost_meta.yaml"))
     parser.add_argument("--visual-checkpoint", required=True)
     parser.add_argument("--visual-tflite", required=True)
-    parser.add_argument("--semantic-tflite", default=None, help="Optional INT8 semantic vision backbone/probe TFLite to populate slot 6")
+    parser.add_argument(
+        "--semantic-tflite",
+        default=None,
+        help="Optional INT8 Engine C ('Lite C') appearance probe TFLite that populates slot 6",
+    )
+    parser.add_argument(
+        "--semantic-input-size",
+        type=int,
+        default=224,
+        help="Square input size for the Engine C probe (bicubic + CLIP normalization)",
+    )
+    parser.add_argument(
+        "--cascade-mask-rate",
+        type=float,
+        default=None,
+        help=(
+            "Fraction of training rows whose slot 6 is masked to NaN so the tree "
+            "learns a real missing branch for a probe that did not run. "
+            "Default: 0.25 when --semantic-tflite is supplied, else 0.0. A model "
+            "trained without any masked rows has no meaningful probe-free path, "
+            "so the 'Engine A alone' comparison would be an artefact."
+        ),
+    )
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--release-id", required=True)
     parser.add_argument("--test-samples", type=int, default=None)
@@ -357,23 +420,30 @@ def main():
             try:
                 vec = extract_visual_features(str(path), model, torch.device("cpu"), baseline, input_size=size)
                 if args.semantic_tflite:
-                    from data.image_dataset import image_tensor
-                    from data.image_frontend import decode_image
+                    from data.image_frontend import decode_image, semantic_image_tensor
                     sem_img = decode_image(str(path)).image
-                    sem_t = np.transpose(image_tensor(sem_img, 224).unsqueeze(0).numpy(), (0, 2, 3, 1))
-                    vec[6] = float(_run_tflite(args.semantic_tflite, sem_t))
+                    sem_t = np.transpose(
+                        semantic_image_tensor(sem_img, args.semantic_input_size).unsqueeze(0).numpy(),
+                        (0, 2, 3, 1),
+                    )
+                    vec[SEMANTIC_PROBE_INDEX] = float(_run_tflite(args.semantic_tflite, sem_t))
                 rows.append(vec)
             except Exception as exc:
                 raise ValueError(f"Unusable visual evidence for {path.relative_to(root).as_posix()}: {exc}") from exc
         X = np.stack(rows)
-        if not np.isfinite(X).all():
+        if not np.isfinite(X[:, [i for i in range(X.shape[1]) if i not in OPTIONAL_FEATURE_INDICES]]).all():
             raise ValueError("Non-finite features; no silently dropped samples")
         cache["X_" + split] = X
         cache["y_" + split] = np.asarray([label for _, label in samples], dtype=np.int64)
         cache["ids_" + split] = np.asarray([path.relative_to(root).as_posix() for path, _ in samples])
 
     # Extract laundered test features (512px, JPEG Q85) to verify content-only generalization
-    X_test_laundered = extract_laundered_features(split_samples["test"], model, baseline, input_size=size)
+    X_test_laundered = extract_laundered_features(
+        split_samples["test"], model, baseline, input_size=size,
+        semantic_tflite=args.semantic_tflite,
+        semantic_input_size=args.semantic_input_size,
+    )
+
     cache["X_test_laundered_512_q85"] = X_test_laundered
     cache["identity_json"] = np.asarray(json.dumps(identity, sort_keys=True))
     np.savez_compressed(output / "meta_features_cache.npz", **cache)
@@ -383,6 +453,30 @@ def main():
     X_val = neutralize_shortcuts(cache["X_fusion_val"]) if block_shortcuts else cache["X_fusion_val"]
     y_val = cache["y_fusion_val"]
     X_cal = neutralize_shortcuts(cache["X_calibration"]) if block_shortcuts else cache["X_calibration"]
+
+    # -------------------------------------------------------------------------
+    # Cascade-mask training
+    # -------------------------------------------------------------------------
+    # When Engine C may be unavailable at runtime, the tree must have learned
+    # what to do with a missing slot 6. Masking a deterministic subset of the
+    # training rows teaches the missing branch; without it, a probe-free
+    # deployment would feed a value into a branch that never saw one.
+    cascade_mask_rate = float(
+        args.cascade_mask_rate
+        if args.cascade_mask_rate is not None
+        else (0.25 if args.semantic_tflite else 0.0)
+    )
+    if not 0.0 <= cascade_mask_rate < 1.0:
+        raise ValueError("cascade-mask-rate must be in [0, 1)")
+    if cascade_mask_rate > 0.0 and args.semantic_tflite is None:
+        raise ValueError("cascade-mask-rate requires --semantic-tflite")
+    if cascade_mask_rate > 0.0:
+        rng = np.random.default_rng(42)
+        mask = rng.random(len(X_train)) < cascade_mask_rate
+        X_train = X_train.copy()
+        X_train[mask, SEMANTIC_PROBE_INDEX] = np.nan
+        print(f"[Cascade] Masked slot 6 to NaN on {int(mask.sum())}/{len(mask)} training rows "
+              f"({cascade_mask_rate:.0%}) so the tree learns a real probe-free path")
 
     cfg = config["training"]
     params = {
@@ -419,11 +513,62 @@ def main():
     if not validate_export(booster, missing_probe, FEATURE_NAMES, intercept):
         raise ValueError("Missing-branch parity failed")
 
+    # The optional slot must also survive a fully NaN slot: that is exactly
+    # what the Android pipeline sends when Engine C did not run.
+    if SEMANTIC_PROBE_INDEX in OPTIONAL_FEATURE_INDICES:
+        optional_missing = X_val[:64].copy()
+        optional_missing[:, SEMANTIC_PROBE_INDEX] = np.nan
+        if not validate_export(booster, optional_missing, FEATURE_NAMES, intercept):
+            raise ValueError("Optional-slot missing-branch parity failed")
+
     cal = booster.predict(xgb.DMatrix(X_cal, feature_names=FEATURE_NAMES))
     _, threshold = eer_operating_threshold(cache["y_calibration"], cal)
     cal_auc = float(compute_auc(cache["y_calibration"], cal))
     if cal_auc <= 0.5:
         raise ValueError("Fusion calibration at/below chance; refuse release")
+
+    # â”€â”€ Cascade policy â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # The arbitration policy needs the FUSION score, so it can only be fitted
+    # once the booster exists. It is fitted on the CALIBRATION split and
+    # frozen into the release exactly like the fusion threshold. A policy
+    # fitted against a placeholder score would describe a system that does
+    # not exist.
+    cascade_artifacts: dict[str, str] = {}
+    if args.semantic_tflite:
+        from meta_classifier.dual_engine import fit_escalation_band
+        from training.metrics import eer_operating_threshold as _eer
+
+        probe_cal = cache["X_calibration"][:, SEMANTIC_PROBE_INDEX]
+        _, probe_threshold = _eer(cache["y_calibration"], probe_cal)
+        policy, pareto = fit_escalation_band(
+            cal, probe_cal, cache["y_calibration"],
+            engine_a_threshold=float(threshold),
+            engine_c_threshold=float(probe_threshold),
+        )
+        policy.release_id = args.release_id
+        (output / "cascade_policy.json").write_text(json.dumps(policy.to_dict(), indent=2), encoding="utf-8")
+        (output / "cascade_pareto.json").write_text(json.dumps(pareto, indent=2), encoding="utf-8")
+
+        probe_calibration = {
+            "threshold_at_eer": float(probe_threshold),
+            "auc": float(compute_auc(cache["y_calibration"], probe_cal)),
+            "n_calibration": len(cache["y_calibration"]),
+            "split_manifest_hash": provenance["manifest_sha256"],
+            "model_hash": sha256_file(args.semantic_tflite),
+            "frontend_id": f"clip-appearance-bicubic{args.semantic_input_size}-clipnorm-meanstd-float32",
+            "score_semantics": {"model_output": "P(synthetic) in [0,1]", "real_label": 0, "synthetic_label": 1},
+            "calibration_split": "calibration",
+            "engine": "C_semantic",
+        }
+        (output / "semantic_probe_threshold.json").write_text(
+            json.dumps(probe_calibration, indent=2), encoding="utf-8")
+        cascade_artifacts = {
+            "constants/cascade_policy.json": sha256_file(output / "cascade_policy.json"),
+            "constants/semantic_probe_threshold.json": sha256_file(output / "semantic_probe_threshold.json"),
+        }
+        print(f"[Cascade] Policy fitted on calibration: band=[{policy.escalate_below:.4f}, "
+              f"{policy.escalate_above:.4f}] coverage={policy.coverage:.3f} "
+              f"agreement={policy.agreement_rate:.3f}")
 
     test = booster.predict(xgb.DMatrix(cache["X_test"], feature_names=FEATURE_NAMES))
     test_laundered = booster.predict(xgb.DMatrix(X_test_laundered, feature_names=FEATURE_NAMES))
@@ -461,6 +606,15 @@ def main():
         "n_trees": booster.num_boosted_rounds(),
         "model_hash": model_hash,
         "kotlin_hash": sha256_file(kt),
+        "dual_engine": {
+            "engine_c_tflite": args.semantic_tflite,
+            "engine_c_sha256": sha256_file(args.semantic_tflite) if args.semantic_tflite else None,
+            "engine_c_input_size": args.semantic_input_size if args.semantic_tflite else None,
+            "semantic_probe_feature_index": SEMANTIC_PROBE_INDEX,
+            "optional_feature_indices": list(OPTIONAL_FEATURE_INDICES),
+            "cascade_mask_rate": cascade_mask_rate,
+            "cascade_artifacts": cascade_artifacts,
+        },
         "calibration": {
             "threshold": threshold,
             "auc": cal_auc,
