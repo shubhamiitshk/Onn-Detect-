@@ -74,7 +74,7 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = hiltView
             subtitle = stringResource(R.string.image_subtitle),
             accentGradient = Brush.horizontalGradient(listOf(CyberCyan, DeepIndigo)),
             iconSymbol = "📷",
-            badges = listOf("16-ch SRM+NPR", "2D FFT", "KL Divergence"),
+            badges = listOf("Dual-Engine v6", "20-ch Hybrid", "SigLIP Probe", "FFT & KL"),
             enabled = readiness.image == true,
             onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
         )
@@ -109,8 +109,9 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = hiltView
                 containerColor = SurfaceCard,
                 contentColor = TextPrimary
             ),
-            border = ButtonDefaults.outlinedButtonBorder.copy(
-                brush = Brush.horizontalGradient(listOf(BorderSubtle, BorderLight))
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp,
+                Brush.horizontalGradient(listOf(BorderSubtle, BorderLight))
             ),
             modifier = Modifier
                 .fillMaxWidth()
@@ -202,8 +203,8 @@ private fun EngineStatusBanner(modelsVerified: Boolean?) {
         true -> Quadruple(
             AuthenticGreen,
             AuthenticGreenContainer.copy(alpha = 0.35f),
-            "Engine Ready (onn-20261019-v4)",
-            "16-Channel SRM+NPR Visual • LCNN Audio • Shortcut-Free XGBoost"
+            "Dual-Engine Active (onn-20261020-v6)",
+            "Engine A 20-ch Hybrid • Engine C SigLIP Probe • Cascade Fusion"
         )
         false -> Quadruple(
             SyntheticRed,

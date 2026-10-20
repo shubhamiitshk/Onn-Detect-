@@ -151,8 +151,9 @@ fun ScannerScreen(
                     containerColor = SurfaceElevated,
                     contentColor = SyntheticRed
                 ),
-                border = ButtonDefaults.outlinedButtonBorder.copy(
-                    brush = androidx.compose.ui.graphics.SolidColor(SyntheticRed.copy(alpha = 0.4f))
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    androidx.compose.ui.graphics.SolidColor(SyntheticRed.copy(alpha = 0.4f))
                 ),
                 modifier = Modifier
                     .fillMaxWidth()

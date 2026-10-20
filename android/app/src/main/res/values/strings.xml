@@ -21,7 +21,9 @@
     <string name="detector_score_value">Detector score: %1$.3f</string>
     <string name="score_notice">Diagnostic score, not a calibrated probability or proof of origin.</string>
     <string name="signals_title">Evaluated signals</string>
+    <string name="signal_semantic">Semantic appearance probe</string>
     <string name="signal_srm">Image residual model</string>
+    <string name="dual_engine_title">Dual-engine cascade</string>
     <string name="signal_fft">Spectral slope diagnostic</string>
     <string name="signal_kl">Co-occurrence diagnostic</string>
     <string name="signal_audio">Speech model</string>

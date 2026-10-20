@@ -155,8 +155,18 @@ fun AssessmentDetails(
     }
     ConfidenceMeter(score = e.score, threshold = threshold)
 
-    // 3. Multi-Signal Decomposition
+    // 2.5. Dual-Engine Cascade Telemetry Card (When visual dual-engine ran)
     val decodedSignals = remember(e.signalsJson) { SignalBreakdownJson.decode(e.signalsJson) }
+    if (decodedSignals != null && decodedSignals.mobileClipScore.isFinite() && decodedSignals.mobileClipScore >= 0f) {
+        DualEngineCascadeCard(
+            engineAScore = decodedSignals.srmForensicScore,
+            engineCScore = decodedSignals.mobileClipScore,
+            arbitratedScore = e.score,
+            reason = e.reason
+        )
+    }
+
+    // 3. Multi-Signal Decomposition
     decodedSignals?.let {
         SignalBreakdownCard(signals = it)
     }
@@ -212,7 +222,7 @@ fun AssessmentDetails(
 
 @Composable
 private fun EvidenceMetadataCard(e: ScanHistoryEntity, evidence: JSONObject) {
-    val modelVersion = evidence.optString("modelVersion", "onn-20261019-v4")
+    val modelVersion = evidence.optString("modelVersion", "onn-20261020-v6")
     val minEdge = evidence.optInt("resolutionMinEdge", 0)
     val isBlurry = evidence.optBoolean("blurry", false)
     val isDark = evidence.optBoolean("dark", false)
@@ -444,6 +454,218 @@ private fun ResultTopBar(onBackClick: () -> Unit) {
                 style = MaterialTheme.typography.bodySmall,
                 color = TextTertiary
             )
+        }
+    }
+}
+
+@Composable
+fun DualEngineCascadeCard(
+    engineAScore: Float,
+    engineCScore: Float,
+    arbitratedScore: Float,
+    reason: String?,
+    modifier: Modifier = Modifier
+) {
+    if (!engineAScore.isFinite() || !engineCScore.isFinite()) return
+
+    val aSaysFake = engineAScore >= 0.512f
+    val cSaysFake = engineCScore >= 0.520f
+    val inAmbiguityBand = engineCScore in 0.168f..0.871f
+    val isAgreement = aSaysFake == cSaysFake
+
+    val (badgeText, badgeColor, badgeDesc) = when {
+        inAmbiguityBand && isAgreement -> Triple(
+            "ARBITRATED AGREEMENT",
+            AuthenticGreen,
+            "Ambiguity band arbitrated: Engine A & Engine C concordantly confirm verdict."
+        )
+        inAmbiguityBand && !isAgreement -> Triple(
+            "DISAGREEMENT (INCONCLUSIVE)",
+            WarningAmber,
+            "Engine C ambiguous and Engine A contradicts: honest abstention applied."
+        )
+        else -> Triple(
+            if (cSaysFake) "SYNTHETIC CONCURRENCE" else "AUTHENTIC CONCURRENCE",
+            if (cSaysFake) SyntheticRed else AuthenticGreen,
+            "Engine C confident semantic measurement with dual-engine feature alignment."
+        )
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(SurfaceCard)
+            .border(1.dp, BorderCyanGlow, RoundedCornerShape(20.dp))
+            .padding(20.dp)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            // Header Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("⚡", fontSize = 16.sp)
+                    Text(
+                        text = "DUAL-ENGINE CASCADE",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = TextPrimary,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(CyberCyan.copy(alpha = 0.15f))
+                        .border(1.dp, CyberCyan.copy(alpha = 0.3f), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = "onn-20261020-v6",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = CyberCyan,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            // Dual Engine Progress Columns
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Engine A Card
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(SurfaceElevated)
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "ENGINE A",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = CyberCyan,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = String.format("%.3f", engineAScore),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = TextPrimary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Text(
+                        text = "20-ch SRM+NPR+RGB",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextTertiary,
+                        fontSize = 10.sp
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(4.dp)
+                            .clip(CircleShape)
+                            .background(SurfaceHighlight)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(engineAScore.coerceIn(0f, 1f))
+                                .fillMaxHeight()
+                                .clip(CircleShape)
+                                .background(if (engineAScore >= 0.512f) SyntheticRed else AuthenticGreen)
+                        )
+                    }
+                }
+
+                // Engine C Card
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(SurfaceElevated)
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "ENGINE C",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = NeonPurple,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = String.format("%.3f", engineCScore),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = TextPrimary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Text(
+                        text = "SigLIP Appearance CNN",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextTertiary,
+                        fontSize = 10.sp
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(4.dp)
+                            .clip(CircleShape)
+                            .background(SurfaceHighlight)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(engineCScore.coerceIn(0f, 1f))
+                                .fillMaxHeight()
+                                .clip(CircleShape)
+                                .background(if (engineCScore >= 0.520f) SyntheticRed else AuthenticGreen)
+                        )
+                    }
+                }
+            }
+
+            // Arbitration Badge & Telemetry
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(badgeColor.copy(alpha = 0.12f))
+                    .border(1.dp, badgeColor.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
+                    .padding(12.dp)
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = badgeText,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = badgeColor,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = reason ?: badgeDesc,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary,
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp
+                    )
+                }
+            }
         }
     }
 }

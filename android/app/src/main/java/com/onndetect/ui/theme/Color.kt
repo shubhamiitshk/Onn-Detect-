@@ -17,6 +17,11 @@ val ElectricBlue = Color(0xFF2979FF)
 val NeonPurple = Color(0xFFA855F7)
 val NeonPurpleLight = Color(0xFFC084FC)
 
+// Dual-Engine Branding Accents
+val EngineAColor = CyberCyan
+val EngineCColor = NeonPurple
+val CascadeArbitratedGlow = Color(0x3300E5FF)
+
 // Semantic Verdict Triad - Authentic, Synthetic, Inconclusive
 val AuthenticGreen = Color(0xFF10B981)
 val AuthenticGreenLight = Color(0xFF34D399)

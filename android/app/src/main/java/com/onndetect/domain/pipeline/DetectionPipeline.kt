@@ -114,15 +114,15 @@ class DetectionPipeline @Inject constructor(
             checkStop()
             var srm = -1f
             if (budget != DegradationLevel.MATH_ONLY) {
-                emit(ScanProgress("Image model diagnostics...", 20f))
+                emit(ScanProgress("Decomposing 20-ch high-pass residuals…", 20f))
                 srm = srmAnalyzer.analyze(bitmap, checkStop)
                 signals = signals.copy(srmForensicScore = srm)
             }
-            emit(ScanProgress("Spectral descriptors...", 45f))
+            emit(ScanProgress("2D FFT power spectrum & radial slope…", 45f))
             val spectral = fftAnalyzer.analyze(bitmap, checkStop)
             signals = signals.copy(fftSpectralScore = spectral.score)
             checkStop()
-            emit(ScanProgress("Pixel difference descriptors...", 65f))
+            emit(ScanProgress("Pixel difference co-occurrence matrix…", 65f))
             val kl = klAnalyzer.analyze(bitmap)
             signals = signals.copy(klDivergenceScore = kl)
             checkStop()
@@ -151,9 +151,13 @@ class DetectionPipeline @Inject constructor(
             var engineCScore: Float? = null
             if (budget == DegradationLevel.FULL && report.cascadeValidated) {
                 checkStop()
-                emit(ScanProgress("Semantic engine...", 78f))
+                emit(ScanProgress("Evaluating Engine C SigLIP appearance probe…", 78f))
                 engineCScore = semanticProbe.analyze(bitmap, checkStop)
                 checkStop()
+                val score = engineCScore
+                if (score != null && score.isFinite()) {
+                    signals = signals.copy(mobileClipScore = score)
+                }
             }
 
             val features = floatArrayOf(srm, spectral.score, kl, spectral.spectralFlatness,
@@ -174,6 +178,7 @@ class DetectionPipeline @Inject constructor(
             val decision: CascadeDecision
             val decisionThreshold: Float
             if (policy != null && engineCScore != null) {
+                emit(ScanProgress("Arbitrating dual-engine cascade…", 90f))
                 decision = policy.decide(fusedScore, engineCScore)
                 // The cascade always reports Engine C's score, so Engine C's
                 // operating point is always the matching threshold.

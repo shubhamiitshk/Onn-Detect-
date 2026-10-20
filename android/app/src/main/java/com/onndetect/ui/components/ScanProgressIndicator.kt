@@ -108,7 +108,7 @@ fun ForensicRadarVisualization(modifier: Modifier = Modifier) {
         initialValue = 0f,
         targetValue = 360f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 2400, easing = LinearEasing),
+            animation = tween(durationMillis = 2200, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
         ),
         label = "RadarRotation"
@@ -117,27 +117,54 @@ fun ForensicRadarVisualization(modifier: Modifier = Modifier) {
     // Pulsing alpha for concentric rings
     val pulseAlpha by infiniteTransition.animateFloat(
         initialValue = 0.25f,
-        targetValue = 0.65f,
+        targetValue = 0.75f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1200, easing = FastOutSlowInEasing),
+            animation = tween(durationMillis = 1100, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "RadarPulse"
     )
 
+    // Forensic blip blink alpha
+    val blipAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.1f,
+        targetValue = 0.9f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 800, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "BlipPulse"
+    )
+
     Box(
         contentAlignment = Alignment.Center,
         modifier = modifier
-            .size(150.dp)
+            .size(160.dp)
             .clip(CircleShape)
             .background(SurfaceElevated)
-            .border(1.5.dp, BorderSubtle, CircleShape)
+            .border(1.5.dp, BorderCyanGlow, CircleShape)
     ) {
-        Canvas(modifier = Modifier.size(140.dp)) {
+        Canvas(modifier = Modifier.size(150.dp)) {
             val center = Offset(size.width / 2, size.height / 2)
             val maxRadius = size.minDimension / 2
 
-            // Concentric rings
+            // Sweeping radar fan trail (arc)
+            drawArc(
+                brush = Brush.sweepGradient(
+                    0.0f to Color.Transparent,
+                    0.85f to Color.Transparent,
+                    0.95f to CyberCyan.copy(alpha = 0.12f),
+                    1.0f to CyberCyan.copy(alpha = 0.35f),
+                    center = center
+                ),
+                startAngle = rotation - 45f,
+                sweepAngle = 45f,
+                useCenter = true,
+                topLeft = Offset(center.x - maxRadius, center.y - maxRadius),
+                size = androidx.compose.ui.geometry.Size(maxRadius * 2, maxRadius * 2)
+            )
+
+            // Concentric range rings
             drawCircle(
                 color = CyberCyan.copy(alpha = 0.15f),
                 radius = maxRadius * 0.35f,
@@ -145,8 +172,8 @@ fun ForensicRadarVisualization(modifier: Modifier = Modifier) {
                 style = Stroke(width = 1.dp.toPx())
             )
             drawCircle(
-                color = CyberCyan.copy(alpha = 0.25f),
-                radius = maxRadius * 0.70f,
+                color = NeonPurple.copy(alpha = 0.20f),
+                radius = maxRadius * 0.68f,
                 center = center,
                 style = Stroke(width = 1.dp.toPx())
             )
@@ -157,7 +184,7 @@ fun ForensicRadarVisualization(modifier: Modifier = Modifier) {
                 style = Stroke(width = 1.5.dp.toPx())
             )
 
-            // Crosshair lines
+            // Crosshairs
             drawLine(
                 color = BorderLight,
                 start = Offset(center.x, center.y - maxRadius),
@@ -171,14 +198,20 @@ fun ForensicRadarVisualization(modifier: Modifier = Modifier) {
                 strokeWidth = 1.dp.toPx()
             )
 
-            // Sweeping radar beam
+            // Simulated forensic telemetry blips
+            val blip1 = Offset(center.x + maxRadius * 0.45f, center.y - maxRadius * 0.30f)
+            val blip2 = Offset(center.x - maxRadius * 0.50f, center.y + maxRadius * 0.40f)
+            drawCircle(color = CyberCyan.copy(alpha = blipAlpha), radius = 3.dp.toPx(), center = blip1)
+            drawCircle(color = NeonPurple.copy(alpha = 1f - blipAlpha), radius = 2.5.dp.toPx(), center = blip2)
+
+            // Sweeping lead beam line
             val angleRad = Math.toRadians(rotation.toDouble())
             val targetX = center.x + (maxRadius * 0.95f * cos(angleRad)).toFloat()
             val targetY = center.y + (maxRadius * 0.95f * sin(angleRad)).toFloat()
 
             drawLine(
                 brush = Brush.linearGradient(
-                    colors = listOf(CyberCyan, CyberCyan.copy(alpha = 0.0f)),
+                    colors = listOf(CyberCyan, CyberCyanLight),
                     start = center,
                     end = Offset(targetX, targetY)
                 ),
@@ -187,10 +220,10 @@ fun ForensicRadarVisualization(modifier: Modifier = Modifier) {
                 strokeWidth = 2.5.dp.toPx()
             )
 
-            // Center glowing dot
+            // Center glowing core dot
             drawCircle(
-                color = CyberCyan,
-                radius = 3.5.dp.toPx(),
+                color = CyberCyanLight,
+                radius = 4.dp.toPx(),
                 center = center
             )
         }

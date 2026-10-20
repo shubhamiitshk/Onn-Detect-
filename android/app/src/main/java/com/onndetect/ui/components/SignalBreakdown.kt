@@ -33,7 +33,8 @@ data class SignalMeta(
 @Composable
 fun SignalBreakdownCard(signals: SignalBreakdown, modifier: Modifier = Modifier) {
     val signalList = listOf(
-        SignalMeta(R.string.signal_srm, "16-ch SRM+NPR noise residuals", "RESIDUAL", signals.srmForensicScore),
+        SignalMeta(R.string.signal_semantic, "Engine C SigLIP appearance CNN", "SEMANTIC", signals.mobileClipScore),
+        SignalMeta(R.string.signal_srm, "Engine A 20-ch SRM+NPR+RGB hybrid", "RESIDUAL", signals.srmForensicScore),
         SignalMeta(R.string.signal_fft, "2D power spectrum radial slope", "SPECTRAL", signals.fftSpectralScore),
         SignalMeta(R.string.signal_kl, "Pixel co-occurrence divergence", "CO-OCCURRENCE", signals.klDivergenceScore),
         SignalMeta(R.string.signal_audio, "LFCC 16kHz speech model", "ACOUSTIC", signals.audioModelScore),
@@ -110,16 +111,43 @@ private fun SignalRow(meta: SignalMeta) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = stringResource(meta.titleRes),
-                    style = MaterialTheme.typography.titleSmall,
-                    color = TextPrimary,
-                    fontWeight = FontWeight.Medium
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    val tagColor = when (meta.tag) {
+                        "SEMANTIC" -> NeonPurple
+                        "RESIDUAL" -> CyberCyan
+                        "SPECTRAL" -> ElectricBlue
+                        "CO-OCCURRENCE" -> CyberCyanDark
+                        else -> TextTertiary
+                    }
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(tagColor.copy(alpha = 0.15f))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = meta.tag,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = tagColor,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 9.sp
+                        )
+                    }
+                    Text(
+                        text = stringResource(meta.titleRes),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = TextPrimary,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
                 Text(
                     text = meta.subtitle,
                     style = MaterialTheme.typography.bodySmall,
-                    color = TextTertiary
+                    color = TextTertiary,
+                    modifier = Modifier.padding(top = 2.dp)
                 )
             }
 
