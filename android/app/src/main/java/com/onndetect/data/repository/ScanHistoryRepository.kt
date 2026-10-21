@@ -31,6 +31,11 @@ class ScanHistoryRepository @Inject constructor(private val dao: ScanHistoryDao)
                 put("modelVersion", result.modelVersion)
                 put("preprocessingVersion", result.preprocessingVersion)
                 put("calibrationVersion", result.calibrationVersion)
+                // Whether an ON-DEVICE evaluation verified the release. The
+                // result screen shows this next to the verdict, so a
+                // desktop-verified release is never presented as a fully
+                // device-verified one.
+                put("deviceValidated", result.releaseDeviceValidated)
                 result.decisionThreshold?.takeIf { it.isFinite() }?.let { put("threshold", it) }
                 put("analyzedDurationMs", result.analyzedDurationMs)
                 put("totalDurationMs", result.totalDurationMs)

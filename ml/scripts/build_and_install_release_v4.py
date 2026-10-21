@@ -150,21 +150,47 @@ def normalize_checkpoint_for_export(ckpt_path: Path, current_code_hash: str) -> 
     print(f"[OK] Normalized checkpoint & synced training_code_hash: {ckpt_path}")
 
 
-def measure_tflite_latency(tflite_path: Path, input_shape: list[int], n_runs: int = 25) -> tuple[float, float]:
-    """Measure p50 and p95 single-thread TFLite invocation latency in milliseconds."""
+def measure_tflite_latency(tflite_path: Path, input_shape: list[int], n_runs: int = 25,
+                           num_threads: int = 1) -> tuple[float, float]:
+    """Measure p50 and p95 TFLite invocation latency in milliseconds.
+
+    The thread count matters and is part of the measurement: the app runs the
+    interpreter with XNNPACK and up to 4 threads, and for the 90 MB SigLIP
+    probe the difference is more than 2x (740 ms -> 316 ms p50 on this
+    desktop). A latency number without its thread count is not comparable
+    with anything.
+    """
+    import tensorflow as tf
+
+    interpreter = tf.lite.Interpreter(model_path=str(tflite_path), num_threads=num_threads)
+    interpreter.allocate_tensors()
+    inp = interpreter.get_input_details()[0]
     rng = np.random.default_rng(42)
-    dummy = rng.uniform(0.0, 1.0, size=tuple(input_shape)).astype(np.float32)
-    _run_tflite(str(tflite_path), dummy)
+    dummy = rng.uniform(0.0, 1.0, size=tuple(inp["shape"])).astype(np.float32)
+    interpreter.set_tensor(inp["index"], dummy)
+    interpreter.invoke()          # warm up
     times_ms = []
     for _ in range(n_runs):
         t0 = time.perf_counter()
-        _run_tflite(str(tflite_path), dummy)
+        interpreter.set_tensor(inp["index"], dummy)
+        interpreter.invoke()
         times_ms.append((time.perf_counter() - t0) * 1000.0)
     return float(np.percentile(times_ms, 50)), float(np.percentile(times_ms, 95))
 
 
-def build_device_evaluation_report(bundle_dir: Path, release_id: str) -> Path:
-    """Create the hash-bound device_evaluation.json matching the staged bundle."""
+def build_desktop_latency_report(bundle_dir: Path, release_id: str) -> Path:
+    """The DESKTOP latency proxy for the staged bundle.
+
+    This is NOT a device evaluation and must never be attached as one.
+    `release_bundle.assert_device_report_is_from_a_device` requires the
+    device's identity, the measurement kind and an on-device payload, and
+    it rejects the desktop-only key names outright - because a desktop
+    interpreter timing is not a device validation.
+
+    The numbers are still useful: they are the conservative single-threaded
+    floor and the closer 4-thread proxy for the app's own configuration.
+    They are written where they cannot be mistaken for a device report.
+    """
     manifest = json.loads((bundle_dir / "release_manifest.json").read_text(encoding="utf-8"))
     eval_rep = json.loads((bundle_dir / "evaluation_report.json").read_text(encoding="utf-8"))
     kt_hash = sha256_file(bundle_dir / "fusion" / "XGBoostMetaClassifier.kt")
@@ -172,7 +198,8 @@ def build_device_evaluation_report(bundle_dir: Path, release_id: str) -> Path:
     models_entry = {}
     for model_name, model_meta in manifest["models"].items():
         tflite_file = bundle_dir / "models" / model_name
-        p50, p95 = measure_tflite_latency(tflite_file, model_meta["input_shape"])
+        p50, p95 = measure_tflite_latency(tflite_file, model_meta["input_shape"], num_threads=1)
+        p50_4, p95_4 = measure_tflite_latency(tflite_file, model_meta["input_shape"], num_threads=4)
         parity = eval_rep["models"][model_name]["parity"]
         models_entry[model_name] = {
             "sha256": model_meta["sha256"],
@@ -181,22 +208,34 @@ def build_device_evaluation_report(bundle_dir: Path, release_id: str) -> Path:
             "desktop_agreement": parity["agreement"],
             "desktop_mae": parity["mae"],
             "desktop_max_error": parity["max_error"],
+            # The single-threaded number is the conservative FLOOR. The
+            # 4-thread number is the closer proxy for the app, which runs
+            # XNNPACK with up to 4 threads.
             "latency_ms_p50": p50,
             "latency_ms_p95": p95,
+            "latency_ms_p50_4_threads": p50_4,
+            "latency_ms_p95_4_threads": p95_4,
+            "latency_measurement": "desktop_x86_proxy_not_a_device_measurement",
+            "latency_threads": 1,
+            "latency_threads_app": 4,
         }
 
-    device_report = {
+    desktop_report = {
         "release_id": release_id,
-        "passed": True,
+        "measurement_kind": "desktop_x86_proxy",
+        "is_device_evaluation": False,
+        "note": (
+            "A desktop latency proxy, not a device validation. The release "
+            "installs in its desktop-validated state until a phone produces "
+            "a real on-device report."
+        ),
         "source_snapshot_sha256": manifest["source_snapshot_sha256"],
         "fusion_kotlin_sha256": kt_hash,
         "fusion_revision": release_id,
-        "kotlin_parity_passed": True,
-        "offline_verified": True,
         "models": models_entry,
     }
-    report_path = bundle_dir.parent / f"device_evaluation_{release_id}.json"
-    report_path.write_text(json.dumps(device_report, indent=2), encoding="utf-8")
+    report_path = bundle_dir.parent / f"desktop_latency_{release_id}.json"
+    report_path.write_text(json.dumps(desktop_report, indent=2), encoding="utf-8")
     return report_path
 
 
@@ -275,7 +314,7 @@ def package_and_install_release(
         constants_args += ["--cascade-dir", str(cascade_dir)]
     run_cmd(constants_args)
 
-    device_report_path = build_device_evaluation_report(bundle_dir, release_id)
+    desktop_latency_path = build_desktop_latency_report(bundle_dir, release_id)
     assets_dir = REPO_ROOT / "android" / "app" / "src" / "main" / "assets"
     kotlin_dst = (
         REPO_ROOT / "android" / "app" / "src" / "main" / "java"
@@ -291,7 +330,11 @@ def package_and_install_release(
         sys.executable,
         ML_ROOT / "scripts" / "release_bundle.py",
         "--bundle", bundle_dir,
-        "--device-report", device_report_path,
+        # The release installs in its DESKTOP-VALIDATED state: the desktop
+        # pipeline measured the packaged bytes, and no phone has verified
+        # them. A device report must never be fabricated from a desktop
+        # measurement, so this driver does not attach one.
+        "--install-desktop-validated",
         "--install", assets_dir,
         "--kotlin-destination", kotlin_dst,
     ])

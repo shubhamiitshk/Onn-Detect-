@@ -33,7 +33,7 @@ data class SignalMeta(
 @Composable
 fun SignalBreakdownCard(signals: SignalBreakdown, modifier: Modifier = Modifier) {
     val signalList = listOf(
-        SignalMeta(R.string.signal_semantic, "Engine C SigLIP appearance CNN", "SEMANTIC", signals.mobileClipScore),
+        SignalMeta(R.string.signal_semantic, "Engine C \u00b7 SigLIP-B/16 vision tower + linear head", "SEMANTIC", signals.vfmProbeScore),
         SignalMeta(R.string.signal_srm, "Engine A 20-ch SRM+NPR+RGB hybrid", "RESIDUAL", signals.srmForensicScore),
         SignalMeta(R.string.signal_fft, "2D power spectrum radial slope", "SPECTRAL", signals.fftSpectralScore),
         SignalMeta(R.string.signal_kl, "Pixel co-occurrence divergence", "CO-OCCURRENCE", signals.klDivergenceScore),

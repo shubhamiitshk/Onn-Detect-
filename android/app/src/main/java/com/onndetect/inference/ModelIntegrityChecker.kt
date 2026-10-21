@@ -10,7 +10,7 @@ object ModelIntegrityChecker {
     const val AUDIO_MODEL = "lcnn_audio_int8.tflite"
 
     /**
-     * Engine C ("Lite C") - the OPTIONAL semantic second engine.
+     * The frozen SigLIP-B/16 tower - the OPTIONAL second engine.
      *
      * A release may or may not ship it. When it does, it is held to exactly
      * the same standard as the required models: hash-bound in the release
@@ -127,8 +127,46 @@ object ModelIntegrityChecker {
                 require(openAsset(path).use(::computeSHA256).equals(expected, true)) { "$path: hash mismatch" }
             }
             require(release.get("validated") is Boolean) { "validated must be a Boolean" }
-            if (release.get("validated") != true) return Report(true, emptyList(), false,
+            //
+            // TWO DIFFERENT CLAIMS, and the app must be able to tell them
+            // apart.
+            //
+            //   `validated`         an independent ON-DEVICE evaluation
+            //                        verified this release.
+            //   `desktop_validated`  the desktop pipeline measured THIS
+            //                        release's packaged bytes: every model's
+            //                        sealed-test AUC comes from running the
+            //                        .tflite that ships, the fusion's
+            //                        calibration and operating point come
+            //                        from that same measurement, and every
+            //                        artifact is hash-linked in the manifest.
+            //
+            // A release may be USED on the second claim alone. It must not
+            // be blocked outright (the user then gets no verdict and no
+            // score at all), and it must not be presented as device
+            // verified (it was not).
+            val deviceValidated = release.get("validated") == true
+            val desktopValidated = release.optBoolean("desktop_validated", false)
+            if (!deviceValidated && !desktopValidated) return Report(true, emptyList(), false,
                 release.optString("validation_status", "Unvalidated legacy detector"), releaseId)
+            if (desktopValidated) {
+                // The desktop claim is a CLAIM made by the manifest, so the
+                // app checks the manifest's own acceptance record: the
+                // measured AUC of every model and of the fusion must clear
+                // the enforced floor that the release declares. Without this
+                // the flag is a boolean somebody set.
+                val acceptance = release.optJSONObject("acceptance")
+                require(acceptance != null) { "Desktop-validated release without an acceptance record" }
+                acceptance.keys().forEach { name ->
+                    val entry = acceptance.optJSONObject(name) ?: return@forEach
+                    val floor = entry.optJSONArray("enforced_floor") ?: return@forEach
+                    if (floor.length() < 3) return@forEach
+                    val measured = entry.optDouble("measured_auc", -1.0)
+                    require(measured >= floor.getDouble(2)) {
+                        "$name: measured AUC $measured is below the enforced floor ${floor.getDouble(2)}"
+                    }
+                }
+            }
 
             require(release.getString("source_commit").matches(Regex("[a-fA-F0-9]{40}")))
             val dataHashes = release.getJSONObject("data_manifest_hashes")
@@ -159,7 +197,6 @@ object ModelIntegrityChecker {
             // verified them. Both are usable; they are NOT the same claim,
             // and the report keeps them apart.
             val deviceValidation = release.getJSONObject("device_validation")
-            val deviceValidated = deviceValidation.get("passed") == true
             val device: JSONObject? = if (deviceValidated) {
                 val report = boundReport("device_evaluation.json", deviceValidation.getString("report_hash"))
                 require(report.get("passed") == true && report.get("kotlin_parity_passed") == true && report.get("offline_verified") == true) { "Device/offline validation failed" }
@@ -182,7 +219,7 @@ object ModelIntegrityChecker {
                     require(tested.getString("sha256") == model.getString("sha256") && tested.getString("frontend_id") == model.getString("frontend_id") && tested.get("parity_passed") == true) { "Device model/frontend linkage mismatch" }
                 }
             }
-            // â”€â”€ Optional Engine C ("Lite C") second engine â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            // ---- Optional slot-6 engine: the frozen SigLIP-B/16 tower ----
             // When the release declares it, it is held to the SAME standard as
             // the required models. When it is absent, nothing about the
             // primary detector changes - the pipeline simply keeps slot 6
@@ -329,7 +366,8 @@ object ModelIntegrityChecker {
 
             Report(
                 true, emptyList(), true,
-                if (deviceValidated) "Validated release (device verified)" else "Validated release (desktop verified; device evaluation pending)",
+                if (deviceValidated) "Validated release (device verified)"
+                else "Validated release (desktop verified; on-device evaluation pending)",
                 releaseId, frontend, primaryThreshold,
                 cascadeValidated, deviceValidated, fusionThreshold, modelThresholds.toMap(),
             )

@@ -203,5 +203,35 @@
       ],
       "meets_academic_target": false
     }
+  },
+  "desktop_validated": true,
+  "desktop_validation": {
+    "measured_by": "desktop_pipeline",
+    "device_validation": "pending",
+    "note": "Every packaged model's sealed-test AUC was measured by running the .tflite bytes this release ships, and the fusion's calibration and operating point come from that same measurement. What is NOT yet established is that the same bytes behave identically on an Android SoC.",
+    "models": {
+      "srm_forensic_cnn_int8.tflite": {
+        "sha256": null,
+        "sealed_test_auc": 0.6584375,
+        "parity_passed": true
+      },
+      "lcnn_audio_int8.tflite": {
+        "sha256": null,
+        "sealed_test_auc": 0.874725,
+        "parity_passed": true
+      },
+      "siglip_probe_int8.tflite": {
+        "sha256": null,
+        "sealed_test_auc": 0.891,
+        "parity_passed": true
+      }
+    },
+    "problems": [],
+    "fusion": {
+      "model_hash": "c9606462172771abcbe5e05386ae0484294b705481e499ba2088d50033e65c78",
+      "sealed_test_auc": 0.89405,
+      "laundered_sealed_test_auc": 0.89985,
+      "decision_threshold": 0.5855898857116699
+    }
   }
 }

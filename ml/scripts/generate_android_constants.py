@@ -13,7 +13,37 @@ from training.acceptance import (
     MINIMUM_FUSION_ACCEPTANCE,
 )
 
-CASCADE_MODEL = "siglip_probe_int8.tflite"
+# The slot-6 probe's asset name. A release may ship the frozen tower or
+# the distilled student, so the name is DERIVED from the manifest rather
+# than hard-coded: hard-coding one name silently skipped the whole cascade
+# block for the other.
+CASCADE_MODEL_NAMES = ("siglip_probe_int8.tflite", "semantic_probe_int8.tflite")
+
+
+def _desktop_evidence_problems(evaluation: dict, results: dict) -> list[str]:
+    """Why the desktop pipeline does NOT support using this release.
+
+    Empty means the desktop evidence is complete: every packaged model
+    passed its desktop parity check and cleared its enforced acceptance
+    floor, and so did the fusion.
+    """
+    problems: list[str] = []
+    for name, entry in (evaluation.get("models") or {}).items():
+        if not (entry.get("parity") or {}).get("passed"):
+            problems.append(f"{name}: the desktop parity check did not pass")
+        floor = MINIMUM_ACCEPTANCE.get(name)
+        auc = (entry.get("test") or {}).get("auc")
+        if floor is not None and auc is not None and auc < floor[2]:
+            problems.append(
+                f"{name}: sealed-test AUC {auc:.4f} is below the enforced floor {floor[2]}"
+            )
+    fusion_auc = results.get("test_auc")
+    if fusion_auc is not None and fusion_auc < MINIMUM_FUSION_ACCEPTANCE[2]:
+        problems.append(
+            f"fusion_xgboost: sealed-test AUC {fusion_auc:.4f} is below the "
+            f"enforced floor {MINIMUM_FUSION_ACCEPTANCE[2]}"
+        )
+    return problems
 
 
 def read_object(path):
@@ -72,8 +102,9 @@ def main():
     # The probe threshold and the measured cascade policy are hash-bound
     # artifacts, exactly like the fusion threshold. They are attached only
     # when the release actually ships the second engine.
-    if CASCADE_MODEL in manifest["models"]:
-        cascade_model = manifest["models"][CASCADE_MODEL]
+    cascade_name = next((n for n in CASCADE_MODEL_NAMES if n in manifest["models"]), None)
+    if cascade_name is not None:
+        cascade_model = manifest["models"][cascade_name]
         # The fusion trainer writes the measured policy and the probe
         # threshold next to the fusion artifacts.
         for source, relative in [("semantic_probe_threshold.json", "constants/semantic_probe_threshold.json"),
@@ -88,7 +119,7 @@ def main():
         probe_constant = json.loads((bundle / "constants" / "semantic_probe_threshold.json").read_text(encoding="utf-8"))
         if probe_constant.get("model_hash") != cascade_model["sha256"]:
             raise ValueError("Cascade threshold is bound to a different model")
-        manifest["calibration"][CASCADE_MODEL] = {
+        manifest["calibration"][cascade_name] = {
             "model_hash": cascade_model["sha256"],
             "frontend_id": cascade_model["frontend_id"],
             "threshold": probe_constant["threshold_at_eer"],
@@ -140,7 +171,41 @@ def main():
     }
     manifest["acceptance"] = acceptance
     manifest["validation_status"] = "desktop_pipeline_passed_requires_independent_device_evaluation"
+    # The DEVICE validation is still outstanding. The desktop validation
+    # below is what HAS been measured, and the app needs to be able to say
+    # which of the two it is standing on.
     manifest["validated"] = False
+    evaluation = read_object(bundle / "evaluation_report.json")
+    # The desktop claim is DERIVED, never asserted. A hard-coded True is not
+    # evidence of anything, and the app trusts this flag.
+    problems = _desktop_evidence_problems(evaluation, results)
+    manifest["desktop_validated"] = not problems
+    manifest["desktop_validation"] = {
+        "measured_by": "desktop_pipeline",
+        "device_validation": "pending",
+        "note": (
+            "Every packaged model's sealed-test AUC was measured by running "
+            "the .tflite bytes this release ships, and the fusion's "
+            "calibration and operating point come from that same "
+            "measurement. What is NOT yet established is that the same "
+            "bytes behave identically on an Android SoC."
+        ),
+        "models": {
+            name: {
+                "sha256": entry.get("sha256"),
+                "sealed_test_auc": (entry.get("test") or {}).get("auc"),
+                "parity_passed": bool((entry.get("parity") or {}).get("passed")),
+            }
+            for name, entry in (evaluation.get("models") or {}).items()
+        },
+        "problems": problems,
+        "fusion": {
+            "model_hash": results["model_hash"],
+            "sealed_test_auc": results["test_auc"],
+            "laundered_sealed_test_auc": results["laundered_test_auc"],
+            "decision_threshold": results["calibration"]["threshold"],
+        },
+    }
     temporary = manifest_path.with_suffix(".json.tmp")
     temporary.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     os.replace(temporary, manifest_path)

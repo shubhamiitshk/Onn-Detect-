@@ -1,5 +1,6 @@
 package com.onndetect.ui.screens.home
 
+import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -19,6 +20,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import com.onndetect.inference.ModelIntegrityGate
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -31,6 +34,7 @@ import com.onndetect.ui.theme.*
 
 @Composable
 fun HomeScreen(navController: NavController, viewModel: HomeViewModel = hiltViewModel()) {
+    val context = LocalContext.current
     val readiness by viewModel.readiness.collectAsStateWithLifecycle()
     val modelsVerified = if (readiness.image == null || readiness.audio == null) null else readiness.image == true && readiness.audio == true
 
@@ -57,7 +61,7 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = hiltView
         )
 
         // Engine Status & Integrity Banner
-        EngineStatusBanner(modelsVerified = modelsVerified)
+        EngineStatusBanner(context, modelsVerified = modelsVerified)
 
         // Category Cards Section Title
         Text(
@@ -198,12 +202,12 @@ private fun HomeTopBar(onHistoryClick: () -> Unit) {
 }
 
 @Composable
-private fun EngineStatusBanner(modelsVerified: Boolean?) {
+private fun EngineStatusBanner(context: Context, modelsVerified: Boolean?) {
     val (statusColor, statusBg, statusTitle, statusSub) = when (modelsVerified) {
         true -> Quadruple(
             AuthenticGreen,
             AuthenticGreenContainer.copy(alpha = 0.35f),
-            "Dual-Engine Active (onn-20261020-v6)",
+            "Dual-Engine Active (${ModelIntegrityGate.releaseId(context)})",
             "Engine A 20-ch Hybrid • Engine C SigLIP Probe • Cascade Fusion"
         )
         false -> Quadruple(

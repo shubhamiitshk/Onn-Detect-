@@ -50,37 +50,27 @@ def _sigmoid(x: np.ndarray) -> np.ndarray:
     return 1.0 / (1.0 + np.exp(-x))
 
 
-def auc(scores: np.ndarray, labels: np.ndarray) -> float:
-    order = np.argsort(scores)
-    ranks = np.empty(len(scores), dtype=np.float64)
-    ranks[order] = np.arange(1, len(scores) + 1)
-    pos = labels == 1
-    n_pos, n_neg = int(pos.sum()), int((~pos).sum())
-    if n_pos == 0 or n_neg == 0:
-        return float("nan")
-    return float((ranks[pos].sum() - n_pos * (n_pos + 1) / 2) / (n_pos * n_neg))
+def _auc(scores, labels):
+    """The repo's AUC. `evaluate_tflite_vfm.py` and the release's evaluation
+    report must not disagree about the same file."""
+    from training.metrics import compute_auc
+    return float(compute_auc(labels, scores))
 
 
-def fpr_at_tpr(scores: np.ndarray, labels: np.ndarray, target_tpr: float) -> float:
-    """The false-positive rate at the threshold that reaches ``target_tpr``."""
-    positives = np.sort(scores[labels == 1])[::-1]
-    if len(positives) == 0:
-        return float("nan")
-    k = max(1, int(np.ceil(target_tpr * len(positives))))
-    threshold = positives[k - 1]
-    negatives = scores[labels == 0]
-    return float(np.mean(negatives >= threshold))
+def _tpr_at_fpr(scores, labels, target):
+    """The repo's TPR at a fixed FPR: `max(tpr[fpr <= target])` from the ROC
+    curve, exactly as `training.evaluation.evaluation_summary` computes it."""
+    from sklearn.metrics import roc_curve
+    fpr, tpr, _ = roc_curve(labels, scores)
+    return float(np.max(tpr[fpr <= target]))
 
 
-def tpr_at_fpr(scores: np.ndarray, labels: np.ndarray, target_fpr: float) -> float:
-    """The true-positive rate at the threshold whose FPR is ``target_fpr``."""
-    negatives = np.sort(scores[labels == 0])[::-1]
-    if len(negatives) == 0:
-        return float("nan")
-    k = max(1, int(np.ceil(target_fpr * len(negatives))))
-    threshold = negatives[k - 1]
-    positives = scores[labels == 1]
-    return float(np.mean(positives >= threshold))
+def _fpr_at_tpr(scores: np.ndarray, labels: np.ndarray, target_tpr: float) -> float:
+    """The smallest FPR that still reaches ``target_tpr``, from the ROC curve."""
+    from sklearn.metrics import roc_curve
+    fpr, tpr, _ = roc_curve(labels, scores)
+    reachable = fpr[tpr >= target_tpr]
+    return float(np.min(reachable)) if len(reachable) else float("nan")
 
 
 def main() -> int:
@@ -128,6 +118,17 @@ def main() -> int:
             f"No export manifest next to {model_path}. Run export_keras_vfm_probe first."
         )
     manifest = json.loads(probe_path.read_text(encoding="utf-8"))
+    # The acceptance is only meaningful for THESE bytes. A report exported
+    # for a different file must not be able to "cover" this one.
+    from data.contracts import sha256_file
+    expected_sha = manifest.get("model_sha256")
+    actual_sha = sha256_file(model_path)
+    if expected_sha and expected_sha != actual_sha:
+        raise SystemExit(
+            "The packaged model does NOT match the export manifest: the "
+            f"acceptance report covers {expected_sha[:16]} but the file is "
+            f"{actual_sha[:16]}. Re-run the export."
+        )
     weight = np.asarray(manifest["probe_weight"], dtype=np.float64)
     bias = float(manifest["probe_bias"])
     mean = np.asarray(manifest["feature_mean"], dtype=np.float64)
@@ -162,12 +163,20 @@ def main() -> int:
         interp.invoke()
         probs.append(float(interp.get_tensor(out_det["index"])[0, 0]))
     probs = np.asarray(probs)
+    if not np.isfinite(probs).all():
+        raise SystemExit("The packaged model produced a non-finite score")
+    if len(probs) != len(y_split):
+        raise SystemExit(
+            f"Row count mismatch: {len(probs)} scored images vs {len(y_split)} cached labels. "
+            "The embedding cache and the discovered samples must describe the same rows "
+            "in the same order."
+        )
     elapsed = time.time() - started
     print(f"ran {len(probs)} images in {elapsed:.0f}s ({elapsed / max(len(probs), 1) * 1000:.0f} ms/image)")
 
     # ---- compare ----
-    ref_auc = auc(reference_scores, y_split)
-    pkg_auc = auc(probs, y_split)
+    ref_auc = _auc(reference_scores, y_split)
+    pkg_auc = _auc(probs, y_split)
     auc_drop = ref_auc - pkg_auc
     max_err = float(np.max(np.abs(probs - reference_scores)))
     mae = float(np.mean(np.abs(probs - reference_scores)))
@@ -190,10 +199,10 @@ def main() -> int:
     print(f"operating threshold {operating:.3f} (Youden-J on the reference): "
           f"decision flips {flips}/{len(probs)} ({flip_rate:.2%})")
     for target in (0.001, 0.01, 0.05):
-        ref_fpr = fpr_at_tpr(reference_scores, y_split, target)
-        pkg_fpr = fpr_at_tpr(probs, y_split, target)
-        ref_tpr = tpr_at_fpr(reference_scores, y_split, target)
-        pkg_tpr = tpr_at_fpr(probs, y_split, target)
+        ref_fpr = _fpr_at_tpr(reference_scores, y_split, target)
+        pkg_fpr = _fpr_at_tpr(probs, y_split, target)
+        ref_tpr = _tpr_at_fpr(reference_scores, y_split, target)
+        pkg_tpr = _tpr_at_fpr(probs, y_split, target)
         print(f"  FPR@TPR={target:.1%}  reference {ref_fpr:.4f}  packaged {pkg_fpr:.4f}"
               f"   |   TPR@FPR={target:.1%}  reference {ref_tpr:.4f}  packaged {pkg_tpr:.4f}")
 
@@ -230,16 +239,17 @@ def main() -> int:
         "operating_threshold": operating,
         "decision_flips": flips,
         "decision_flip_rate": flip_rate,
-        "fpr_at_1pct_tpr_reference": fpr_at_tpr(reference_scores, y_split, 0.01),
-        "fpr_at_1pct_tpr_packaged": fpr_at_tpr(probs, y_split, 0.01),
-        "tpr_at_1pct_fpr_reference": tpr_at_fpr(reference_scores, y_split, 0.01),
-        "tpr_at_1pct_fpr_packaged": tpr_at_fpr(probs, y_split, 0.01),
-        "tpr_at_5pct_fpr_reference": tpr_at_fpr(reference_scores, y_split, 0.05),
-        "tpr_at_5pct_fpr_packaged": tpr_at_fpr(probs, y_split, 0.05),
-        "tpr_at_0_1pct_fpr_reference": tpr_at_fpr(reference_scores, y_split, 0.001),
-        "tpr_at_0_1pct_fpr_packaged": tpr_at_fpr(probs, y_split, 0.001),
+        "fpr_at_1pct_tpr_reference": _fpr_at_tpr(reference_scores, y_split, 0.01),
+        "fpr_at_1pct_tpr_packaged": _fpr_at_tpr(probs, y_split, 0.01),
+        "tpr_at_1pct_fpr_reference": _tpr_at_fpr(reference_scores, y_split, 0.01),
+        "tpr_at_1pct_fpr_packaged": _tpr_at_fpr(probs, y_split, 0.01),
+        "tpr_at_5pct_fpr_reference": _tpr_at_fpr(reference_scores, y_split, 0.05),
+        "tpr_at_5pct_fpr_packaged": _tpr_at_fpr(probs, y_split, 0.05),
+        "tpr_at_0_1pct_fpr_reference": _tpr_at_fpr(reference_scores, y_split, 0.001),
+        "tpr_at_0_1pct_fpr_packaged": _tpr_at_fpr(probs, y_split, 0.001),
         "per_source_fpr": per_source,
         "manifest": manifest,
+    "model_sha256": actual_sha,
     }
 
     # The acceptance criteria are the OPERATING CHARACTERISTICS, not a raw
@@ -258,12 +268,12 @@ def main() -> int:
     # reference, which is not a defect.
     auc_ok = auc_drop <= args.max_auc_drop
     tpr_1_ok = (
-        tpr_at_fpr(probs, y_split, 0.01)
-        >= tpr_at_fpr(reference_scores, y_split, 0.01) - args.max_tpr_gap
+        _tpr_at_fpr(probs, y_split, 0.01)
+        >= _tpr_at_fpr(reference_scores, y_split, 0.01) - args.max_tpr_gap
     )
     tpr_5_ok = (
-        tpr_at_fpr(probs, y_split, 0.05)
-        >= tpr_at_fpr(reference_scores, y_split, 0.05) - args.max_tpr_gap
+        _tpr_at_fpr(probs, y_split, 0.05)
+        >= _tpr_at_fpr(reference_scores, y_split, 0.05) - args.max_tpr_gap
     )
 
     report["acceptance"] = {

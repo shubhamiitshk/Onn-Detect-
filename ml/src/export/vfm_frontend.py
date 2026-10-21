@@ -49,9 +49,16 @@ def vfm_frontend_id(size=VFM_SIZE, repo="siglip-base-patch16-224", pooling="sigl
 def vfm_image_tensor(image, size=VFM_SIZE, mean=VFM_MEAN, std=VFM_STD):
     """Bicubic square resize + SigLIP mean/std normalization -> CHW float32.
 
-    Mirrors the Android ``VfmProbeAnalyzer`` byte-for-byte. The resampling
-    filter is bicubic because that is the contract the tower's embeddings
-    were measured under.
+    The SCALE and the NORMALISATION are exactly the Android
+    ``VfmProbeAnalyzer``'s. The BYTES are not the same layout: this helper
+    produces CHW for the PyTorch tower, while the TFLite graph takes NHWC.
+    The resampling filter is bicubic because that is the contract the
+    tower's embeddings were measured under.
+
+    KNOWN SKEW: the Android path decodes with a box pre-decimation to a
+    1024 px maximum side BEFORE the bicubic resize, while this helper
+    resizes the original. For any image larger than 1024 px the two
+    therefore differ. The frontend id does not yet encode that step.
     """
     resized = image.convert("RGB").resize((size, size), Image.Resampling.BICUBIC)
     arr = np.asarray(resized, dtype=np.float32) / 255.0

@@ -237,9 +237,14 @@ def main():
                     f"{contract.get('revision')} (baseline {basis}): {drift}. Pass "
                     "--accept-source-drift to record the drift in the release instead."
                 )
+            # `computable` means the drift was measured against the
+            # CHECKPOINT'S OWN revision. When that commit is not in this
+            # repository the baseline is HEAD, which says nothing about the
+            # bytes the checkpoint was trained on - so it is reported as not
+            # computable rather than as a short, misleading list.
             source_drift[modality] = {"baseline": basis, "files": drift,
                                       "checkpoint_revision": contract.get("revision"),
-                                      "computable": drift is not None}
+                                      "computable": drift is not None and basis == contract.get("revision")}
             print(f"[Provenance] {modality}: training-source drift recorded "
                   f"(baseline {basis}): {drift}")
         root = Path(state["config"]["data"]["root_dir"])

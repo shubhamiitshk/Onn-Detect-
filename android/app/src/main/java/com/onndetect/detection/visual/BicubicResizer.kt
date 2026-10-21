@@ -12,14 +12,15 @@ import kotlin.math.roundToInt
  *
  * ## Why this exists
  *
- * The Engine C frontend contract is
+ * The slot-6 probe's frontend contract is a BICUBIC square resize followed by
+ * the probe's own normalisation. It is NOT Engine A's bilinear resize:
  * `clip-appearance-bicubic224-clipnorm-meanstd-float32`, and the Python
  * training/calibration path resizes with `Image.Resampling.BICUBIC`
  * (`ml/src/data/image_frontend.py:53`, `semantic_image_tensor`).
  *
  * The Android side used `Bitmap.createScaledBitmap(bitmap, size, size, true)`,
  * which is **bilinear** - the same filter Engine A uses. So the device fed
- * Engine C a bilinear tensor while every calibration and threshold in the
+ * the probe a bilinear tensor while every calibration and threshold in the
  * release was computed from a bicubic tensor. That is a train/serve skew
  * inside a contract the whole release hashes bind to, and it is exactly the
  * kind of difference the docstring at

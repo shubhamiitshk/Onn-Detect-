@@ -13,7 +13,7 @@ object SignalBreakdownJson {
     fun encode(signals: SignalBreakdown): String = JSONObject().apply {
         put("schemaVersion", 1)
         fun safe(v: Float) = v.takeIf { it.isFinite() && it in 0f..1f }?.toDouble() ?: JSONObject.NULL
-        put("mobileClipScore", safe(signals.mobileClipScore))
+        put("vfmProbeScore", safe(signals.vfmProbeScore))
         put("srmForensicScore", safe(signals.srmForensicScore))
         put("fftSpectralScore", safe(signals.fftSpectralScore))
         put("klDivergenceScore", safe(signals.klDivergenceScore))
@@ -33,8 +33,13 @@ object SignalBreakdownJson {
             val o = JSONObject(json)
             if (o.optInt("schemaVersion", 1) != 1) return null
             fun f(name: String) = o.optDouble(name, -1.0).toFloat().takeIf { it.isFinite() && it in 0f..1f } ?: -1f
+            // Slot 6's key was renamed from "mobileClipScore" to
+            // "vfmProbeScore". The shape of the record did not change, so
+            // the schema version stays 1 and the OLD key is still read:
+            // history rows written by earlier releases must decode.
+            fun fOr(name: String, legacy: String) = if (o.has(name)) f(name) else f(legacy)
             SignalBreakdown(
-                mobileClipScore = f("mobileClipScore"),
+                vfmProbeScore = fOr("vfmProbeScore", "mobileClipScore"),
                 srmForensicScore = f("srmForensicScore"),
                 fftSpectralScore = f("fftSpectralScore"),
                 klDivergenceScore = f("klDivergenceScore"),

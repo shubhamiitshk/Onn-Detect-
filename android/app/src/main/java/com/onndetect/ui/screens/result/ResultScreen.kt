@@ -142,17 +142,28 @@ fun AssessmentDetails(
 ) {
     val context = LocalContext.current
     // 1. Verdict Banner
+    val evidence = remember(e.evidenceJson) {
+        runCatching { JSONObject(e.evidenceJson ?: "{}") }.getOrDefault(JSONObject())
+    }
+    // Whether an ON-DEVICE evaluation verified the release. A release that
+    // is only desktop-verified is usable, but the card must say so rather
+    // than presenting it as fully device-verified.
+    val deviceValidated = remember(e.evidenceJson) {
+        runCatching { evidence.optBoolean("deviceValidated", false) }.getOrDefault(false)
+    }
     ForensicVerdictCard(
         verdict = e.verdict,
         validated = e.modelValidated,
         score = e.score,
-        reason = e.reason
+        reason = e.reason,
+        deviceValidated = deviceValidated,
+        releaseId = remember(e.evidenceJson) {
+            runCatching { evidence.optString("modelVersion", "unknown") }.getOrDefault("unknown")
+        },
+        scanMode = e.scanMode
     )
 
     // 2. Confidence Gauge
-    val evidence = remember(e.evidenceJson) {
-        runCatching { JSONObject(e.evidenceJson ?: "{}") }.getOrDefault(JSONObject())
-    }
     val threshold = remember(evidence) {
         evidence.optDouble("threshold", 0.499).toFloat()
     }
@@ -165,20 +176,21 @@ fun AssessmentDetails(
     // away from the shipped policy and make the card disagree with the
     // headline verdict.
     val cascadePolicy = remember(context) { CascadePolicy.fromAssets(context) }
-    if (decodedSignals != null && decodedSignals.mobileClipScore.isFinite() && decodedSignals.mobileClipScore >= 0f) {
+    if (decodedSignals != null && decodedSignals.vfmProbeScore.isFinite() && decodedSignals.vfmProbeScore >= 0f) {
         DualEngineCascadeCard(
             // The pipeline arbitrates on the FUSION score, not on the raw
             // SRM CNN output. Showing srmForensicScore here made the card
             // contradict the headline verdict whenever the two fell on
             // opposite sides of the threshold.
             engineAScore = decodedSignals.fusionScore,
-            engineCScore = decodedSignals.mobileClipScore,
+            engineCScore = decodedSignals.vfmProbeScore,
             arbitratedScore = e.score,
             reason = e.reason,
             engineAThreshold = cascadePolicy?.engineAThreshold ?: 0.5f,
             engineCThreshold = cascadePolicy?.engineCThreshold ?: 0.5f,
             escalateBelow = cascadePolicy?.escalateBelow ?: 0f,
-            escalateAbove = cascadePolicy?.escalateAbove ?: 1f
+            escalateAbove = cascadePolicy?.escalateAbove ?: 1f,
+            releaseId = cascadePolicy?.releaseId ?: "unknown"
         )
     }
 
@@ -238,7 +250,10 @@ fun AssessmentDetails(
 
 @Composable
 private fun EvidenceMetadataCard(e: ScanHistoryEntity, evidence: JSONObject) {
-    val modelVersion = evidence.optString("modelVersion", "onn-20261020-v6")
+    // The release id comes from the assessment's own evidence, never from a
+    // hard-coded string: the shipped release id changes with every release,
+    // and a stale constant labels every assessment with the wrong release.
+    val modelVersion = evidence.optString("modelVersion", "unknown")
     val minEdge = evidence.optInt("resolutionMinEdge", 0)
     val isBlurry = evidence.optBoolean("blurry", false)
     val isDark = evidence.optBoolean("dark", false)
@@ -484,6 +499,11 @@ fun DualEngineCascadeCard(
     engineCThreshold: Float,
     escalateBelow: Float,
     escalateAbove: Float,
+    /**
+     * The release id, from the shipped cascade policy. It was hard-coded,
+     * so the card named a release that had been superseded.
+     */
+    releaseId: String = "unknown",
     modifier: Modifier = Modifier
 ) {
     if (!engineAScore.isFinite() || !engineCScore.isFinite()) return
@@ -548,7 +568,7 @@ fun DualEngineCascadeCard(
                         .padding(horizontal = 8.dp, vertical = 4.dp)
                 ) {
                     Text(
-                        text = "onn-20261020-v6",
+                        text = releaseId,
                         style = MaterialTheme.typography.labelSmall,
                         color = CyberCyan,
                         fontWeight = FontWeight.Bold
@@ -640,7 +660,7 @@ fun DualEngineCascadeCard(
                         )
                     }
                     Text(
-                        text = "SigLIP Appearance CNN",
+                        text = "SigLIP-B/16 vision tower",
                         style = MaterialTheme.typography.bodySmall,
                         color = TextTertiary,
                         fontSize = 10.sp

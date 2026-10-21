@@ -62,15 +62,15 @@ def _sigmoid(x: np.ndarray) -> np.ndarray:
 
 
 def _auc(scores: np.ndarray, labels: np.ndarray) -> float:
-    order = np.argsort(scores)
-    ranks = np.empty(len(scores), dtype=np.float64)
-    ranks[order] = np.arange(1, len(scores) + 1)
-    pos = labels == 1
-    n_pos = int(pos.sum())
-    n_neg = len(labels) - n_pos
-    if n_pos == 0 or n_neg == 0:
-        return float("nan")
-    return float((ranks[pos].sum() - n_pos * (n_pos + 1) / 2) / (n_pos * n_neg))
+    """The repo's AUC, so the export report and the release's evaluation
+    report cannot disagree about the same model.
+
+    The previous implementation assigned ranks by sort order, which is
+    TIE-UNAWARE: two samples with the same score get different ranks, and
+    an INT8 graph that saturates produces many exact ties.
+    """
+    from training.metrics import compute_auc
+    return float(compute_auc(labels, scores))
 
 
 def py_reference_probs(

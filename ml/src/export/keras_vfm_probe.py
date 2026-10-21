@@ -145,6 +145,13 @@ class _GeluActivation(tf.keras.layers.Layer):
         return tf.nn.gelu(x, approximate=self.approximate)
 
 
+class _SiluActivation(tf.keras.layers.Layer):
+    """SiLU (x * sigmoid(x)), the DINOv2 SwiGLU activation."""
+
+    def call(self, x):
+        return tf.nn.silu(x)
+
+
 class _LayerScale(tf.keras.layers.Layer):
     """DINOv2 per-channel LayerScale multiplier (lambda1)."""
 
@@ -211,13 +218,22 @@ class _SequencePoolAndNorm(tf.keras.layers.Layer):
 
     def __init__(self, mode: str, l2_normalize: bool = True, **kwargs):
         super().__init__(**kwargs)
-        if mode not in ("first", "mean"):
+        if mode not in ("first", "mean", "cls_mean"):
             raise ValueError(f"Unsupported pool mode: {mode}")
         self.mode = mode
         self.l2_normalize = bool(l2_normalize)
 
     def call(self, x):
-        pooled = x[:, 0, :] if self.mode == "first" else tf.reduce_mean(x, axis=1)
+        if self.mode == "first":
+            pooled = x[:, 0, :]
+        elif self.mode == "cls_mean":
+            # DINOv2's linear head concatenates the CLS token with the mean
+            # of states[:, 1:]. The slice starts at 1, so for a model with
+            # REGISTERS the registers are inside the mean - exactly as
+            # `Tower.embed` computes it for the measurement.
+            pooled = tf.concat([x[:, 0, :], tf.reduce_mean(x[:, 1:, :], axis=1)], axis=-1)
+        else:
+            pooled = tf.reduce_mean(x, axis=1)
         if self.l2_normalize:
             pooled = pooled * tf.math.rsqrt(tf.reduce_sum(tf.square(pooled), axis=-1, keepdims=True) + 1e-12)
         return pooled
@@ -384,14 +400,18 @@ def build_keras_vfm_probe(
             pt_q, pt_k, pt_v, pt_o = att.q_proj, att.k_proj, att.v_proj, att.out_proj
             num_heads = int(att.num_heads)
             head_dim = int(att.head_dim)
+        elif hasattr(att := blk.attention, "q_proj"):
+            # transformers 5.x: Dinov2Attention exposes the projections
+            # directly. The 4.x layout (att.attention.query) was removed.
+            pt_q, pt_k, pt_v, pt_o = att.q_proj, att.k_proj, att.v_proj, att.o_proj
+            num_heads = int(att.num_attention_heads)
+            head_dim = int(att.head_dim)
         else:
-            att = blk.attention
-            pt_q = att.attention.query
-            pt_k = att.attention.key
-            pt_v = att.attention.value
-            pt_o = att.output.dense
-            num_heads = int(att.attention.num_attention_heads)
-            head_dim = int(att.attention.attention_head_size)
+            raise ValueError(
+                f"Unsupported attention layout on {type(blk).__name__}: the mirror "
+                "supports the transformers 5.x (q_proj/k_proj/v_proj/o_proj) and "
+                "the SigLIP (self_attn) layouts only."
+            )
 
         q_scale = float(head_dim ** -0.5)
         q_dense = tf.keras.layers.Dense(embed_dim, use_bias=pt_q.bias is not None, name=f"b{i}_q")
@@ -417,12 +437,24 @@ def build_keras_vfm_probe(
         h2 = ln2(x)
         _set_ln(ln2, pt_ln2)
 
-        act_fn = getattr(blk.mlp, "activation_fn", None) or getattr(blk.mlp, "act", None)
-        fc1 = tf.keras.layers.Dense(int(blk.mlp.fc1.out_features), use_bias=blk.mlp.fc1.bias is not None, name=f"b{i}_fc1")
-        fc2 = tf.keras.layers.Dense(embed_dim, use_bias=blk.mlp.fc2.bias is not None, name=f"b{i}_fc2")
-        mlp_out = fc1(h2); _set_dense_scaled(fc1, blk.mlp.fc1)
-        mlp_out = _GeluActivation(approximate=_is_tanh_gelu(act_fn), name=f"b{i}_gelu")(mlp_out)
-        mlp_out = fc2(mlp_out); _set_dense_scaled(fc2, blk.mlp.fc2)
+        if hasattr(blk.mlp, "fc1"):
+            act_fn = getattr(blk.mlp, "activation_fn", None) or getattr(blk.mlp, "act", None)
+            fc1 = tf.keras.layers.Dense(int(blk.mlp.fc1.out_features), use_bias=blk.mlp.fc1.bias is not None, name=f"b{i}_fc1")
+            fc2 = tf.keras.layers.Dense(embed_dim, use_bias=blk.mlp.fc2.bias is not None, name=f"b{i}_fc2")
+            mlp_out = fc1(h2); _set_dense_scaled(fc1, blk.mlp.fc1)
+            mlp_out = _GeluActivation(approximate=_is_tanh_gelu(act_fn), name=f"b{i}_gelu")(mlp_out)
+            mlp_out = fc2(mlp_out); _set_dense_scaled(fc2, blk.mlp.fc2)
+        elif hasattr(blk.mlp, "gate_proj"):
+            # DINOv2's SwiGLU: silu(gate) * up -> down.
+            gate = tf.keras.layers.Dense(int(blk.mlp.gate_proj.out_features), use_bias=blk.mlp.gate_proj.bias is not None, name=f"b{i}_gate")
+            up = tf.keras.layers.Dense(int(blk.mlp.up_proj.out_features), use_bias=blk.mlp.up_proj.bias is not None, name=f"b{i}_up")
+            down = tf.keras.layers.Dense(embed_dim, use_bias=blk.mlp.down_proj.bias is not None, name=f"b{i}_down")
+            g = gate(h2); _set_dense_scaled(gate, blk.mlp.gate_proj)
+            u = up(h2); _set_dense_scaled(up, blk.mlp.up_proj)
+            mlp_out = _SiluActivation(name=f"b{i}_silu")(g) * u
+            mlp_out = down(mlp_out); _set_dense_scaled(down, blk.mlp.down_proj)
+        else:
+            raise ValueError(f"Unsupported MLP layout on {type(blk.mlp).__name__}")
 
         layer_scale2 = getattr(blk, "layer_scale2", None)
         if layer_scale2 is not None and getattr(layer_scale2, "lambda1", None) is not None:
@@ -452,6 +484,10 @@ def build_keras_vfm_probe(
             resolved_pool = "cls"
         else:
             resolved_pool = "mean"
+    elif pool_mode == "siglip":
+        # The measurement's vocabulary: SigLIP's canonical embedding is the
+        # MAP head's pooled output.
+        resolved_pool = "map"
     else:
         resolved_pool = pool_mode
 
@@ -492,6 +528,12 @@ def build_keras_vfm_probe(
         feat = _SequencePoolAndNorm(mode="first", l2_normalize=l2_normalize, name="pool_norm")(pooled_seq)
     elif resolved_pool == "cls":
         feat = _SequencePoolAndNorm(mode="first", l2_normalize=l2_normalize, name="pool_norm")(x)
+    elif resolved_pool == "cls_mean":
+        # DINOv2's linear head: the CLS token concatenated with the mean of
+        # the remaining tokens. The slice starts at 1, so a model with
+        # REGISTERS has the registers inside the mean - exactly as
+        # `Tower.embed` computes it for the measurement.
+        feat = _SequencePoolAndNorm(mode="cls_mean", l2_normalize=l2_normalize, name="pool_norm")(x)
     elif resolved_pool == "mean":
         feat = _SequencePoolAndNorm(mode="mean", l2_normalize=l2_normalize, name="pool_norm")(x)
     else:
@@ -500,15 +542,24 @@ def build_keras_vfm_probe(
     # 6. The probe head, with any standardization folded in.
     w_vec = np.asarray(probe_weight, dtype=np.float64).reshape(-1)
     b_val = float(np.asarray(probe_bias, dtype=np.float64).reshape(-1)[0])
+    # The probe's dimension is the WEIGHT's, not the tower's: DINOv2's
+    # `cls_mean` pooling produces 2 x embed_dim.
+    probe_dim = int(w_vec.shape[0])
     if feature_mean is not None and feature_std is not None:
         mu = np.asarray(feature_mean, dtype=np.float64).reshape(-1)
         sigma = np.asarray(feature_std, dtype=np.float64).reshape(-1)
         w_vec = w_vec / sigma
         b_val = b_val - float(np.sum(w_vec * mu))
 
+    if int(feat.shape[-1]) != probe_dim:
+        raise ValueError(
+            f"The probe expects {probe_dim} features but the tower produces "
+            f"{int(feat.shape[-1])}. The pooling mode and the measured probe "
+            "must agree."
+        )
     probe_layer = tf.keras.layers.Dense(1, activation="sigmoid", name="linear_probe")
     out = probe_layer(feat)
-    probe_layer.set_weights([w_vec.reshape(embed_dim, 1).astype(np.float32), np.array([b_val], dtype=np.float32)])
+    probe_layer.set_weights([w_vec.reshape(probe_dim, 1).astype(np.float32), np.array([b_val], dtype=np.float32)])
 
     return tf.keras.Model(inp, out, name=f"vfm_probe_{active_depth}L")
 
@@ -542,11 +593,15 @@ def export_keras_vfm_to_tflite(
     3. **The converted graph must stay close enough to be usable.** The
        tolerance here is much looser than gate 1 on purpose, because it
        measures *quantization* error, not mirror error. INT8 weight
-       quantization of a 12-block ViT was MEASURED on the sealed test set
-       to give ``max |dp| = 5.9e-02`` and ``mae = 1.5e-02`` while the
-       sealed-test AUC moved only from 0.8919 to 0.8910 (-0.0009). A
-       probability-scale tolerance of 0.10 admits that measured behaviour
-       and still rejects a broken graph.
+       quantization of a 12-block ViT was MEASURED: the 16-image parity set
+       gives ``max |dp| = 5.9e-02`` and ``mae = 1.5e-02``, and the FULL
+       sealed test split gives ``max |dp| = 0.2012`` and ``mae = 0.0193``
+       while the sealed-test AUC moved only from 0.8919 to 0.8910
+       (-0.0009). The probability-scale tolerance of 0.10 admits the parity
+       set's behaviour; the sealed split's worst case is ABOVE it, which is
+       exactly why the end-to-end acceptance is BEHAVIOURAL - the AUC and
+       the low-FPR operating points - and not a raw probability tolerance.
+       See ``ml/scripts/evaluate_tflite_vfm.py``.
 
     The behavioural acceptance criterion - that the quantized graph keeps
     the measured AUC - is enforced separately and end-to-end by
@@ -622,6 +677,9 @@ def export_keras_vfm_to_tflite(
 
     return {
         "output_path": output_path,
+        # The acceptance report is only meaningful if it is bound to THESE
+        # bytes: a stale report must not be able to "cover" a replaced file.
+        "model_sha256": sha256_file(output_path),
         "size_bytes": len(tflite_bytes),
         "size_mb": round(len(tflite_bytes) / (1024 * 1024), 2),
         "quantize": quantize,

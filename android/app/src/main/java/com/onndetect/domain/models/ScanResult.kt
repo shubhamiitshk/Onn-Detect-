@@ -52,6 +52,16 @@ data class ScanResult(
      * authenticity: it simply means nothing was found.
      */
     val provenanceEvidence: ProvenanceEvidence = ProvenanceEvidence.Absent,
+    /**
+     * True when an independent ON-DEVICE evaluation verified this release.
+     *
+     * [modelValidated] means the release is USABLE: its packaged bytes are
+     * hash-bound, measured and calibrated. This field distinguishes HOW it
+     * was verified. A release that is desktop-verified but not device
+     * verified is usable, and must be presented as such rather than as a
+     * fully verified release.
+     */
+    val releaseDeviceValidated: Boolean = false,
 ) {
     init {
         require(overallScore.isFinite() && (overallScore == -1f || overallScore in 0f..1f))
@@ -74,7 +84,16 @@ object VerdictPolicy {
 }
 
 data class SignalBreakdown(
-    val mobileClipScore: Float,
+    /**
+     * Slot 6: the frozen SigLIP-B/16 tower's P(AI).
+     *
+     * It was called `mobileClipScore`, but slot 6 has never carried a
+     * MobileCLIP score - MobileCLIP2-S0 measured 0.5145 AUC (chance), and
+     * the slot now carries the frozen tower. The persisted JSON key was
+     * migrated too; the decoder still reads the old key so earlier history
+     * rows decode.
+     */
+    val vfmProbeScore: Float,
     val srmForensicScore: Float,
     val fftSpectralScore: Float,
     val klDivergenceScore: Float,

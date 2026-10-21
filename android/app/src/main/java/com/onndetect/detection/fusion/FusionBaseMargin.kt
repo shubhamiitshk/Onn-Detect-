@@ -44,20 +44,40 @@ import kotlin.math.ln
  */
 object FusionBaseMargin {
 
-    /** The probability clipping applied before the logit, matching Python. */
-    const val EPSILON: Float = 1e-6f
+    /**
+     * The probability clipping applied before the logit.
+     *
+     * A DOUBLE, and exactly the trainer's `1e-6`: the clip is applied in
+     * double precision so that the saturated cases agree with
+     * `probe_base_margin` to the last bit. In float32, `1f - 1e-6f` is
+     * 0.9999989867 and the p = 1 case still missed the trainer's margin by
+     * 1.3e-2.
+     */
+    const val EPSILON: Double = 1e-6
 
     /**
      * The logit of the slot-6 probe score.
      *
      * @param probe the probe's P(AI), or NaN when the probe did not run.
-     * @return `log(p / (1 - p))`, or `0f` when the probe is unavailable or
-     *   its probability is exactly 0 or 1 (where the logit is not finite).
+     * @return `log(q / (1 - q))` where `q` is the probability clipped to
+     *   `[EPSILON, 1 - EPSILON]`, or `0f` when the probe is unavailable.
+     *
+     * The clip is the SAME clip the Python trainer applies
+     * (`train_xgboost_meta.py::probe_base_margin`), and it is not
+     * optional. A float32 sigmoid saturates to exactly 1.0f once the logit
+     * exceeds about 17, and the probe's linear head can produce that on a
+     * confidently synthetic image. The trainer's margin for such a sample is
+     * +13.8155; returning 0 here would make the device's margin 13.8 lower
+     * than the one the fusion was fitted with, which is a different verdict
+     * for exactly the samples the detector is most confident about.
+     *
+     * An earlier version short-circuited `p <= 0f || p >= 1f` to `0f`,
+     * which meant the device and the trainer disagreed only for saturated
+     * probabilities - the one case that matters most.
      */
     fun logit(probe: Float): Float {
         if (!probe.isFinite()) return 0f
-        if (probe <= 0f || probe >= 1f) return 0f
-        val q = probe.coerceIn(EPSILON, 1f - EPSILON).toDouble()
+        val q = probe.toDouble().coerceIn(EPSILON, 1.0 - EPSILON)
         return ln(q / (1.0 - q)).toFloat()
     }
 }

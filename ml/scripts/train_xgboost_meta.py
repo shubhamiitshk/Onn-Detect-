@@ -235,9 +235,15 @@ def kotlin_brace_check(kt_path: str) -> bool:
 #
 # The fusion became WORSE than its own member, and the fusion score is what
 # the app compares against its threshold, so the dilution reached the verdict.
-# With the probe as the base margin the tree can only ADD to the probe, and
-# the fusion then matches or slightly beats the probe alone
-# (AUC 0.8941, TPR@1%FPR 0.2800).
+# With the probe as the base margin the tree CORRECTS the probe rather than
+# replacing its ordering, and the fusion then matches or slightly beats the
+# probe alone (AUC 0.8941, TPR@1%FPR 0.2800).
+#
+# NOTE the precise claim: the tree SPLITS on slot 6, so its correction is a
+# function of the probe score and two probe scores can receive different
+# corrections. What the base margin guarantees is that the tree cannot
+# REPLACE the probe's continuous ordering with a coarse step function; it
+# is NOT a guarantee that the tree can only ever increase the margin.
 #
 # The base margin is 0 when the probe is unavailable (slot 6 is NaN), which is
 # exactly what the Android pipeline sends when Engine C did not run, so the
@@ -448,7 +454,8 @@ def main():
         help=(
             "Use the slot-6 probe score as the booster's base margin "
             "('probe'), so the fusion predicts sigmoid(logit(probe) + "
-            "correction) and the tree can only ADD to the probe. With "
+            "correction): the tree CORRECTS the probe rather than replacing "
+            "its coarse step-function ordering. With "
             "'none' the tree predicts sigmoid(correction) directly, which "
             "was measured to DILUTE a strong slot-6 detector: the sealed "
             "test AUC fell from 0.8910 (probe alone) to 0.8697 and "

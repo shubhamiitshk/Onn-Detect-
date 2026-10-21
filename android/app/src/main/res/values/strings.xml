@@ -18,6 +18,16 @@
     <string name="inconclusive">Inconclusive</string>
     <string name="synthetic">Likely synthetic</string>
     <string name="no_strong_evidence">No strong synthetic evidence</string>
+    <!-- The final percentage. This is the AI-EVIDENCE score of the calibrated
+         fusion at its operating point, shown as a percentage because that is
+         what the user asked for; it is not a frequency-calibrated probability
+         and the score notice below says so. -->
+    <string name="ai_evidence_percentage">%1$d%% AI-generated</string>
+    <string name="verdict_engine_line">SigLIP-B/16 TOWER + 16-CH SRM/NPR · LITERTE INT8</string>
+    <string name="verdict_engine_line_audio">LCNN SPEECH MODEL · LITERTE INT8</string>
+    <string name="verdict_engine_line_video">SigLIP-B/16 TOWER + SRM/NPR + AUDIO LCNN · LITERTE INT8</string>
+    <string name="release_line_device_verified">Release %1$s · device-verified · zero network calls</string>
+    <string name="release_line_desktop_verified">Release %1$s · desktop-verified, on-device evaluation pending · zero network calls</string>
     <string name="detector_score_value">Detector score: %1$.3f</string>
     <string name="score_notice">Diagnostic score, not a calibrated probability or proof of origin.</string>
     <string name="signals_title">Evaluated signals</string>

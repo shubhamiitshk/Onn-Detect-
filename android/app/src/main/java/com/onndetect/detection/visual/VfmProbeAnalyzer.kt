@@ -40,6 +40,17 @@ import org.json.JSONObject
  * product decision as well, and it is the reason the model is OPTIONAL:
  * see below.
  *
+ * **The latency depends on the interpreter configuration.** The graph is
+ * dominated by [196, 768] x [768, 3072] INT8 matrix multiplications, so
+ * it only reaches XNNPACK's SDOT/UDOT SIMD kernels on ARM64 when XNNPACK is
+ * enabled and the interpreter is allowed more than one thread.
+ * [DelegateSelector] does exactly that (XNNPACK on, `min(cores, 4)`
+ * threads) and [DelegateSelectorTest] pins it, because the thread count is
+ * worth about 2x on this graph and nothing else would have noticed it
+ * changing. Measured on x86: 540 ms p50 single-threaded, 282 ms p50 with
+ * 4 threads. The expectation on a modern Cortex-A78/X-series core is
+ * roughly 140-180 ms; that has NOT been measured on a device.
+ *
  * ## The model is optional
  *
  * The graph is only present in a release that staged it. When it is
@@ -58,7 +69,7 @@ class VfmProbeAnalyzer @Inject constructor(
 
         /**
          * The frontend contract. It must match the Python side exactly:
-         * `ml/src/data/image_frontend.py::vfm_frontend_id` and
+         * `ml/src/export/vfm_frontend.py::vfm_frontend_id` and
          * `ml/scripts/evaluate_vfm_probes.py::Tower.frontend_id`.
          */
         const val FRONTEND_ID = "vfm-siglip224-siglip-base-patch16-224-bicubic-clamp-meanstd-float32"

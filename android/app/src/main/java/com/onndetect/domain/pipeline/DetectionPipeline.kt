@@ -56,7 +56,7 @@ class DetectionPipeline @Inject constructor(
         /**
          * Legacy neutral for the former slot-6 constant.
          *
-         * Slot 6 now carries the Engine C ("Lite C") measurement and is
+         * Slot 6 now carries the frozen SigLIP-B/16 tower's measurement and is
          * UNAVAILABLE (NaN) when the probe did not run. A neutral constant is
          * only safe while nothing is ever measured in the slot, because a
          * tree that splits on 0.1 cannot tell "low anomaly" from "not run".
@@ -64,7 +64,7 @@ class DetectionPipeline @Inject constructor(
         const val NEUTRAL_EXIF = 0.1f
 
         /**
-         * Fusion slot carrying the Engine C ("Lite C") semantic measurement.
+         * Fusion slot carrying the frozen SigLIP-B/16 tower's measurement.
          *
          * MUST stay identical to `meta_classifier.feature_extractor`
          * `SEMANTIC_PROBE_INDEX` and to the slot documented in
@@ -130,7 +130,8 @@ class DetectionPipeline @Inject constructor(
                 SystemClock.elapsedRealtime() - started, finalStatus, finalVerdict, finalReason, finalModelValidated,
                 report?.releaseId ?: "unknown", report?.frontendId ?: "unknown",
                 if (finalModelValidated) (report?.releaseId ?: "c2pa-verified") else "unvalidated", finalThreshold,
-                verdictConfidence = confidence, provenanceEvidence = provenanceEvidence)
+                verdictConfidence = confidence, provenanceEvidence = provenanceEvidence,
+                releaseDeviceValidated = report?.deviceValidated == true)
         }
         try {
             emit(ScanProgress("Validating input...", 5f))
@@ -165,8 +166,14 @@ class DetectionPipeline @Inject constructor(
                 }
             }
             checkStop()
+            // The SRM CNN runs at every degradation level except ABSTAIN.
+            // It is 143 KB and memory-mapped, so it is not what the memory
+            // budget is about; the 89.96 MB tower is. Skipping the SRM CNN
+            // made the pipeline refuse to score (srm < 0f), which denied the
+            // user a verdict for a reason that had nothing to do with the
+            // app's capability.
             var srm = -1f
-            if (budget != DegradationLevel.MATH_ONLY) {
+            if (budget != DegradationLevel.ABSTAIN) {
                 emit(ScanProgress("Decomposing 20-ch high-pass residuals…", 20f))
                 srm = srmAnalyzer.analyze(bitmap, checkStop)
                 signals = signals.copy(srmForensicScore = srm)
@@ -192,7 +199,7 @@ class DetectionPipeline @Inject constructor(
                 return@flow
             }
 
-            // ── Engine C ("Lite C"): optional semantic second opinion ────────
+            // ── Slot 6: the frozen SigLIP-B/16 tower, an optional second opinion ─────
             // The probe runs ONLY when the release manifest declares it AND
             // it cleared every integrity gate (hash, contract, calibration
             // above chance, desktop parity, device parity). An unverified
@@ -204,12 +211,12 @@ class DetectionPipeline @Inject constructor(
             var engineCScore: Float? = null
             if (budget == DegradationLevel.FULL && report.cascadeValidated) {
                 checkStop()
-                emit(ScanProgress("Evaluating Engine C SigLIP appearance probe…", 78f))
+                emit(ScanProgress("Evaluating the SigLIP-B/16 vision tower…", 78f))
                 engineCScore = vfmProbe.analyze(bitmap, checkStop)
                 checkStop()
                 val score = engineCScore
                 if (score != null && score.isFinite()) {
-                    signals = signals.copy(mobileClipScore = score)
+                    signals = signals.copy(vfmProbeScore = score)
                 }
             }
 
@@ -328,10 +335,41 @@ class DetectionPipeline @Inject constructor(
         // memoryClass is the app's REAL per-process heap budget. availMem is
         // system-wide free memory, which other apps can bleed to near zero and
         // make this gate fire unpredictably - it is not our budget.
+        //
+        // The app's OWN per-process heap budget is the thing to gate on.
+        //
+        // `availMem` is system-wide free memory, and it is NOT this app's
+        // budget: another app can bleed it to near zero and make the gate
+        // fire unpredictably. The previous code used it anyway, and the
+        // consequence was that a busy phone dropped to MATH_ONLY, which
+        // skips the SRM CNN, which makes the pipeline refuse to score at
+        // all (`srm < 0f`) - so the app returned "inconclusive" with no
+        // verdict and no percentage for a reason that had nothing to do
+        // with this app's capability.
+        //
+        // The models are MEMORY-MAPPED from the APK, so the 89.96 MB
+        // SigLIP-B/16 tower costs page cache, not Java heap. What the heap
+        // must hold is the interpreter's activation tensors (a few MB for
+        // the tower) and the decoded bitmap.
         val heapBudgetMb = am.memoryClass
         return when {
-            heapBudgetMb < 64 || availMb < 64 -> DegradationLevel.ABSTAIN
-            heapBudgetMb <= 128 || availMb < 150 -> DegradationLevel.MATH_ONLY
+            // A genuinely exhausted system is refused outright: the
+            // interpreter's allocations would fail, and the pipeline would
+            // report MODEL_FAILURE rather than a wrong answer. This branch
+            // comes FIRST, because the previous ordering put it after the
+            // MATH_ONLY branch, where it could never fire.
+            availMb < 64 -> DegradationLevel.ABSTAIN
+            // The app's own per-process heap budget.
+            heapBudgetMb < 64 -> DegradationLevel.ABSTAIN
+            // MATH_ONLY means "the tower does not run", NOT "nothing runs".
+            // The SRM CNN is 143 KB and memory-mapped, so it is not what the
+            // memory budget is about; the 89.96 MB tower is. Skipping the
+            // SRM CNN made the pipeline refuse to score at all, which is the
+            // same "no verdict, no percentage" symptom as the validation
+            // gate. The fusion's probe-free branch is exactly what it was
+            // trained for, and the cascade policy already has a path for it
+            // ("Engine C unavailable; fusion alone").
+            heapBudgetMb < 128 -> DegradationLevel.MATH_ONLY
             else -> DegradationLevel.FULL
         }
     }

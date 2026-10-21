@@ -40,6 +40,10 @@ REQUIRED_ARTIFACTS = {'constants/lcnn_audio_threshold.json', 'constants/meta_cla
                       'fusion/XGBoostMetaClassifier.kt', 'fusion/xgboost_meta.json',
                       'fusion/meta_results.json', 'evaluation_report.json', 'source_snapshot.json'}
 CASCADE_ARTIFACTS = {'constants/semantic_probe_threshold.json', 'constants/cascade_policy.json'}
+# The frozen tower's end-to-end acceptance report. It is what proves that the
+# PACKAGED bytes keep the measured behaviour, and it is bound to those bytes
+# by the model's SHA256.
+TOWER_ARTIFACTS = {'constants/vfm_acceptance.json'}
 
 
 def read_object(path):

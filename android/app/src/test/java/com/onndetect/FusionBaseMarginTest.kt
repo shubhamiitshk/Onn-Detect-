@@ -46,13 +46,26 @@ class FusionBaseMarginTest {
         assertEquals(0f, FusionBaseMargin.logit(Float.NaN), 0f)
     }
 
-    @Test fun `a saturated probability contributes no margin`() {
-        // log(0) and log(1) are not finite; the Python side clips to
-        // 1e-6, and a zero margin is the safe, defined behaviour.
-        assertEquals(0f, FusionBaseMargin.logit(0f), 0f)
-        assertEquals(0f, FusionBaseMargin.logit(1f), 0f)
-        assertEquals(0f, FusionBaseMargin.logit(-0.5f), 0f)
-        assertEquals(0f, FusionBaseMargin.logit(1.5f), 0f)
+    @Test fun `a saturated probability uses the trainer's clipped logit`() {
+        // A float32 sigmoid saturates to exactly 1.0f once the logit
+        // exceeds about 17, and the probe's linear head can produce that on
+        // a confidently synthetic image. The trainer clips to [1e-6,
+        // 1-1e-6] and takes the logit, so the device MUST do the same: an
+        // earlier version returned 0 here, which put the device's margin
+        // 13.8 below the one the fusion was fitted with - a different
+        // verdict for exactly the samples the detector is most confident
+        // about.
+        assertClose(-13.815509557963773, FusionBaseMargin.logit(0f))
+        assertClose(13.815509557935018, FusionBaseMargin.logit(1f))
+    }
+
+    @Test fun `an out of range probability is still clipped`() {
+        // The probe is contractually in [0,1], so these cannot occur, but
+        // the clip must not throw or produce a non-finite margin.
+        assertTrue(FusionBaseMargin.logit(-0.5f).isFinite())
+        assertTrue(FusionBaseMargin.logit(1.5f).isFinite())
+        assertClose(-13.815509557963773, FusionBaseMargin.logit(-0.5f))
+        assertClose(13.815509557935018, FusionBaseMargin.logit(1.5f))
     }
 
     @Test fun `the margin is monotone in the probe score`() {

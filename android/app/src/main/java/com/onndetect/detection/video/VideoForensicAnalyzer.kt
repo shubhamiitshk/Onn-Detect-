@@ -63,10 +63,97 @@ class VideoForensicAnalyzer @Inject constructor(private val context: Context,
         val modelVersion: String = "unknown", val preprocessingVersion: String = "unknown",
         val calibrationVersion: String = "unvalidated",
         /**
-         * Mean Engine C ("Lite C") score across the analysed frames, or -1
+         * Mean slot-6 (frozen tower) score across the analysed frames, or -1
          * when the probe did not run.
          */
         val semanticScore: Float = -1f)
+    companion object {
+        /**
+         * Minimum adjacent-frame cosine similarity for a frame to inherit a
+         * neighbour keyframe's tower score.
+         */
+        const val KEYFRAME_SIMILARITY_THRESHOLD = 0.98f
+
+        /** The maximum number of keyframes the tower is run on. */
+        const val MAX_PROBE_KEYFRAMES = 4
+
+        /**
+         * Selects up to [maxKeyframes] indices across [frameCount] frames:
+         * the first, the middle, the last, and the frame immediately after
+         * the lowest adjacent cosine similarity (the scene cut or the peak
+         * motion).
+         */
+        internal fun selectProbeKeyframes(
+            frameCount: Int,
+            adjacentCosines: FloatArray,
+            maxKeyframes: Int = MAX_PROBE_KEYFRAMES,
+        ): Set<Int> {
+            if (frameCount <= 0) return emptySet()
+            if (frameCount <= maxKeyframes) return (0 until frameCount).toSet()
+            val selected = linkedSetOf(0, frameCount / 2, frameCount - 1)
+            if (adjacentCosines.isNotEmpty()) {
+                val minIdx = adjacentCosines.indices.minByOrNull { adjacentCosines[it] } ?: 0
+                val transitionFrame = (minIdx + 1).coerceIn(0, frameCount - 1)
+                selected += transitionFrame
+            }
+            // If the transition frame collided with the first, the middle or
+            // the last, fill the remaining budget with the quarter points.
+            if (selected.size < maxKeyframes) selected += (frameCount / 4).coerceIn(0, frameCount - 1)
+            if (selected.size < maxKeyframes) selected += ((3 * frameCount) / 4).coerceIn(0, frameCount - 1)
+            return selected
+        }
+
+        /**
+         * Evaluates [scoreFrame] on the keyframes, and propagates a
+         * keyframe's score to any frame whose path to it crosses no
+         * adjacent similarity below [similarityThreshold].
+         *
+         * A frame that no keyframe reaches without crossing such a
+         * transition is scored directly: a scene cut means the frame
+         * genuinely looks different.
+         */
+        internal inline fun evaluateWithKeyframeReuse(
+            frameCount: Int,
+            adjacentCosines: FloatArray,
+            similarityThreshold: Float = KEYFRAME_SIMILARITY_THRESHOLD,
+            scoreFrame: (Int) -> Float?,
+        ): FloatArray {
+            val scores = FloatArray(frameCount) { Float.NaN }
+            if (frameCount == 0) return scores
+            val keyframes = selectProbeKeyframes(frameCount, adjacentCosines)
+            for (idx in keyframes) {
+                scores[idx] = scoreFrame(idx) ?: Float.NaN
+            }
+            for (i in 0 until frameCount) {
+                if (!scores[i].isNaN()) continue
+                // The nearest EVALUATED keyframe reachable without crossing
+                // a transition.
+                var bestDist = Int.MAX_VALUE
+                var inherited = Float.NaN
+                for (k in keyframes) {
+                    val kScore = scores[k]
+                    if (kScore.isNaN()) continue
+                    val lo = minOf(i, k)
+                    val hi = maxOf(i, k)
+                    var connected = true
+                    for (step in lo until hi) {
+                        if (step >= adjacentCosines.size || adjacentCosines[step] < similarityThreshold) {
+                            connected = false
+                            break
+                        }
+                    }
+                    val dist = hi - lo
+                    if (connected && dist < bestDist) {
+                        bestDist = dist
+                        inherited = kScore
+                    }
+                }
+                scores[i] = if (!inherited.isNaN()) inherited else (scoreFrame(i) ?: Float.NaN)
+            }
+            return scores
+        }
+    }
+
     fun analyze(uri: android.net.Uri, maxFrames: Int = 10, checkStop: () -> Unit = {}, onStage: (String) -> Unit = {}): Outcome {
         val deadline = SystemClock.elapsedRealtime() + 60_000
         fun checkProgress() {
@@ -88,6 +175,26 @@ class VideoForensicAnalyzer @Inject constructor(private val context: Context,
                 val semanticScores = ArrayList<Float>()
                 val issues = ArrayList<String>()
                 val resNorm = (minOf(video.width, video.height) / 1024f).coerceIn(0f, 1f)
+                // The adjacent-frame similarities are computed ONCE: the
+                // keyframe selector needs them, and the temporal score uses
+                // them. Previously they were computed after the frame loop.
+                val adjacentCosines = if (video.frames.size > 1) {
+                    FrameCosineDelta.similarities(video.frames).toFloatArray()
+                } else {
+                    FloatArray(0)
+                }
+                // The tower on the KEYFRAMES, with the score propagated to
+                // the near-identical frames. A frame that a scene cut
+                // separates from every keyframe is scored directly, because
+                // it genuinely looks different.
+                val probeScores = if (report.cascadeValidated) {
+                    evaluateWithKeyframeReuse(video.frames.size, adjacentCosines) { idx ->
+                        checkProgress()
+                        vfmProbe.analyze(video.frames[idx], ::checkProgress)
+                    }
+                } else {
+                    FloatArray(video.frames.size) { Float.NaN }
+                }
                 video.frames.forEachIndexed { index, bitmap ->
                     checkProgress()
                     val srm = srmAnalyzer.analyze(bitmap, ::checkProgress)
@@ -98,7 +205,7 @@ class VideoForensicAnalyzer @Inject constructor(private val context: Context,
                         val spectral = fftAnalyzer.analyze(bitmap, ::checkProgress)
                         fftScores += spectral.score; flatScores += spectral.spectralFlatness
                         if (report.validated && srm in 0f..1f && kl in 0f..1f) {
-                            // Engine C ("Lite C") on THIS frame.
+                            // The frozen tower on THIS frame.
                             //
                             // Slot 6 must be a PER-FRAME measurement: the
                             // fusion is computed per frame, so a video-level
@@ -112,9 +219,12 @@ class VideoForensicAnalyzer @Inject constructor(private val context: Context,
                             // The probe is only run when the release
                             // validated it; otherwise slot 6 stays
                             // UNAVAILABLE (NaN) - never a neutral constant.
-                            val probe = if (report.cascadeValidated) {
-                                vfmProbe.analyze(bitmap, ::checkProgress)
-                            } else null
+                            //
+                            // The score for THIS frame comes from the
+                            // keyframe evaluation: either it was measured,
+                            // or it was inherited from a near-identical
+                            // neighbour.
+                            val probe = probeScores.getOrNull(index)?.takeIf { it.isFinite() }
                             if (probe != null) semanticScores += probe
                             val features = FusionFeatureSchema.build(
                                 srm, spectral.score, kl, spectral.spectralFlatness, resNorm, 1f,
@@ -130,7 +240,7 @@ class VideoForensicAnalyzer @Inject constructor(private val context: Context,
                     onStage("Frame ${index + 1}/${video.frames.size} analyzed...")
                 }
                 checkProgress()
-                val temporal = if (video.frames.size > 1) FrameCosineDelta.anomalyScore(FrameCosineDelta.similarities(video.frames)) else -1f
+                val temporal = if (adjacentCosines.isNotEmpty()) FrameCosineDelta.anomalyScore(adjacentCosines.toList()) else -1f
                 var audioScore = -1f
                 var audioDuration = 0L
                 var audioValidatedSuccess = false
