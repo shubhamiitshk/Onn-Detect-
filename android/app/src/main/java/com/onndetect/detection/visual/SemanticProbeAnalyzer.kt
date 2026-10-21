@@ -10,12 +10,17 @@ import kotlin.math.roundToInt
 import org.json.JSONObject
 
 /**
- * Engine C - the "Lite C" frozen vision-tower probe.
+ * Engine C - the "Lite C" appearance probe.
  *
- * A frozen MobileCLIP2-S0 image tower with a learned logistic probe head,
- * exported as one INT8 TFLite graph: image -> tower -> probe -> P(AI).
- * The tower is the thing that was measured (~0.885 AUC); only the 513
- * parameters of the probe head are learned.
+ * A small RGB-appearance CNN with a learned classification head, exported
+ * as one INT8 TFLite graph: image -> CNN -> P(AI).
+ *
+ * The shipped artifact is `SemanticProbeCNN`, a distilled student trained
+ * against a frozen CLIP-style vision tower's logits (see
+ * `ml/scripts/train_semantic_probe.py`). It is NOT the frozen tower
+ * itself: the tower is ~22 MB and the shipped INT8 graph is ~153 KiB.
+ * The distillation loses measurable accuracy, which is tracked in the
+ * release evaluation as a teacher/student AUC gap.
  *
  * It is the semantic counterpart to [SRMForensicAnalyzer], which reads
  * high-frequency residual structure. Engine C reads appearance and
@@ -65,7 +70,14 @@ class SemanticProbeAnalyzer(
             ) { "Unsupported semantic probe tensor" }
 
             val size = shape[1]
-            val scaled = Bitmap.createScaledBitmap(bitmap, size, size, true)
+            // BICUBIC, not Bitmap.createScaledBitmap(filter = true).
+            // The declared frontend contract is
+            // "clip-appearance-bicubic224-clipnorm-meanstd-float32" and the
+            // Python training/calibration path resizes with
+            // Image.Resampling.BICUBIC. createScaledBitmap applies BILINEAR,
+            // which made the device feed Engine C a different tensor than
+            // every threshold in the release was calibrated from.
+            val scaled = BicubicResizer.resize(bitmap, size, size)
             val pixels = IntArray(size * size)
             try {
                 scaled.getPixels(pixels, 0, size, 0, 0, size, size)

@@ -50,7 +50,10 @@ from meta_classifier.feature_extractor import (
     load_baseline,
 )
 
-SHORTCUT_FEATURE_INDICES = (4, 5)  # 4: resolution_norm, 5: is_compressed
+SHORTCUT_FEATURE_INDICES = tuple(
+    index for index, name in enumerate(FEATURE_NAMES)
+    if name in ("resolution_norm", "is_compressed")
+)
 NEUTRAL_RESOLUTION_NORM = 0.5
 NEUTRAL_IS_COMPRESSED = 1.0
 
@@ -247,10 +250,21 @@ def validate_export(booster: xgb.Booster, X_test: np.ndarray,
 
 
 def neutralize_shortcuts(X: np.ndarray) -> np.ndarray:
-    """Mask resolution_norm (col 4) and is_compressed (col 5) so trees cannot split on them."""
+    """Mask resolution_norm (col 4) and is_compressed (col 5) so trees cannot split on them.
+
+    The columns are located by NAME through SHORTCUT_FEATURE_INDICES, which
+    is derived from FEATURE_NAMES, and every column is bounds-checked. A
+    hard-coded index pair raised IndexError the moment the feature contract
+    was shortened, which is exactly the kind of failure that only shows up
+    when someone tries to migrate it.
+    """
     X_clean = np.array(X, dtype=np.float32, copy=True)
-    X_clean[:, 4] = NEUTRAL_RESOLUTION_NORM
-    X_clean[:, 5] = NEUTRAL_IS_COMPRESSED
+    for index in SHORTCUT_FEATURE_INDICES:
+        if index >= X_clean.shape[1]:
+            continue
+        name = FEATURE_NAMES[index]
+        value = NEUTRAL_RESOLUTION_NORM if name == "resolution_norm" else NEUTRAL_IS_COMPRESSED
+        X_clean[:, index] = value
     return X_clean
 
 
@@ -574,7 +588,7 @@ def main():
     test_laundered = booster.predict(xgb.DMatrix(X_test_laundered, feature_names=FEATURE_NAMES))
     laundered_auc = float(compute_auc(cache["y_test"], test_laundered))
 
-    from training.evaluation import evaluation_summary
+    from training.evaluation import evaluation_summary, assert_source_fpr_within_bound
     manifest_records = json.loads((root / "dataset_manifest.json").read_text(encoding="utf-8"))["records"]
     by_path = {record["path"]: record for record in manifest_records}
     records = [by_path[str(relative)] for relative in cache["ids_test"]]
@@ -582,6 +596,12 @@ def main():
     laundered_report = evaluation_summary(cache["y_test"], test_laundered, threshold, records)
     if test_report["auc"] <= 0.5 or laundered_auc <= 0.5:
         raise ValueError("Sealed or laundered fusion test performance at/below chance; refuse release")
+    # A detector that flags a large fraction of one acquisition source as
+    # synthetic has learned the SOURCE, not the synthesis. LAION-5B is the
+    # training corpus for Stable Diffusion and Flux, so "looks like LAION"
+    # is a giveaway, not a detection signal.
+    assert_source_fpr_within_bound(test_report, max_fpr=0.05, min_real_per_source=15, context="fusion")
+    assert_source_fpr_within_bound(laundered_report, max_fpr=0.05, min_real_per_source=15, context="fusion laundered")
 
     kt = output / "XGBoostMetaClassifier.kt"
     export_to_kotlin(booster, FEATURE_NAMES, str(kt), intercept, args.release_id)

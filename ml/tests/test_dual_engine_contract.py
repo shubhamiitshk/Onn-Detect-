@@ -93,10 +93,21 @@ class PipelineWiringTest(unittest.TestCase):
         )
 
     def test_pipeline_does_not_send_the_legacy_neutral_to_slot_six(self):
+        """The feature vector must not carry the legacy NEUTRAL_EXIF constant.
+
+        The vector is built through FusionFeatureSchema.build(...) rather
+        than a raw floatArrayOf(...), so the block is located by the schema
+        call. The assertion is unchanged: slot 6 must never be a neutral
+        constant.
+        """
         features_block = re.search(
-            r"floatArrayOf\((.*?)\)", self.source, re.S
+            r"FusionFeatureSchema\.build\((.*?)\n\s*\)", self.source, re.S
         )
-        self.assertIsNotNone(features_block)
+        if features_block is None:
+            features_block = re.search(
+                r"floatArrayOf\((.*?)\)", self.source, re.S
+            )
+        self.assertIsNotNone(features_block, "Pipeline does not build a fusion feature vector")
         body = features_block.group(1)
         self.assertNotIn("NEUTRAL_EXIF", body)
 
@@ -110,11 +121,12 @@ class PipelineWiringTest(unittest.TestCase):
     def test_pipeline_reports_the_deciding_engines_threshold(self):
         """Score and threshold must come from the SAME engine.
 
-        Engine A and Engine C have different operating points. Reporting
-        Engine C's score against the fusion threshold would produce a score
-        that contradicts its own verdict.
+        The cascade now reports the FUSION score in every branch, so the
+        matching operating point is Engine A's (the fusion) threshold.
+        Reporting Engine C's threshold against a fusion score would compare
+        the score against the wrong operating point.
         """
-        self.assertIn("policy.engineCThreshold", self.source)
+        self.assertIn("policy.engineAThreshold", self.source)
         self.assertIn("decisionThreshold", self.source)
 
     def test_pipeline_keeps_the_release_threshold_for_the_single_engine_path(self):
@@ -167,14 +179,26 @@ class PolicyBehaviourTest(unittest.TestCase):
         self.assertEqual(decision.verdict, "INCONCLUSIVE")
         self.assertTrue(decision.escalated)
 
-    def test_confident_engine_c_decides_without_escalation(self):
-        # Outside the band -> Engine C decides on its own.
+    def test_confident_fusion_decides_without_escalation(self):
+        # Outside the band the FUSION decides. It is the stronger signal
+        # (sealed test AUC 0.7152 vs Engine C 0.6871), so Engine C must
+        # not override it there.
         decision = decide(0.2, 0.9, self._policy())
-        self.assertEqual(decision.verdict, "SYNTHETIC")
+        self.assertEqual(decision.verdict, "AUTHENTIC")
         self.assertFalse(decision.escalated)
 
     def test_missing_engine_c_leaves_engine_a_in_charge(self):
         decision = decide(0.8, None, self._policy())
+        self.assertEqual(decision.verdict, "SYNTHETIC")
+        self.assertFalse(decision.escalated)
+
+    def test_confident_fusion_decides_synthetic_without_escalation(self):
+        """Fusion says fake, Engine C says authentic, Engine C outside the band.
+
+        The fusion decides. This is the case the old code got backwards.
+        Mirrors `CascadePolicyTest.confidentFusionDecidesSyntheticWithoutEscalation`.
+        """
+        decision = decide(0.9, 0.1, self._policy())
         self.assertEqual(decision.verdict, "SYNTHETIC")
         self.assertFalse(decision.escalated)
 
@@ -190,10 +214,14 @@ class PolicyBehaviourTest(unittest.TestCase):
         self.assertFalse(decide(0.55, 0.3999, policy).escalated)
         self.assertFalse(decide(0.55, 0.6001, policy).escalated)
 
-    def test_the_reported_score_is_always_engine_cs_score(self):
-        """Score and threshold must belong to the same engine."""
+    def test_the_reported_score_is_always_the_fusion_score(self):
+        """Score and threshold must belong to the same engine.
+
+        The cascade reports the fusion score, so the matching operating
+        point is engineAThreshold.
+        """
         decision = decide(0.8, 0.55, self._policy())
-        self.assertAlmostEqual(decision.score, 0.55, places=6)
+        self.assertAlmostEqual(decision.score, 0.8, places=6)
 
     def test_out_of_range_scores_are_rejected(self):
         """Mirrors the Kotlin `require` guards exactly."""

@@ -58,17 +58,17 @@ data class CascadePolicy(
      */
     fun decide(engineAScore: Float, engineCScore: Float?): CascadeDecision {
         require(engineAScore.isFinite() && engineAScore in 0f..1f) {
-            "Engine A score must be a finite probability"
+            "Fusion score must be a finite probability"
         }
 
-        // Engine C unavailable: no arbitration is possible, Engine A decides.
+        // Engine C unavailable: no arbitration is possible, the fusion decides.
         if (engineCScore == null || !engineCScore.isFinite()) {
             val verdict = if (engineAScore >= engineAThreshold) {
                 DetectionVerdict.SYNTHETIC
             } else {
                 DetectionVerdict.AUTHENTIC
             }
-            return CascadeDecision(verdict, engineAScore, false, "Engine C unavailable; Engine A alone")
+            return CascadeDecision(verdict, engineAScore, false, "Engine C unavailable; fusion alone")
         }
 
         val aSaysFake = engineAScore >= engineAThreshold
@@ -76,27 +76,35 @@ data class CascadePolicy(
 
         if (engineCScore in escalateBelow..escalateAbove) {
             if (aSaysFake == cSaysFake) {
-                val verdict = if (cSaysFake) {
+                // Both engines agree, so the verdict is the same either way.
+                // Report the FUSION score: the score and the threshold it is
+                // compared against must come from the same engine.
+                val verdict = if (aSaysFake) {
                     DetectionVerdict.SYNTHETIC
                 } else {
                     DetectionVerdict.AUTHENTIC
                 }
-                return CascadeDecision(verdict, engineCScore, true, "Engines agree")
+                return CascadeDecision(verdict, engineAScore, true, "Fusion and Engine C agree")
             }
             return CascadeDecision(
                 DetectionVerdict.INCONCLUSIVE,
-                engineCScore,
+                engineAScore,
                 true,
-                "Dual-engine disagreement; abstaining rather than selecting a winner",
+                "Fusion/Engine C disagreement; abstaining rather than selecting a winner",
             )
         }
 
-        val verdict = if (cSaysFake) {
+        // Outside the ambiguity band the FUSION is the stronger and better
+        // calibrated signal (sealed test AUC 0.7152 vs Engine C 0.6871).
+        // The previous code returned Engine C's verdict here and reported
+        // Engine C's score with Engine C's threshold, which reduced the
+        // best engine in the system to a boolean veto.
+        val verdict = if (aSaysFake) {
             DetectionVerdict.SYNTHETIC
         } else {
             DetectionVerdict.AUTHENTIC
         }
-        return CascadeDecision(verdict, engineCScore, false, "Engine C confident")
+        return CascadeDecision(verdict, engineAScore, false, "Fusion confident")
     }
 
     companion object {

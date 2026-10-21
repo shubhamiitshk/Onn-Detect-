@@ -105,10 +105,67 @@ object FFTUtil {
         return spectrum
     }
 
+    /**
+     * In-place INVERSE complex FFT, normalised by 1/n.
+     *
+     * Implemented with the conjugate trick: `IFFT(x) = conj(FFT(conj(x))) / n`.
+     */
+    fun inverseTransform(real: DoubleArray, imag: DoubleArray) {
+        val n = real.size
+        require(n == imag.size && n and (n - 1) == 0 && n > 0) { "length must be a power of two" }
+        for (i in 0 until n) imag[i] = -imag[i]
+        transform(real, imag)
+        for (i in 0 until n) {
+            real[i] = real[i] / n
+            imag[i] = -imag[i] / n
+        }
+    }
+
+    /**
+     * Inverse 2D transform of an n x n complex spectrum, returning the real
+     * part of the reconstruction.
+     *
+     * Used for the phase-only reconstruction in [PhaseSpectrumAnalyzer].
+     */
+    fun inverse2d(real: DoubleArray, imag: DoubleArray, n: Int): DoubleArray {
+        require(n > 0 && n and (n - 1) == 0 && n.toLong() * n == real.size.toLong())
+        val re = real.copyOf()
+        val im = imag.copyOf()
+
+        // Row transforms
+        for (y in 0 until n) {
+            val off = y * n
+            inverseTransform(re, im, off, n)
+        }
+        // Column transforms via strided access
+        val colRe = DoubleArray(n)
+        val colIm = DoubleArray(n)
+        for (x in 0 until n) {
+            for (y in 0 until n) {
+                colRe[y] = re[y * n + x]
+                colIm[y] = im[y * n + x]
+            }
+            inverseTransform(colRe, colIm)
+            for (y in 0 until n) {
+                re[y * n + x] = colRe[y]
+                im[y * n + x] = colIm[y]
+            }
+        }
+        return re
+    }
+
     private fun transform(re: DoubleArray, im: DoubleArray, offset: Int, length: Int) {
         val tmpRe = re.copyOfRange(offset, offset + length)
         val tmpIm = im.copyOfRange(offset, offset + length)
         transform(tmpRe, tmpIm)
+        System.arraycopy(tmpRe, 0, re, offset, length)
+        System.arraycopy(tmpIm, 0, im, offset, length)
+    }
+
+    private fun inverseTransform(re: DoubleArray, im: DoubleArray, offset: Int, length: Int) {
+        val tmpRe = re.copyOfRange(offset, offset + length)
+        val tmpIm = im.copyOfRange(offset, offset + length)
+        inverseTransform(tmpRe, tmpIm)
         System.arraycopy(tmpRe, 0, re, offset, length)
         System.arraycopy(tmpIm, 0, im, offset, length)
     }

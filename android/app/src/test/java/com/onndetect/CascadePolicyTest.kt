@@ -46,16 +46,22 @@ class CascadePolicyTest {
     }
 
     @Test
-    fun confidentEngineCDecidesWithoutEscalation() {
+    fun confidentFusionDecidesWithoutEscalation() {
+        // Outside the ambiguity band the FUSION decides. The fusion is the
+        // stronger signal (sealed test AUC 0.7152 vs Engine C 0.6871), so
+        // Engine C must not override it there.
         val decision = policy().decide(0.2f, 0.9f)
-        assertEquals(DetectionVerdict.SYNTHETIC, decision.verdict)
+        assertEquals(DetectionVerdict.AUTHENTIC, decision.verdict)
         assertFalse(decision.escalated)
     }
 
     @Test
-    fun confidentEngineCDecidesAuthenticWithoutEscalation() {
+    fun confidentFusionDecidesSyntheticWithoutEscalation() {
+        // Fusion says fake, Engine C says authentic, and Engine C is outside
+        // the ambiguity band. The fusion is the stronger signal, so it
+        // decides. This is the case the old code got backwards.
         val decision = policy().decide(0.9f, 0.1f)
-        assertEquals(DetectionVerdict.AUTHENTIC, decision.verdict)
+        assertEquals(DetectionVerdict.SYNTHETIC, decision.verdict)
         assertFalse(decision.escalated)
     }
 
@@ -67,12 +73,14 @@ class CascadePolicyTest {
     }
 
     @Test
-    fun theReportedScoreIsAlwaysEngineCsScore() {
+    fun theReportedScoreIsAlwaysTheFusionScore() {
         // The threshold the pipeline reports must belong to the same engine
-        // as the score, or the verdict can contradict the score.
+        // as the score, or the verdict can contradict the score. The cascade
+        // reports the fusion score, so the matching threshold is
+        // engineAThreshold.
         val p = policy()
         val decision = p.decide(0.8f, 0.55f)
-        assertEquals(0.55f, decision.score, 1e-6f)
+        assertEquals(0.8f, decision.score, 1e-6f)
     }
 
     @Test

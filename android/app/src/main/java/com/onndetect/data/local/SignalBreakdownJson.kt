@@ -23,6 +23,7 @@ object SignalBreakdownJson {
         put("temporalScore", safe(signals.temporalScore))
         put("provenanceScore", safe(signals.provenanceScore))
         put("prnuScore", safe(signals.prnuScore))
+        put("fusionScore", safe(signals.fusionScore))
     }.toString()
 
     /** @return null when json is null/corrupt; missing fields default to -1. */
@@ -43,6 +44,9 @@ object SignalBreakdownJson {
                 temporalScore = f("temporalScore"),
                 provenanceScore = f("provenanceScore"),
                 prnuScore = f("prnuScore"),
+                // Absent in rows written before the fusion score was
+                // persisted -> -1f (unavailable), never 0f.
+                fusionScore = f("fusionScore"),
             )
         } catch (_: Exception) {
             null

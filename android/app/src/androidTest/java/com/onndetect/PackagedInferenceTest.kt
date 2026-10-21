@@ -55,7 +55,12 @@ class PackagedInferenceTest {
                     Color.rgb((x * 2) % 256, (y * 2) % 256, (x * 13 + y * 7) % 256))
                 val pipeline = DetectionPipeline(DeviceTier.HIGH_END, SignalFusion(), SRMForensicAnalyzer(context, engine),
                     FFTSpectralAnalyzer(), KLCooccurrenceAnalyzer(context), XGBoostMetaClassifier(),
-                    EXIFAnalyzer(), C2PAManifestChecker(), PRNUAnalyzer(), context)
+                    EXIFAnalyzer(), C2PAManifestChecker(), PRNUAnalyzer(),
+                    // semanticProbe was added to the DetectionPipeline
+                    // constructor in 34bd2f2. Omitting it left this
+                    // instrumentation test with one argument too few and
+                    // the androidTest source set uncompilable.
+                    SemanticProbeAnalyzer(context, engine), context)
                 val result = pipeline.analyzeMedia(bitmap, ScanMode.IMAGE_ONLY).last().result!!
                 if (!report.validated) {
                     assertEquals(DetectionVerdict.INCONCLUSIVE, result.verdict)
@@ -64,10 +69,24 @@ class PackagedInferenceTest {
                     assertFalse(result.modelValidated)
                     assertEquals(-1f, result.overallScore, 0f)
                 } else {
-                    assertEquals(AnalysisStatus.SUCCESS, result.status)
+                    // A validated release may still legitimately ABSTAIN:
+                    // the cascade returns INCONCLUSIVE when Engine A and
+                    // Engine C disagree inside the ambiguity band. That is
+                    // correct behaviour, not a failure, so this test must
+                    // accept both outcomes. What it must still guarantee
+                    // is that a classified verdict is well formed.
+                    // JUnit's Assert takes the MESSAGE FIRST: assertTrue(message, condition).
+                    assertTrue(
+                        "Unexpected status ${result.status}: ${result.reason}",
+                        result.status == AnalysisStatus.SUCCESS ||
+                            result.status == AnalysisStatus.INCONCLUSIVE
+                    )
                     assertTrue(result.modelValidated)
-                    assertTrue(result.overallScore.isFinite() && result.overallScore in 0f..1f)
-                    assertTrue(result.verdict in setOf(DetectionVerdict.SYNTHETIC, DetectionVerdict.AUTHENTIC))
+                    if (result.verdict != DetectionVerdict.INCONCLUSIVE) {
+                        assertEquals(AnalysisStatus.SUCCESS, result.status)
+                        assertTrue(result.overallScore.isFinite() && result.overallScore in 0f..1f)
+                        assertTrue(result.decisionThreshold != null)
+                    }
                 }
             } finally { bitmap.recycle() }
         }

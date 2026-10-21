@@ -1,5 +1,8 @@
 package com.onndetect.domain.models
 
+import com.onndetect.detection.provenance.ProvenanceEvidence
+import com.onndetect.detection.provenance.VerdictConfidence
+
 /** Only SUCCESS with a validated release may produce a classified verdict. */
 enum class AnalysisStatus { SUCCESS, INCONCLUSIVE, UNSUPPORTED_INPUT, MODEL_FAILURE, CANCELLED }
 enum class DetectionVerdict { SYNTHETIC, AUTHENTIC, INCONCLUSIVE }
@@ -34,6 +37,21 @@ data class ScanResult(
     val analyzedDurationMs: Long = 0,
     val totalDurationMs: Long = 0,
     val analyzedTimestampsMs: List<Long> = emptyList(),
+    /**
+     * How the verdict was reached.
+     *
+     * [VerdictConfidence.PROVENANCE_CONFIRMED] requires a VERIFIED
+     * signature chain or a significant watermark detection. A C2PA
+     * manifest that is merely present does not qualify.
+     */
+    val verdictConfidence: VerdictConfidence = VerdictConfidence.UNVALIDATED,
+    /**
+     * Provenance evidence, if any was collected.
+     *
+     * Absence is [ProvenanceEvidence.Absent], which is NOT evidence of
+     * authenticity: it simply means nothing was found.
+     */
+    val provenanceEvidence: ProvenanceEvidence = ProvenanceEvidence.Absent,
 ) {
     init {
         require(overallScore.isFinite() && (overallScore == -1f || overallScore in 0f..1f))
@@ -66,7 +84,18 @@ data class SignalBreakdown(
     val temporalScore: Float,
     val provenanceScore: Float,
     /** Residual texture proxy, NOT camera PRNU attribution; -1 = unavailable. */
-    val prnuScore: Float = -1f
+    val prnuScore: Float = -1f,
+    /**
+     * The XGBoost FUSION score (all measured signals combined).
+     *
+     * This is the score the cascade policy actually receives as its
+     * "Engine A" input, and it is NOT the same thing as
+     * [srmForensicScore], which is only the raw SRM CNN output. The
+     * cascade telemetry card previously displayed the raw SRM score
+     * while the pipeline arbitrated on the fusion score, so the card
+     * could contradict the headline verdict. -1 = unavailable.
+     */
+    val fusionScore: Float = -1f
 )
 
 data class ProvenanceInfo(

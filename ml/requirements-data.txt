@@ -1,3 +1,10 @@
 -r requirements.txt
 datasets==4.4.1
 huggingface-hub==1.28.0
+# The frozen-vision-tower probe evaluation and export download the tower
+# from the Hugging Face hub and run it through the ONNX runtime.
+onnx==1.23.2
+onnxruntime==1.31.0
+onnx2tf==1.20.4
+transformers==5.20.2
+timm==1.0.30

@@ -133,6 +133,75 @@ if py_fe.exists() and kt_meta.exists():
         errors.append('Kotlin fusion source lacks the complete ordered feature contract')
     if "\\n" in kt_src:
         errors.append("Kotlin meta classifier contains literal \\n escapes!")
+
+    # ---------- runtime slot count and optional-slot index ----------
+    # The previous check only verified the Python FEATURE_NAMES list and the
+    # ORDER OF NAMES in the generated Kotlin doc comment. It never looked at
+    # the Kotlin runtime slot count or the optional-slot index, so a
+    # Kotlin-only change - a reordered array, a different `require(features.size
+    # == N)`, a different `listOf(N)` in the NaN guard - could silently break
+    # the contract and only fail at scan time.
+    py_index = None
+    for node in ast.parse(py_src).body:
+        if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'SEMANTIC_PROBE_INDEX' for t in node.targets):
+            py_index = ast.literal_eval(node.value)
+    if py_index is None:
+        errors.append('Python feature extractor does not define SEMANTIC_PROBE_INDEX')
+
+    m_slot = re.search(r'require\(features\.size == (\d+)\)', kt_src)
+    if not m_slot:
+        errors.append('Kotlin fusion source does not assert a runtime feature slot count')
+    elif int(m_slot.group(1)) != len(feats):
+        errors.append(
+            f'Kotlin fusion runtime slot count {m_slot.group(1)} does not match the '
+            f'Python feature schema ({len(feats)} slots)'
+        )
+
+    m_opt = re.search(r'listOf\((\d+(?:,\s*\d+)*)\)', kt_src)
+    if not m_opt:
+        errors.append('Kotlin fusion source does not declare its optional (NaN) slot')
+    else:
+        kt_optional = {int(v) for v in re.findall(r'\d+', m_opt.group(1))}
+        if kt_optional != {py_index}:
+            errors.append(
+                f'Kotlin optional slot {sorted(kt_optional)} does not match '
+                f'Python SEMANTIC_PROBE_INDEX {py_index}'
+            )
+
+    # ---------- the single-sourced Kotlin schema ----------
+    # FusionFeatureSchema is the one place the slot count and the optional
+    # index are defined on the Android side. Both pipelines must agree with
+    # it, and it must agree with Python.
+    kt_schema_path = ROOT / "android" / "app" / "src" / "main" / "java" / "com" / "onndetect" / "domain" / "pipeline" / "FusionFeatureSchema.kt"
+    if kt_schema_path.exists():
+        kt_schema = kt_schema_path.read_text(encoding="utf-8")
+        m_count = re.search(r'const val SLOT_COUNT = (\d+)', kt_schema)
+        if not m_count:
+            errors.append('FusionFeatureSchema does not declare SLOT_COUNT')
+        elif int(m_count.group(1)) != len(feats):
+            errors.append(
+                f'FusionFeatureSchema.SLOT_COUNT {m_count.group(1)} does not match '
+                f'the Python feature schema ({len(feats)})'
+            )
+        m_opt_slot = re.search(r'const val OPTIONAL_SLOT = (\w+)', kt_schema)
+        if not m_opt_slot:
+            errors.append('FusionFeatureSchema does not declare OPTIONAL_SLOT')
+        elif m_opt_slot.group(1) != 'SEMANTIC_PROBE_SCORE':
+            errors.append('FusionFeatureSchema.OPTIONAL_SLOT must be SEMANTIC_PROBE_SCORE')
+        # Every pipeline that builds a feature vector must use the schema.
+        for pipeline in (
+            ROOT / "android" / "app" / "src" / "main" / "java" / "com" / "onndetect" / "domain" / "pipeline" / "DetectionPipeline.kt",
+            ROOT / "android" / "app" / "src" / "main" / "java" / "com" / "onndetect" / "detection" / "video" / "VideoForensicAnalyzer.kt",
+        ):
+            if pipeline.exists():
+                p_src = pipeline.read_text(encoding="utf-8")
+                if 'FusionFeatureSchema.build(' not in p_src:
+                    errors.append(
+                        f'{pipeline.name} builds a raw floatArrayOf(...) instead of '
+                        'FusionFeatureSchema.build(...) - the feature vector can drift'
+                    )
+    else:
+        errors.append('Missing FusionFeatureSchema.kt')
 else:
     errors.append('Missing fusion contract source')
 

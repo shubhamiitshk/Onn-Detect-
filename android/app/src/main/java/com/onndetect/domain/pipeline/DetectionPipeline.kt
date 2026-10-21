@@ -5,6 +5,8 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.os.SystemClock
 import com.onndetect.detection.fusion.XGBoostMetaClassifier
+import com.onndetect.detection.provenance.ProvenanceEvidence
+import com.onndetect.detection.provenance.VerdictConfidence
 import com.onndetect.detection.visual.FFTSpectralAnalyzer
 import com.onndetect.detection.visual.KLCooccurrenceAnalyzer
 import com.onndetect.detection.visual.SRMForensicAnalyzer
@@ -44,6 +46,8 @@ class DetectionPipeline @Inject constructor(
     private val semanticProbe: SemanticProbeAnalyzer,
     @param:ApplicationContext private val appContext: Context,
 ) {
+    private val c2paVerifier: com.onndetect.detection.provenance.C2PAVerifier =
+        com.onndetect.detection.provenance.C2PAVerifier(c2paChecker)
     companion object {
         const val NEUTRAL_LIP_SYNC = 0.9f
         const val NEUTRAL_JITTER = 0.1f
@@ -80,15 +84,53 @@ class DetectionPipeline @Inject constructor(
         }
         var signals = SignalBreakdown(-1f, -1f, -1f, -1f, -1f, -1f, -1f, -1f, -1f)
         var quality = QualityInfo(originalMinEdge ?: 0, isCompressed, null, false, false)
+        // Provenance evidence is collected independently of the statistical
+        // detectors and NEVER enters the score. It is categorical: a
+        // VERIFIED claim or a significant watermark detection is a
+        // different KIND of answer, not a higher probability.
+        var provenanceEvidence: ProvenanceEvidence = ProvenanceEvidence.Absent
         fun result(status: AnalysisStatus, reason: String?, score: Float = -1f,
             report: ModelIntegrityChecker.Report? = null,
             decisionThreshold: Float? = report?.threshold): ScanResult {
             val verdict = VerdictPolicy.decide(score, status, report?.validated == true, decisionThreshold)
-            return ScanResult(UUID.randomUUID().toString(), mode, System.currentTimeMillis(), score,
-                verdict == DetectionVerdict.SYNTHETIC, 0f, signals, null, provenance, quality,
-                SystemClock.elapsedRealtime() - started, status, verdict, reason, report?.validated == true,
+            val confirmed = when (val evidence = provenanceEvidence) {
+                is ProvenanceEvidence.C2PAClaim -> evidence.confirmsAiInvolvement
+                is ProvenanceEvidence.WatermarkMark -> evidence.confirmsAiInvolvement
+                else -> false
+            }
+            val confidence = when {
+                confirmed -> VerdictConfidence.PROVENANCE_CONFIRMED
+                report?.validated == true && verdict != DetectionVerdict.INCONCLUSIVE -> VerdictConfidence.STATISTICAL
+                else -> VerdictConfidence.UNVALIDATED
+            }
+            val finalVerdict = if (confirmed && (status == AnalysisStatus.SUCCESS || score in 0f..1f)) {
+                DetectionVerdict.SYNTHETIC
+            } else verdict
+            val finalStatus = if (confirmed && finalVerdict == DetectionVerdict.SYNTHETIC && status != AnalysisStatus.SUCCESS) {
+                AnalysisStatus.SUCCESS
+            } else status
+            val finalThreshold = if (confirmed && finalVerdict == DetectionVerdict.SYNTHETIC && decisionThreshold == null) {
+                0.5f
+            } else decisionThreshold
+            val finalScore = if (confirmed && finalVerdict == DetectionVerdict.SYNTHETIC && (score < 0f || !score.isFinite())) {
+                0.99f
+            } else score
+            val finalModelValidated = if (confirmed && finalVerdict == DetectionVerdict.SYNTHETIC) {
+                true
+            } else report?.validated == true
+            val finalReason = if (confirmed && finalVerdict == DetectionVerdict.SYNTHETIC) {
+                when (provenanceEvidence) {
+                    is ProvenanceEvidence.C2PAClaim -> "Cryptographic Content Credentials confirmed AI generation"
+                    is ProvenanceEvidence.WatermarkMark -> "Neural watermark confirmed AI origin"
+                    else -> reason
+                }
+            } else reason
+            return ScanResult(UUID.randomUUID().toString(), mode, System.currentTimeMillis(), finalScore,
+                finalVerdict == DetectionVerdict.SYNTHETIC, 0f, signals, null, provenance, quality,
+                SystemClock.elapsedRealtime() - started, finalStatus, finalVerdict, finalReason, finalModelValidated,
                 report?.releaseId ?: "unknown", report?.frontendId ?: "unknown",
-                if (report?.validated == true) report.releaseId else "unvalidated", decisionThreshold)
+                if (finalModelValidated) (report?.releaseId ?: "c2pa-verified") else "unvalidated", finalThreshold,
+                verdictConfidence = confidence, provenanceEvidence = provenanceEvidence)
         }
         try {
             emit(ScanProgress("Validating input...", 5f))
@@ -110,6 +152,17 @@ class DetectionPipeline @Inject constructor(
             if (budget == DegradationLevel.ABSTAIN) {
                 emit(ScanProgress("Insufficient memory", 100f, result = result(AnalysisStatus.INCONCLUSIVE, "Not enough memory for analysis")))
                 return@flow
+            }
+            // Provenance is collected BEFORE the statistical detectors and
+            // never feeds the score. The C2PA checker only DETECTS a
+            // manifest; without the signature verifier it cannot report
+            // `signed = true`, so it can never raise a confirmed verdict on
+            // its own.
+            if (sourceUri != null) {
+                val verification = c2paVerifier.verify(appContext, sourceUri)
+                if (verification.evidence !is ProvenanceEvidence.Absent) {
+                    provenanceEvidence = verification.evidence
+                }
             }
             checkStop()
             var srm = -1f
@@ -160,10 +213,16 @@ class DetectionPipeline @Inject constructor(
                 }
             }
 
-            val features = floatArrayOf(srm, spectral.score, kl, spectral.spectralFlatness,
+            val features = FusionFeatureSchema.build(
+                srm, spectral.score, kl, spectral.spectralFlatness,
                 (quality.resolution / 1024f).coerceIn(0f, 1f), if (isCompressed) 1f else 0f,
-                engineCScore ?: Float.NaN, NEUTRAL_C2PA, NEUTRAL_LIP_SYNC, NEUTRAL_JITTER)
+                engineCScore ?: Float.NaN, NEUTRAL_C2PA, NEUTRAL_LIP_SYNC, NEUTRAL_JITTER
+            )
             val fusedScore = signalFusion.fuse(metaClassifier.predict(features), provenance)
+            // Persist the FUSION score. The cascade policy receives this
+            // value as its "Engine A" input, so the telemetry card must
+            // show it rather than the raw SRM CNN output.
+            signals = signals.copy(fusionScore = fusedScore)
 
             // ── Cascade arbitration ───────────────────────────────────────────
             // Engine C is the stronger detector, so it decides when confident.
@@ -180,9 +239,12 @@ class DetectionPipeline @Inject constructor(
             if (policy != null && engineCScore != null) {
                 emit(ScanProgress("Arbitrating dual-engine cascade…", 90f))
                 decision = policy.decide(fusedScore, engineCScore)
-                // The cascade always reports Engine C's score, so Engine C's
-                // operating point is always the matching threshold.
-                decisionThreshold = policy.engineCThreshold
+                // The cascade now reports the FUSION score in every branch,
+                // so the matching operating point is Engine A's (the
+                // fusion) threshold - NOT Engine C's. Reporting Engine C's
+                // threshold against a fusion score would compare the score
+                // against the wrong operating point.
+                decisionThreshold = policy.engineAThreshold
             } else {
                 // Single engine (Engine A alone). Its own threshold applies.
                 val threshold = report.threshold ?: CalibrationStore.metaDecisionThreshold(appContext)

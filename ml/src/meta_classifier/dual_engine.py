@@ -195,9 +195,19 @@ def decide(
 ) -> CascadeDecision:
     """Apply the cascade arbitration policy to one sample.
 
-    Engine C unavailable -> Engine A alone decides (no arbitration possible).
-    Engine C available and unambiguous -> Engine C decides.
+    ``engine_a_score`` is the FUSION score and is the stronger signal
+    (sealed test AUC 0.7152 vs Engine C 0.6871), so it is the score that
+    decides and the score that is reported.
+
+    Engine C unavailable -> the fusion decides (no arbitration possible).
+    Engine C available and unambiguous -> the fusion decides.
     Engine C ambiguous -> arbitrate: agreement resolves, disagreement abstains.
+
+    The reported score and the threshold used to compare it must come from
+    the SAME engine. Reporting Engine C's score while deciding with the
+    fusion would produce a score that contradicts its own verdict, and
+    reporting Engine C's score when the fusion decided would apply the
+    wrong operating point to the stronger signal.
 
     Mirrors ``CascadePolicy.decide`` in Kotlin exactly, including the input
     guards, so the desktop measurements describe the shipped behaviour.
@@ -212,7 +222,7 @@ def decide(
 
     if engine_c_score is None or not np.isfinite(engine_c_score):
         verdict = "SYNTHETIC" if engine_a_score >= policy.engine_a_threshold else "AUTHENTIC"
-        return CascadeDecision(verdict, float(engine_a_score), False, "Engine C unavailable; Engine A alone")
+        return CascadeDecision(verdict, float(engine_a_score), False, "Engine C unavailable; fusion alone")
 
     engine_c_score = float(engine_c_score)
     a_says_fake = engine_a_score >= policy.engine_a_threshold
@@ -220,15 +230,15 @@ def decide(
 
     if policy.escalate_below <= engine_c_score <= policy.escalate_above:
         if a_says_fake == c_says_fake:
-            verdict = "SYNTHETIC" if c_says_fake else "AUTHENTIC"
-            return CascadeDecision(verdict, engine_c_score, True, "Engines agree")
+            verdict = "SYNTHETIC" if a_says_fake else "AUTHENTIC"
+            return CascadeDecision(verdict, float(engine_a_score), True, "Fusion and Engine C agree")
         return CascadeDecision(
-            "INCONCLUSIVE", engine_c_score, True,
-            "Dual-engine disagreement; abstaining rather than selecting a winner",
+            "INCONCLUSIVE", float(engine_a_score), True,
+            "Fusion/Engine C disagreement; abstaining rather than selecting a winner",
         )
 
-    verdict = "SYNTHETIC" if c_says_fake else "AUTHENTIC"
-    return CascadeDecision(verdict, engine_c_score, False, "Engine C confident")
+    verdict = "SYNTHETIC" if a_says_fake else "AUTHENTIC"
+    return CascadeDecision(verdict, float(engine_a_score), False, "Fusion confident")
 
 
 def fit_escalation_band(
@@ -238,6 +248,8 @@ def fit_escalation_band(
     engine_a_threshold: float,
     engine_c_threshold: float,
     coverage_grid: Optional[np.ndarray] = None,
+    min_classified_rate: float = 0.85,
+    min_escalation_rate: float = 0.05,
 ) -> tuple[CascadePolicy, list[dict[str, float]]]:
     """Fit the escalation band on the CALIBRATION split.
 
@@ -252,12 +264,36 @@ def fit_escalation_band(
     samples depending on how the score distribution is shaped, and the
     shipped policy would silently disagree with the measured table.
 
+    Which engine decides
+    --------------------
+    ``engine_a_scores`` is the FUSION score, and it is the stronger signal
+    (sealed test AUC 0.7152 vs Engine C 0.6871). The fusion therefore
+    decides OUTSIDE the band. Inside the band the two are compared, and a
+    disagreement abstains.
+
+    Objective
+    ---------
+    The band is chosen to maximise SELECTIVE ACCURACY - accuracy over the
+    samples that actually receive a verdict - subject to two constraints:
+
+    * ``min_classified_rate``: at least this fraction of samples must get a
+      definite verdict. Without it the fitter can always widen the band
+      until only the samples it agrees with remain, which is the same
+      failure as ranking on resolved accuracy alone.
+    * ``min_escalation_rate``: at least this fraction must go through
+      arbitration. Without it the fitter collapses to a zero-width band,
+      which disables the cascade entirely.
+
     Returns the fitted policy and the full Pareto table (every candidate band
     with its coverage, accuracy and disagreement rate).
     """
     if coverage_grid is None:
         coverage_grid = np.arange(0.30, 1.0001, 0.02)
     coverage_grid = np.clip(np.asarray(coverage_grid, dtype=np.float64), 0.0, 1.0)
+    if not 0.0 < min_classified_rate <= 1.0:
+        raise ValueError("min_classified_rate must be in (0, 1]")
+    if not 0.0 <= min_escalation_rate < 1.0:
+        raise ValueError("min_escalation_rate must be in [0, 1)")
 
     a_scores = np.asarray(engine_a_scores, dtype=np.float64)
     c_scores = np.asarray(engine_c_scores, dtype=np.float64)
@@ -274,6 +310,7 @@ def fit_escalation_band(
     distances = np.abs(c_scores - engine_c_threshold)
 
     table: list[dict[str, float]] = []
+    # (selective_accuracy, classified_rate, below, above, disagreement_rate)
     best: Optional[tuple[float, float, float, float, float]] = None
 
     for coverage in coverage_grid:
@@ -292,17 +329,27 @@ def fit_escalation_band(
         resolved = ~escalated
         disagreed = escalated & (a_says_fake != c_says_fake)
         arbitrated = escalated & ~disagreed
+        # Samples that receive a definite verdict: outside the band the
+        # fusion decides; inside it, agreement decides. A disagreement
+        # abstains and is NOT classified.
+        classified = resolved | arbitrated
 
         resolved_accuracy = (
-            float((c_says_fake[resolved] == (y[resolved] == FAKE_LABEL)).mean())
+            float((a_says_fake[resolved] == (y[resolved] == FAKE_LABEL)).mean())
             if resolved.any() else 0.0
         )
         arbitration_accuracy = (
-            float((c_says_fake[arbitrated] == (y[arbitrated] == FAKE_LABEL)).mean())
+            float((a_says_fake[arbitrated] == (y[arbitrated] == FAKE_LABEL)).mean())
             if arbitrated.any() else 0.0
         )
         disagreement_rate = float(disagreed.mean())
         achieved_coverage = float(resolved.mean())
+        classified_rate = float(classified.mean())
+        escalation_rate = float(escalated.mean())
+        selective_accuracy = (
+            float((a_says_fake[classified] == (y[classified] == FAKE_LABEL)).mean())
+            if classified.any() else 0.0
+        )
 
         table.append({
             "target_coverage": coverage,
@@ -312,17 +359,38 @@ def fit_escalation_band(
             "half_width": half_width,
             "resolved_accuracy": resolved_accuracy,
             "arbitration_accuracy": arbitration_accuracy,
+            "selective_accuracy": selective_accuracy,
+            "classified_rate": classified_rate,
+            "escalation_rate": escalation_rate,
             "disagreement_rate": disagreement_rate,
-            "escalation_rate": float(escalated.mean()),
+            "feasible": bool(classified_rate >= min_classified_rate
+                             and escalation_rate >= min_escalation_rate),
         })
 
-        # Rank by resolved accuracy, then by coverage, then by agreement.
-        key = (resolved_accuracy, achieved_coverage, -disagreement_rate)
-        if best is None or key > (best[0], best[1], -best[3]):
-            best = (resolved_accuracy, achieved_coverage, below, above, disagreement_rate)
+        # Constraint check. A candidate that abstains on too many samples,
+        # or that never arbitrates at all, is not deployable.
+        if classified_rate < min_classified_rate or escalation_rate < min_escalation_rate:
+            continue
+        if not classified.any():
+            continue
+
+        # Rank by selective accuracy, then by how many samples still get a
+        # verdict, then by agreement. The previous key ranked on
+        # ``resolved_accuracy`` alone, which improved monotonically as the
+        # band widened and therefore always drove to the coverage floor.
+        key = (selective_accuracy, classified_rate, -disagreement_rate)
+        if best is None or key > (best[0], best[1], -best[4]):
+            # best[4] is the disagreement rate. The previous code used
+            # best[3], which is ``escalate_above`` - an unrelated quantity.
+            best = (selective_accuracy, classified_rate, below, above, disagreement_rate)
 
     if best is None:
-        raise ValueError("No escalation band could be fitted")
+        raise ValueError(
+            "No escalation band satisfied the constraints "
+            f"(min_classified_rate={min_classified_rate}, "
+            f"min_escalation_rate={min_escalation_rate}). "
+            "Widen the band search or relax the constraints."
+        )
 
     policy = CascadePolicy(
         engine_a_threshold=float(engine_a_threshold),

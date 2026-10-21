@@ -100,8 +100,9 @@ object PipelineModule {
         klAnalyzer: KLCooccurrenceAnalyzer,
         metaClassifier: XGBoostMetaClassifier,
         audioClassifier: AudioClassifier,
+        semanticProbe: SemanticProbeAnalyzer,
     ) = VideoForensicAnalyzer(
         context, videoDecoder, srmAnalyzer, fftAnalyzer,
-        klAnalyzer, metaClassifier, audioClassifier,
+        klAnalyzer, metaClassifier, audioClassifier, semanticProbe,
     )
 }

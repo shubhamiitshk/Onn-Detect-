@@ -12,6 +12,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -26,6 +27,7 @@ import androidx.navigation.NavController
 import com.onndetect.R
 import com.onndetect.data.local.ScanHistoryEntity
 import com.onndetect.data.local.SignalBreakdownJson
+import com.onndetect.domain.pipeline.CascadePolicy
 import com.onndetect.ui.components.*
 import com.onndetect.ui.theme.*
 import org.json.JSONObject
@@ -138,6 +140,7 @@ fun AssessmentDetails(
     onDoneClick: () -> Unit = {},
     onHistoryClick: () -> Unit = {}
 ) {
+    val context = LocalContext.current
     // 1. Verdict Banner
     ForensicVerdictCard(
         verdict = e.verdict,
@@ -157,12 +160,25 @@ fun AssessmentDetails(
 
     // 2.5. Dual-Engine Cascade Telemetry Card (When visual dual-engine ran)
     val decodedSignals = remember(e.signalsJson) { SignalBreakdownJson.decode(e.signalsJson) }
+    // The cascade thresholds must come from the RELEASE, not from
+    // constants baked into the UI. Hard-coded thresholds silently drift
+    // away from the shipped policy and make the card disagree with the
+    // headline verdict.
+    val cascadePolicy = remember(context) { CascadePolicy.fromAssets(context) }
     if (decodedSignals != null && decodedSignals.mobileClipScore.isFinite() && decodedSignals.mobileClipScore >= 0f) {
         DualEngineCascadeCard(
-            engineAScore = decodedSignals.srmForensicScore,
+            // The pipeline arbitrates on the FUSION score, not on the raw
+            // SRM CNN output. Showing srmForensicScore here made the card
+            // contradict the headline verdict whenever the two fell on
+            // opposite sides of the threshold.
+            engineAScore = decodedSignals.fusionScore,
             engineCScore = decodedSignals.mobileClipScore,
             arbitratedScore = e.score,
-            reason = e.reason
+            reason = e.reason,
+            engineAThreshold = cascadePolicy?.engineAThreshold ?: 0.5f,
+            engineCThreshold = cascadePolicy?.engineCThreshold ?: 0.5f,
+            escalateBelow = cascadePolicy?.escalateBelow ?: 0f,
+            escalateAbove = cascadePolicy?.escalateAbove ?: 1f
         )
     }
 
@@ -464,13 +480,18 @@ fun DualEngineCascadeCard(
     engineCScore: Float,
     arbitratedScore: Float,
     reason: String?,
+    engineAThreshold: Float,
+    engineCThreshold: Float,
+    escalateBelow: Float,
+    escalateAbove: Float,
     modifier: Modifier = Modifier
 ) {
     if (!engineAScore.isFinite() || !engineCScore.isFinite()) return
+    if (!engineAThreshold.isFinite() || !engineCThreshold.isFinite()) return
 
-    val aSaysFake = engineAScore >= 0.512f
-    val cSaysFake = engineCScore >= 0.520f
-    val inAmbiguityBand = engineCScore in 0.168f..0.871f
+    val aSaysFake = engineAScore >= engineAThreshold
+    val cSaysFake = engineCScore >= engineCThreshold
+    val inAmbiguityBand = engineCScore in escalateBelow..escalateAbove
     val isAgreement = aSaysFake == cSaysFake
 
     val (badgeText, badgeColor, badgeDesc) = when {
@@ -540,7 +561,8 @@ fun DualEngineCascadeCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Engine A Card
+                // Engine A Card - shows the FUSION score, which is what the cascade
+                // policy actually arbitrates on.
                 Column(
                     modifier = Modifier
                         .weight(1f)
@@ -555,7 +577,7 @@ fun DualEngineCascadeCard(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "ENGINE A",
+                            text = "ENGINE A (FUSION)",
                             style = MaterialTheme.typography.labelSmall,
                             color = CyberCyan,
                             fontWeight = FontWeight.Bold
@@ -568,7 +590,7 @@ fun DualEngineCascadeCard(
                         )
                     }
                     Text(
-                        text = "20-ch SRM+NPR+RGB",
+                        text = "FUSION (SRM + FFT + KL + Engine C)",
                         style = MaterialTheme.typography.bodySmall,
                         color = TextTertiary,
                         fontSize = 10.sp
@@ -585,7 +607,7 @@ fun DualEngineCascadeCard(
                                 .fillMaxWidth(engineAScore.coerceIn(0f, 1f))
                                 .fillMaxHeight()
                                 .clip(CircleShape)
-                                .background(if (engineAScore >= 0.512f) SyntheticRed else AuthenticGreen)
+                                .background(if (engineAScore >= engineAThreshold) SyntheticRed else AuthenticGreen)
                         )
                     }
                 }
@@ -635,7 +657,7 @@ fun DualEngineCascadeCard(
                                 .fillMaxWidth(engineCScore.coerceIn(0f, 1f))
                                 .fillMaxHeight()
                                 .clip(CircleShape)
-                                .background(if (engineCScore >= 0.520f) SyntheticRed else AuthenticGreen)
+                                .background(if (engineCScore >= engineCThreshold) SyntheticRed else AuthenticGreen)
                         )
                     }
                 }

@@ -28,7 +28,23 @@ object ModelIntegrityChecker {
     data class Report(val allOk: Boolean, val failures: List<String>, val validated: Boolean = false,
         val validationReason: String = "Release lineage/calibration is unavailable", val releaseId: String = "unknown",
         val frontendId: String = "unknown", val threshold: Float? = null,
-        val cascadeValidated: Boolean = false)
+        val cascadeValidated: Boolean = false,
+        /**
+         * The XGBoost FUSION's calibrated operating point.
+         *
+         * The image/video pipeline decides with the fusion score, so this is
+         * the threshold that pipeline must use. It is NOT the same number as
+         * any individual model's threshold.
+         */
+        val fusionThreshold: Float? = null,
+        /**
+         * Each model's OWN calibrated operating point, keyed by model file
+         * name.
+         *
+         * These are per-model thresholds. The audio route compares its score
+         * against the AUDIO model's threshold, never against the fusion's.
+         */
+        val modelThresholds: Map<String, Float> = emptyMap())
 
     fun verifyAllModels(context: Context): Boolean = verifyAllModelsDetailed(context).allOk
     fun verifyAllModelsDetailed(context: Context): Report = verifyModelsDetailed(context, REQUIRED_MODELS)
@@ -186,7 +202,19 @@ object ModelIntegrityChecker {
 
             if (IMAGE_MODEL in required) require(release.getString("fusion_revision") == com.onndetect.detection.fusion.XGBoostMetaClassifier.RELEASE_ID &&
                 com.onndetect.detection.fusion.XGBoostMetaClassifier.RELEASE_ID != "legacy-unvalidated") { "Fusion lineage mismatch" }
-            var threshold: Float? = null
+            // ---- per-model calibration: each model's OWN operating point ----
+            //
+            // The previous code took ONE `threshold` out of the loop, so
+            // `report.threshold` was whichever model happened to be visited
+            // last in a Set. The audio route calls
+            // `report(context, setOf(AUDIO_MODEL))` and compares its score
+            // against `report.threshold`; with a shared field that could be
+            // the IMAGE FUSION's threshold, and an audio score would be
+            // judged against the wrong operating point.
+            //
+            // Each model's threshold is now kept separately, and the
+            // pipeline-facing `threshold` is chosen MODALLY.
+            val modelThresholds = mutableMapOf<String, Float>()
             var frontend = "unknown"
             required.forEach { name ->
                 val model = models.getJSONObject(name)
@@ -204,11 +232,70 @@ object ModelIntegrityChecker {
                 require(t.isFinite() && t in 0f..1f && auc.isFinite() && auc > 0.5 && auc <= 1.0)
                 require(integer(c, "n_calibration") >= 100 && validHash(c.getString("split_manifest_hash")))
                 require(dataHashes.keys().asSequence().any { dataHashes.getString(it) == c.getString("split_manifest_hash") }) { "Calibration split lineage mismatch" }
-                val constantThreshold = if (name == AUDIO_MODEL) numeric(read("constants/lcnn_audio_threshold.json"), "threshold_at_eer").toFloat() else numeric(read("constants/meta_classifier.json"), "decision_threshold").toFloat()
-                require(kotlin.math.abs(t - constantThreshold) < 1e-6f) { "Calibration asset/release threshold mismatch" }
-                threshold = t
+                modelThresholds[name] = t
             }
-            Report(true, emptyList(), true, "Validated release", releaseId, frontend, threshold, cascadeValidated)
+
+            // ---- the FUSION's own calibration ----
+            //
+            // The current layout keeps the fusion calibration under its own
+            // `fusion_xgboost` key. The LEGACY layout stored it under the
+            // SRM model's key, which is why Engine A's own operating point
+            // (auc 0.6033, threshold 0.53125) was recorded nowhere in the
+            // manifest. Both layouts are accepted so an already-staged
+            // release keeps validating, but the fusion calibration is read
+            // from the right place either way.
+            //
+            // The fusion is only the deciding engine when the image model is
+            // in play. An audio-only caller does not need a fusion
+            // threshold at all, and must not be made to fail because the
+            // manifest has no fusion calibration.
+            var fusionThreshold: Float? = null
+            if (IMAGE_MODEL in required) {
+                val fusionCal = calibrations.optJSONObject("fusion_xgboost")
+                    ?: calibrations.getJSONObject(IMAGE_MODEL)
+                val fusionThr = numeric(fusionCal, "threshold").toFloat()
+                val fusionAuc = numeric(fusionCal, "auc")
+                require(fusionThr.isFinite() && fusionThr in 0f..1f &&
+                    fusionAuc.isFinite() && fusionAuc > 0.5 && fusionAuc <= 1.0) { "Fusion calibration is at/below chance" }
+                // The fusion threshold must equal the constant the pipeline reads.
+                val metaConstantThreshold = numeric(read("constants/meta_classifier.json"), "decision_threshold").toFloat()
+                require(kotlin.math.abs(fusionThr - metaConstantThreshold) < 1e-6f) {
+                    "Fusion calibration asset/release threshold mismatch"
+                }
+                fusionThreshold = fusionThr
+            }
+            // The audio model's threshold must equal the audio constant.
+            modelThresholds[AUDIO_MODEL]?.let { audioThreshold ->
+                val audioConstantThreshold = numeric(read("constants/lcnn_audio_threshold.json"), "threshold_at_eer").toFloat()
+                require(kotlin.math.abs(audioThreshold - audioConstantThreshold) < 1e-6f) {
+                    "Audio calibration asset/release threshold mismatch"
+                }
+            }
+            // In the current layout every model slot holds that model's own
+            // calibration, so it must match the desktop evaluation report.
+            // In the legacy layout the SRM slot holds the FUSION's, so the
+            // cross-check is skipped there and Engine A's own operating
+            // point stays unavailable until the next release is staged.
+            if (calibrations.has("fusion_xgboost")) {
+                required.forEach { name ->
+                    val desktopCal = evaluation.getJSONObject("models").getJSONObject(name).getJSONObject("calibration")
+                    val manifestThreshold = modelThresholds.getValue(name)
+                    val desktopThreshold = numeric(desktopCal, "threshold").toFloat()
+                    require(kotlin.math.abs(manifestThreshold - desktopThreshold) < 1e-6f) {
+                        "$name: manifest calibration threshold does not match the desktop evaluation report"
+                    }
+                }
+            }
+
+            // Modal operating point: the image/video pipeline decides with the
+            // FUSION score, so it uses the fusion threshold. An audio-only
+            // caller uses the audio model's own threshold.
+            val primaryThreshold = if (IMAGE_MODEL in required) fusionThreshold else modelThresholds[AUDIO_MODEL]
+
+            Report(
+                true, emptyList(), true, "Validated release", releaseId, frontend, primaryThreshold,
+                cascadeValidated, fusionThreshold, modelThresholds.toMap(),
+            )
         } catch (e: Exception) { Report(false, listOf("Release contract invalid: ${e.message}")) }
     }
 

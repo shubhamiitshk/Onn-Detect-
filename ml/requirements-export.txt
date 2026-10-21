@@ -1,3 +1,14 @@
 -r requirements.txt
 tensorflow==2.21.0
 keras==3.15.1
+# onnx2tf (the ONNX -> TFLite path for a frozen vision tower) needs the
+# legacy-Keras shim and a few graph helpers. Without them the conversion
+# fails with a pickle error while fetching its own calibration sample.
+tf_keras==2.21.0
+onnx_graphsurgeon==0.5.8
+onnxsim==0.4.36
+sng4onnx==1.0.1
+psutil==7.1.3
+# The LiteRT Python runtime, used by onnx2tf for the TFLite conversion
+# and by the export parity checks.
+ai-edge-litert==1.4.2

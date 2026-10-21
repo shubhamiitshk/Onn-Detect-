@@ -139,7 +139,7 @@ class ScannerViewModel @Inject constructor(
         val o = runInterruptible(Dispatchers.Default) { videoAnalyzer.analyze(uri) { stage -> _state.update { it.copy(stage = stage) } } }
         val verdict = VerdictPolicy.decide(o.overallScore, o.status, o.modelValidated, o.decisionThreshold)
         finish(ScanResult(UUID.randomUUID().toString(), ScanMode.VIDEO_ONLY, System.currentTimeMillis(), o.overallScore,
-            verdict == DetectionVerdict.SYNTHETIC, 0f, SignalBreakdown(-1f,o.srmScore,o.fftScore,o.klScore,-1f,-1f,o.audioScore,o.temporalScore,-1f),
+            verdict == DetectionVerdict.SYNTHETIC, 0f, SignalBreakdown(o.semanticScore,o.srmScore,o.fftScore,o.klScore,-1f,-1f,o.audioScore,o.temporalScore,-1f),
             null, null, QualityInfo(minOf(o.width,o.height),true,null,false,false), SystemClock.elapsedRealtime() - started,
             status = o.status, verdict = verdict, reason = o.reason, modelValidated = o.modelValidated,
             decisionThreshold = o.decisionThreshold, modelVersion = o.modelVersion,

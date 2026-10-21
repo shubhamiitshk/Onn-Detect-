@@ -15,6 +15,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from data.contracts import sha256_file
 from data.image_frontend import frontend_id
+from training.acceptance import (
+    MINIMUM_FUSION_ACCEPTANCE,
+    check_model_acceptance,
+)
+from training.evaluation import assert_source_fpr_within_bound
 
 MODEL_NAMES = {'srm_forensic_cnn_int8.tflite', 'lcnn_audio_int8.tflite'}
 # Engine C ("Lite C") - the OPTIONAL semantic second engine. A release may
@@ -171,7 +176,13 @@ def validate_bundle(bundle, require_validated=False):
         if cal.get('split_manifest_hash') not in manifest['data_manifest_hashes'].values():
             raise ValueError('Calibration split differs from recorded dataset')
     meta = read_object(bundle / 'constants/meta_classifier.json')
-    if meta.get('decision_threshold') != manifest['calibration']['srm_forensic_cnn_int8.tflite']['threshold']:
+    # The FUSION's calibration lives under its own key in the current layout.
+    # The legacy layout stored it under the SRM model's key, which is why
+    # Engine A's own operating point (auc 0.6033, threshold 0.53125) was
+    # recorded nowhere in the manifest. Both layouts are accepted so an
+    # already-staged release keeps validating.
+    fusion_cal = calibrations.get('fusion_xgboost') or calibrations['srm_forensic_cnn_int8.tflite']
+    if meta.get('decision_threshold') != fusion_cal['threshold']:
         raise ValueError('Fusion operating threshold mismatch')
     audio = read_object(bundle / 'constants/lcnn_audio_threshold.json')
     if audio.get('threshold_at_eer') != manifest['calibration']['lcnn_audio_int8.tflite']['threshold']:
@@ -187,6 +198,30 @@ def validate_bundle(bundle, require_validated=False):
                 raise ValueError(f'Invalid cascade policy field: {key}')
         if not policy['escalate_below'] <= policy['escalate_above']:
             raise ValueError('Cascade escalation band is inverted')
+    # ---------- detector acceptance floors ----------
+    # AUC alone is not an acceptance criterion. The shipped image fusion has
+    # AUC 0.7152 and TPR@1%FPR of 0.040 - a coin flip in the regime anyone
+    # would actually ship. These floors exist so that number cannot hide
+    # behind the other one.
+    #
+    # The evaluation_report only carries the three .tflite models; the
+    # FUSION's sealed-test metrics live in fusion/meta_results.json. A gate
+    # that only walked evaluation_report["models"] would never check the
+    # detector the image/video route actually ships.
+    desktop_models = (read_object(bundle / 'evaluation_report.json').get('models') or {})
+    for name, entry in desktop_models.items():
+        test = entry.get('test') if isinstance(entry, dict) else None
+        if not isinstance(test, dict):
+            continue
+        check_model_acceptance(name, test, context='release')
+    fusion_results = read_object(bundle / 'fusion/meta_results.json')
+    fusion_test = fusion_results.get('test')
+    if isinstance(fusion_test, dict):
+        check_model_acceptance(
+            'fusion_xgboost', fusion_test, floors=MINIMUM_FUSION_ACCEPTANCE,
+            context='release',
+        )
+        assert_source_fpr_within_bound(fusion_test, max_fpr=0.05, min_real_per_source=15, context='release fusion')
     kotlin = (bundle / 'fusion/XGBoostMetaClassifier.kt').read_text(encoding='utf-8')
     revision = manifest.get('fusion_revision')
     if revision != manifest['release_id'] or f'const val RELEASE_ID = {json.dumps(revision)}' not in kotlin:
@@ -217,6 +252,46 @@ def validate_bundle(bundle, require_validated=False):
     return manifest
 
 
+REQUIRED_DEVICE_EVIDENCE = (
+    'device_id', 'device_model', 'android_sdk_int', 'app_version',
+    'measurement_kind', 'measured_at_utc',
+)
+
+DESKTOP_ONLY_DEVICE_KEYS = ('desktop_agreement', 'desktop_mae', 'desktop_max_error')
+
+
+def assert_device_report_is_from_a_device(report):
+    """A desktop report must never be able to set validated=true.
+
+    ``build_and_install_release_v4.py`` used to synthesise a device report
+    on the desktop: its "latency" was a ``tf.lite.Interpreter`` timing and
+    its parity keys were literally named ``desktop_agreement``,
+    ``desktop_mae`` and ``desktop_max_error``. Those key names are a
+    fingerprint of a non-device report, so they are rejected outright.
+
+    A report must also carry the identity of the device it came from, the
+    measurement kind, and at least one on-device measurement payload.
+    """
+    missing = [key for key in REQUIRED_DEVICE_EVIDENCE if not report.get(key)]
+    if missing:
+        raise ValueError(f'Device report is missing device evidence: {missing}')
+    if report.get('measurement_kind') != 'on_device_android':
+        raise ValueError(
+            "Device report measurement_kind must be 'on_device_android'; "
+            f"got {report.get('measurement_kind')!r}. A desktop interpreter "
+            'timing is not device validation.'
+        )
+    for name, entry in (report.get('models') or {}).items():
+        for banned in DESKTOP_ONLY_DEVICE_KEYS:
+            if banned in entry:
+                raise ValueError(
+                    f"{name}: device report carries the desktop-only key "
+                    f"{banned!r}. This report was not produced on a device."
+                )
+    if not report.get('on_device_measurements'):
+        raise ValueError('Device report contains no on-device measurement payload')
+
+
 def attach_device_report(bundle, report_path):
     """Promote a complete candidate, preserving the original on any failure.
 
@@ -228,6 +303,7 @@ def attach_device_report(bundle, report_path):
     if manifest['validated']:
         raise ValueError('This release already has a device report; use a new release version')
     report = read_object(report_path)
+    assert_device_report_is_from_a_device(report)
     manifest_relative = 'release_manifest.json' if (bundle / 'release_manifest.json').is_file() else 'constants/release_manifest.json'
     backup = bundle.with_name(bundle.name + '.previous-device-' + manifest['release_id'])
     if backup.exists():

@@ -55,14 +55,26 @@ def fixture(root):
     return manifest
 
 
-def device_report(path, manifest):
-    path.write_text(json.dumps({'release_id': manifest['release_id'], 'passed': True,
-                               'source_snapshot_sha256': manifest['source_snapshot_sha256'],
-                               'fusion_kotlin_sha256': manifest['artifacts']['fusion/XGBoostMetaClassifier.kt'],
-                               'fusion_revision': manifest['fusion_revision'], 'kotlin_parity_passed': True,
-                               'offline_verified': True,
-                               'models': {name: {'sha256': value['sha256'], 'frontend_id': value['frontend_id'],
-                                                 'parity_passed': True} for name, value in manifest['models'].items()}}), encoding='utf-8')
+def device_report(path, manifest, **overrides):
+    report = {
+        'release_id': manifest['release_id'], 'passed': True,
+        'source_snapshot_sha256': manifest['source_snapshot_sha256'],
+        'fusion_kotlin_sha256': manifest['artifacts']['fusion/XGBoostMetaClassifier.kt'],
+        'fusion_revision': manifest['fusion_revision'], 'kotlin_parity_passed': True,
+        'offline_verified': True,
+        # Device evidence. A report without these cannot set validated=true.
+        'device_id': 'test-device-001',
+        'device_model': 'Test Device',
+        'android_sdk_int': 34,
+        'app_version': 'test',
+        'measurement_kind': 'on_device_android',
+        'measured_at_utc': '2026-10-21T00:00:00Z',
+        'on_device_measurements': {'latency_ms_p50': 12.5, 'latency_ms_p95': 19.0},
+        'models': {name: {'sha256': value['sha256'], 'frontend_id': value['frontend_id'],
+                          'parity_passed': True} for name, value in manifest['models'].items()},
+    }
+    report.update(overrides)
+    path.write_text(json.dumps(report), encoding='utf-8')
 
 class ReleaseTests(unittest.TestCase):
     def test_report_cannot_claim_parity_for_different_model_bytes(self):
@@ -108,6 +120,54 @@ class ReleaseTests(unittest.TestCase):
             self.assertFalse(release_bundle.validate_bundle(backup)['validated'])
             self.assertTrue((root / 'constants/release_manifest.json').is_file())
             self.assertFalse((backup / 'device_evaluation.json').exists())
+
+    def test_a_desktop_report_cannot_promote_a_release(self):
+        """A report built on the desktop must not be able to set validated=true.
+
+        `build_and_install_release_v4.py` used to synthesise a report whose
+        "latency" was a desktop `tf.lite.Interpreter` timing and whose
+        parity keys were literally named `desktop_agreement`. Those key
+        names are a fingerprint of a non-device report.
+        """
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory)
+            root = parent / 'bundle'
+            manifest = fixture(root)
+            report = parent / 'phone-report.json'
+            device_report(
+                report, manifest,
+                measurement_kind='desktop_interpreter',
+                models={name: {'sha256': value['sha256'], 'frontend_id': value['frontend_id'],
+                               'parity_passed': True, 'desktop_agreement': 1.0,
+                               'desktop_mae': 0.0}
+                        for name, value in manifest['models'].items()},
+            )
+            with self.assertRaises(ValueError):
+                release_bundle.attach_device_report(root, report)
+            # The bundle must be untouched: not promoted, not marked validated.
+            self.assertFalse(manifest['validated'])
+
+    def test_a_report_without_device_identity_cannot_promote_a_release(self):
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory)
+            root = parent / 'bundle'
+            manifest = fixture(root)
+            report = parent / 'phone-report.json'
+            device_report(report, manifest, device_id='', measured_at_utc='')
+            with self.assertRaises(ValueError):
+                release_bundle.attach_device_report(root, report)
+            self.assertFalse(manifest['validated'])
+
+    def test_a_report_without_on_device_measurements_cannot_promote_a_release(self):
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory)
+            root = parent / 'bundle'
+            manifest = fixture(root)
+            report = parent / 'phone-report.json'
+            device_report(report, manifest, on_device_measurements=None)
+            with self.assertRaises(ValueError):
+                release_bundle.attach_device_report(root, report)
+            self.assertFalse(manifest['validated'])
 
     def test_failed_device_promotion_preserves_original_complete_bundle(self):
         with tempfile.TemporaryDirectory() as directory:

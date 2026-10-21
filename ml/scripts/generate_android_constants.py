@@ -78,8 +78,18 @@ def main():
         if path.is_file() and path != manifest_path and path.parts[-2] != "models":
             manifest["artifacts"][path.relative_to(bundle).as_posix()] = sha256_file(path)
     manifest["fusion_revision"] = results["release_id"]
-    cal = dict(results["calibration"], model_hash=visual["sha256"], fusion_model_hash=results["model_hash"], frontend_id=visual["frontend_id"])
-    manifest["calibration"][srm_name] = cal
+    # The FUSION's calibration belongs to the fusion, under its own key.
+    #
+    # The previous code wrote it into `calibration[srm_name]`, so the
+    # manifest recorded the FUSION's operating point as Engine A's and
+    # Engine A's own INT8 calibration (auc 0.6033, threshold 0.53125)
+    # existed nowhere in the release. The SRM key now keeps whatever
+    # export_all_models.py wrote - Engine A's own calibration.
+    manifest["calibration"]["fusion_xgboost"] = dict(
+        results["calibration"],
+        model_hash=results["model_hash"],
+        frontend_id=visual["frontend_id"],
+    )
     manifest["validation_status"] = "desktop_pipeline_passed_requires_independent_device_evaluation"
     manifest["validated"] = False
     temporary = manifest_path.with_suffix(".json.tmp")

@@ -19,6 +19,15 @@ def main():
     parser.add_argument("--data-root", help="Parent of prepared dataset folders; relative config roots use their basename here")
     parser.add_argument("--release-id", default=None)
     parser.add_argument("--skip-training", action="store_true", help="Use already verified checkpoints in this output directory")
+    parser.add_argument("--semantic-checkpoint", default=None,
+                        help="Optional Engine C checkpoint. When given, Engine C is exported and "
+                             "the fusion is trained WITH slot 6 populated, so the documented "
+                             "pipeline reproduces the dual-engine release. Engine C must be "
+                             "trained BEFORE fusion, because fusion reads its scores.")
+    parser.add_argument("--semantic-input-size", type=int, default=224)
+    parser.add_argument("--cascade-mask-rate", type=float, default=0.25,
+                        help="Fraction of fusion training rows whose slot 6 is masked to NaN so the "
+                             "tree learns a real missing branch for a probe that did not run.")
     args = parser.parse_args()
     try:
         repository = subprocess.check_output(['git', 'rev-parse', '--show-toplevel'], cwd=ML_ROOT, text=True).strip()
@@ -62,11 +71,27 @@ def main():
         subprocess.run([sys.executable, str(ML_ROOT / "scripts" / script), *map(str, arguments)], check=True)
     call("export_all_models.py", "--visual-checkpoint", visual_checkpoint, "--audio-checkpoint", audio_checkpoint,
          "--output-dir", bundle, "--release-id", release_id)
-    call("train_xgboost_meta.py", "--config", args.fusion_config, "--visual-checkpoint", visual_checkpoint,
-         "--visual-tflite", bundle / "models/srm_forensic_cnn_int8.tflite", "--output-dir", fusion, "--release-id", release_id)
+    # Engine C must be exported BEFORE fusion, because the fusion reads
+    # Engine C's scores into slot 6. Without this stage the documented
+    # pipeline could not reproduce the dual-engine release: it produced a
+    # single-engine bundle whose slot 6 was permanently NaN.
+    semantic_tflite = bundle / "models" / "semantic_probe_int8.tflite"
+    if args.semantic_checkpoint:
+        call("export_semantic_probe.py", "--checkpoint", args.semantic_checkpoint,
+             "--output", semantic_tflite, "--input-size", args.semantic_input_size,
+             "--data-root", configs["visual"]["data"]["root_dir"])
+    fusion_arguments = ["--config", args.fusion_config, "--visual-checkpoint", visual_checkpoint,
+                        "--visual-tflite", bundle / "models/srm_forensic_cnn_int8.tflite",
+                        "--output-dir", fusion, "--release-id", release_id]
+    if semantic_tflite.is_file():
+        fusion_arguments += ["--semantic-tflite", semantic_tflite,
+                             "--semantic-input-size", args.semantic_input_size,
+                             "--cascade-mask-rate", args.cascade_mask_rate]
+    call("train_xgboost_meta.py", *fusion_arguments)
     call("generate_android_constants.py", "--bundle", bundle, "--fusion-dir", fusion)
     call("release_bundle.py", "--bundle", bundle, "--validate-only")
-    print(f"Complete staged release {bundle}; validated=false until independently measured device report is attached.")
+    engine = "dual-engine (Engine A + Engine C)" if semantic_tflite.is_file() else "single-engine"
+    print(f"Complete staged {engine} release {bundle}; validated=false until independently measured device report is attached.")
 
 if __name__ == "__main__":
     main()

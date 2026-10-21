@@ -37,7 +37,22 @@ jobs:
       - name: Verify actual APK permissions, hashes and 16 KiB support
         run: |
           python scripts/verify_android_artifact.py --apk android/app/build/outputs/apk/debug/app-debug.apk
-          python scripts/verify_android_artifact.py --apk android/app/build/outputs/apk/release/app-release-unsigned.apk
+          # The release build type has been debug-signed since c5c3f4a, so
+          # Gradle emits app-release.apk rather than app-release-unsigned.apk.
+          # Accept either name so the gate does not depend on the signing
+          # configuration, but require one of them to exist.
+          RELEASE_APK=""
+          for candidate in app-release.apk app-release-unsigned.apk; do
+            if [ -f "android/app/build/outputs/apk/release/$candidate" ]; then
+              RELEASE_APK="android/app/build/outputs/apk/release/$candidate"
+              break
+            fi
+          done
+          if [ -z "$RELEASE_APK" ]; then
+            echo "No release APK found in android/app/build/outputs/apk/release/" >&2
+            exit 1
+          fi
+          python scripts/verify_android_artifact.py --apk "$RELEASE_APK"
       - name: Upload diagnostics (models remain explicitly unvalidated)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

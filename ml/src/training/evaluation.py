@@ -50,3 +50,35 @@ def evaluation_summary(labels, scores, threshold, records=None):
                     'tpr': float(p[y == 1].mean()) if fake else None,
                     'fpr': float(p[y == 0].mean()) if real else None}
     return result
+
+
+def assert_source_fpr_within_bound(report, max_fpr=0.05, min_real_per_source=15, context=""):
+    """Reject a report whose real-image FPR is high for any single source.
+
+    A detector that flags 44% of LAION images as synthetic has learned that
+    LAION images are synthetic, not that they look generated: LAION-5B is the
+    training corpus for Stable Diffusion and Flux. The same failure appears in
+    audio, where the shipped detector flags 24.3% of real ``inthewild`` field
+    recordings because ASVspoof2019 bona-fide speech is clean studio audio.
+
+    This is a dataset shortcut, not detection, and it must fail the build
+    rather than ship.
+
+    The per-source breakdown comes from the manifest's ``source`` field via
+    ``evaluation_summary``; it is not recoverable from the directory layout.
+    """
+    prefix = f"[{context}] " if context else ""
+    sources = (report.get("groups") or {}).get("source") or {}
+    offenders = []
+    for source, stats in sources.items():
+        if stats.get("n_real", 0) < min_real_per_source:
+            continue
+        fpr = stats.get("fpr")
+        if fpr is not None and fpr > max_fpr:
+            offenders.append(f"{source}: fpr={fpr:.3f} (n_real={stats['n_real']})")
+    if offenders:
+        raise ValueError(
+            f"{prefix}Real-image false-positive rate exceeds the per-source bound "
+            f"({max_fpr:.0%}). The detector is keying on acquisition source, "
+            "not on synthesis. Offenders: " + "; ".join(sorted(offenders))
+        )

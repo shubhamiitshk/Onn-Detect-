@@ -221,6 +221,61 @@ def quality_features(img: Image.Image, path: str, source_size=None) -> tuple[flo
     return resolution_norm, compressed
 
 
+def phase_spectrum_features(img: Image.Image, size: int = 256) -> tuple[float, float]:
+    """Shift-invariant 2D phase-only spatial residual.
+
+    JPEG quantization heavily damps high-frequency AMPLITUDE but leaves the
+    phase angles intact, so a phase-only reconstruction survives re-encoding
+    where a power-spectrum slope does not. The shipped detector's
+    ``fft_score`` measures exactly that amplitude slope, and it collapses to
+    chance under laundering (``ml/scripts/llm_signal_analysis_results.json``:
+    standalone AUC 0.5013).
+
+    Two details matter and are easy to get wrong:
+
+    * the DC term must be moved to the centre with ``fftshift`` before any
+      radial statistic is computed, otherwise the radii are centred on the
+      Nyquist corner rather than on DC;
+    * the phase must be turned back into an IMAGE (the phase-only
+      reconstruction) rather than reduced to ``cos(phase)`` directly,
+      because a translated image acquires a linear phase ramp that
+      ``cos(phase)`` does not tolerate.
+
+    Following Li et al., CVPR 2026 ("Detecting Compressed AI-Generated
+    Images via Phase Spectrum Robustness").
+
+    Returns ``(kurtosis, high_frequency_ratio)``.
+    """
+    scaled = img.convert("RGB").resize((size, size), Image.Resampling.BILINEAR)
+    gray = to_gray_u8(scaled).astype(np.float64) / 255.0
+    gray = gray - gray.mean()
+    spectrum = np.fft.fft2(gray)
+    unit_phase = np.exp(1j * np.angle(spectrum))
+
+    # Phase-only reconstruction: the image whose spectrum is the
+    # unit-magnitude phase of the original.
+    phase_img = np.fft.ifft2(unit_phase).real
+
+    # High-frequency band of the same reconstruction, with the DC term moved
+    # to the centre first.
+    shifted = np.fft.fftshift(unit_phase)
+    n = size
+    cy, cx = n // 2, n // 2
+    y, x = np.ogrid[:n, :n]
+    r = np.sqrt((x - cx) ** 2 + (y - cy) ** 2)
+    hf_mask = (r >= 0.25 * (n / 2.0)).astype(np.float64)
+    hf_phase_img = np.fft.ifft2(np.fft.ifftshift(shifted * hf_mask)).real
+
+    # Kurtosis of the phase-only reconstruction and the high-frequency
+    # energy ratio. Both are translation-equivariant in the same way the
+    # reconstruction is, which is what makes them comparable across crops
+    # and resolutions.
+    variance = float(np.mean(phase_img ** 2))
+    kurtosis = float(np.mean(phase_img ** 4) / (variance ** 2 + 1e-12))
+    hf_ratio = float(np.std(hf_phase_img) / (np.std(phase_img) + 1e-12))
+    return kurtosis, hf_ratio
+
+
 def extract_visual_features(
     img_path: str,
     srm_model,
@@ -241,13 +296,19 @@ def extract_visual_features(
     would be read by the fusion tree as "low anomaly" evidence that was
     never measured.
     """
-    from data.image_dataset import image_tensor
-    import torch
-
-    # Reject supplied provenance BEFORE any decode or inference work, so an
-    # unverified measurement can never reach a feature vector even transiently.
+    # Reject supplied provenance BEFORE any decode, import or inference
+    # work, so an unverified measurement can never reach a feature vector
+    # even transiently.
+    #
+    # This guard must run BEFORE the torch/data imports below. The import
+    # used to come first, so a contract test that asserts this rejection
+    # crashed with ModuleNotFoundError in environments without PyTorch,
+    # instead of raising the ValueError it is testing for.
     if provenance:
         raise ValueError("Unverified provenance/temporal features must not influence the image verdict")
+
+    from data.image_dataset import image_tensor
+    import torch
 
     decoded = decode_image(img_path)
     img = decoded.image

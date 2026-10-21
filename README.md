@@ -26,10 +26,10 @@ cd ..
 python scripts/check_android_consistency.py
 python -m unittest discover -s scripts/tests -v
 python scripts/verify_android_artifact.py --apk android/app/build/outputs/apk/debug/app-debug.apk
-python scripts/verify_android_artifact.py --apk android/app/build/outputs/apk/release/app-release-unsigned.apk
+python scripts/verify_android_artifact.py --apk android/app/build/outputs/apk/release/app-release.apk
 ```
 
-The release APK is unsigned. The ordinary APK gate permits explicitly unvalidated diagnostic builds. Distribution as a validated detector additionally requires `--require-validated-models`, a matched trained release and independent device evidence. JVM tests do not replace codec, bitmap, performance or migration tests on devices.
+The release APK is debug-signed for sideloading; it is not a distribution-signed artifact. The ordinary APK gate permits explicitly unvalidated diagnostic builds. Distribution as a validated detector additionally requires `--require-validated-models`, a matched trained release and independent device evidence. JVM tests do not replace codec, bitmap, performance or migration tests on devices.
 
 ## Training
 
