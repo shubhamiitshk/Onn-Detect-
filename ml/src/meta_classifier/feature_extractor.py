@@ -244,36 +244,20 @@ def phase_spectrum_features(img: Image.Image, size: int = 256) -> tuple[float, f
     Following Li et al., CVPR 2026 ("Detecting Compressed AI-Generated
     Images via Phase Spectrum Robustness").
 
+    The implementation lives in :mod:`meta_classifier.phase_features` so
+    there is exactly ONE version of this maths in the repository. An earlier
+    copy lived here and used a "high frequency" band that started at 0.25
+    of Nyquist, which keeps ~94% of the spectrum: the reconstruction was
+    then proportional to the full one and the ratio between them was
+    constant to floating-point precision, i.e. the feature carried no
+    information at all.
+
     Returns ``(kurtosis, high_frequency_ratio)``.
     """
-    scaled = img.convert("RGB").resize((size, size), Image.Resampling.BILINEAR)
-    gray = to_gray_u8(scaled).astype(np.float64) / 255.0
-    gray = gray - gray.mean()
-    spectrum = np.fft.fft2(gray)
-    unit_phase = np.exp(1j * np.angle(spectrum))
+    from meta_classifier.phase_features import phase_candidates
 
-    # Phase-only reconstruction: the image whose spectrum is the
-    # unit-magnitude phase of the original.
-    phase_img = np.fft.ifft2(unit_phase).real
-
-    # High-frequency band of the same reconstruction, with the DC term moved
-    # to the centre first.
-    shifted = np.fft.fftshift(unit_phase)
-    n = size
-    cy, cx = n // 2, n // 2
-    y, x = np.ogrid[:n, :n]
-    r = np.sqrt((x - cx) ** 2 + (y - cy) ** 2)
-    hf_mask = (r >= 0.25 * (n / 2.0)).astype(np.float64)
-    hf_phase_img = np.fft.ifft2(np.fft.ifftshift(shifted * hf_mask)).real
-
-    # Kurtosis of the phase-only reconstruction and the high-frequency
-    # energy ratio. Both are translation-equivariant in the same way the
-    # reconstruction is, which is what makes them comparable across crops
-    # and resolutions.
-    variance = float(np.mean(phase_img ** 2))
-    kurtosis = float(np.mean(phase_img ** 4) / (variance ** 2 + 1e-12))
-    hf_ratio = float(np.std(hf_phase_img) / (np.std(phase_img) + 1e-12))
-    return kurtosis, hf_ratio
+    candidates = phase_candidates(img)
+    return candidates["phase_kurtosis"], candidates["phase_hf_energy_ratio"]
 
 
 def extract_visual_features(

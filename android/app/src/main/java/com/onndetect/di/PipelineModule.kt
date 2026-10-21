@@ -10,7 +10,7 @@ import com.onndetect.detection.video.VideoForensicAnalyzer
 import com.onndetect.detection.visual.FFTSpectralAnalyzer
 import com.onndetect.detection.visual.KLCooccurrenceAnalyzer
 import com.onndetect.detection.visual.SRMForensicAnalyzer
-import com.onndetect.detection.visual.SemanticProbeAnalyzer
+import com.onndetect.detection.visual.VfmProbeAnalyzer
 import com.onndetect.domain.pipeline.DetectionPipeline
 import com.onndetect.domain.pipeline.SignalFusion
 import com.onndetect.inference.LiteRTInferenceEngine
@@ -58,10 +58,10 @@ object PipelineModule {
 
     @Provides
     @Singleton
-    fun provideSemanticProbeAnalyzer(
+    fun provideVfmProbeAnalyzer(
         @ApplicationContext context: Context,
         engine: LiteRTInferenceEngine,
-    ) = SemanticProbeAnalyzer(context, engine)
+    ) = VfmProbeAnalyzer(context, engine)
 
     @Provides
     @Singleton
@@ -100,9 +100,9 @@ object PipelineModule {
         klAnalyzer: KLCooccurrenceAnalyzer,
         metaClassifier: XGBoostMetaClassifier,
         audioClassifier: AudioClassifier,
-        semanticProbe: SemanticProbeAnalyzer,
+        vfmProbe: VfmProbeAnalyzer,
     ) = VideoForensicAnalyzer(
         context, videoDecoder, srmAnalyzer, fftAnalyzer,
-        klAnalyzer, metaClassifier, audioClassifier, semanticProbe,
+        klAnalyzer, metaClassifier, audioClassifier, vfmProbe,
     )
 }

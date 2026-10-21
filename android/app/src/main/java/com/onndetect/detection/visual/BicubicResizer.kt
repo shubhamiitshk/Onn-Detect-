@@ -23,7 +23,7 @@ import kotlin.math.roundToInt
  * release was computed from a bicubic tensor. That is a train/serve skew
  * inside a contract the whole release hashes bind to, and it is exactly the
  * kind of difference the docstring at
- * `detection/visual/SemanticProbeAnalyzer.kt` claimed did not exist.
+ * `detection/visual/VfmProbeAnalyzer.kt` claimed did not exist.
  *
  * Android's `Bitmap` has no bicubic filter, so this implements the Keys
  * cubic convolution (a = -0.5) with support 2.0 - the same kernel and the
@@ -32,7 +32,7 @@ import kotlin.math.roundToInt
  * ## Scope
  *
  * Only RGB is resampled. Both analyzers consume R, G and B only
- * (`SRMForensicAnalyzer.kt:30-34`, `SemanticProbeAnalyzer.kt:78-85`), and the
+ * (`SRMForensicAnalyzer.kt:30-34`, `VfmProbeAnalyzer.kt`), and the
  * input bitmap has already had its alpha flattened onto white upstream by
  * `ScannerViewModel.decodeScaled`. Output is therefore opaque ARGB_8888.
  */

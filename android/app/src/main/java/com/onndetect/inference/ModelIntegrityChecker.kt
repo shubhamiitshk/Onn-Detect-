@@ -20,7 +20,7 @@ object ModelIntegrityChecker {
      * existed - fusion slot 6 stays unavailable and the tree takes its
      * learned missing branch.
      */
-    const val CASCADE_MODEL = "semantic_probe_int8.tflite"
+    const val CASCADE_MODEL = "siglip_probe_int8.tflite"
     val REQUIRED_MODELS = setOf(IMAGE_MODEL, AUDIO_MODEL)
     val OPTIONAL_MODELS = setOf(CASCADE_MODEL)
     val KNOWN_MODELS = REQUIRED_MODELS + OPTIONAL_MODELS
@@ -29,6 +29,18 @@ object ModelIntegrityChecker {
         val validationReason: String = "Release lineage/calibration is unavailable", val releaseId: String = "unknown",
         val frontendId: String = "unknown", val threshold: Float? = null,
         val cascadeValidated: Boolean = false,
+        /**
+         * True only when an INDEPENDENT ON-DEVICE evaluation verified this
+         * release.
+         *
+         * A release can be usable without it: the desktop pipeline measures
+         * the packaged model's bytes (sealed-test AUC, parity, latency) and
+         * a phone measures whether the same bytes behave the same way on an
+         * Android SoC. The two are different claims and are reported
+         * separately, so a desktop-validated release is never described as
+         * device-validated.
+         */
+        val deviceValidated: Boolean = false,
         /**
          * The XGBoost FUSION's calibrated operating point.
          *
@@ -138,15 +150,26 @@ object ModelIntegrityChecker {
             require(sourceFiles.length() > 0 && sourceFiles.keys().asSequence().all { validHash(sourceFiles.getString(it)) }) { "Source snapshot file hashes missing" }
             val evaluation = boundReport("evaluation_report.json", release.getString("evaluation_report_hash"))
             require(evaluation.getString("source_snapshot_sha256") == sourceSnapshotHash) { "Desktop evaluation source snapshot mismatch" }
+            // The device-evidence gate.
+            //
+            // A release may only claim DEVICE validation with a report that
+            // carries device evidence. A desktop-validated release has
+            // device_validation.passed == false: its packaged model bytes
+            // were measured by the desktop pipeline, but no phone has
+            // verified them. Both are usable; they are NOT the same claim,
+            // and the report keeps them apart.
             val deviceValidation = release.getJSONObject("device_validation")
-            require(deviceValidation.get("passed") == true) { "Device validation missing" }
-            val device = boundReport("device_evaluation.json", deviceValidation.getString("report_hash"))
-            require(device.get("passed") == true && device.get("kotlin_parity_passed") == true && device.get("offline_verified") == true) { "Device/offline validation failed" }
-            require(device.getString("fusion_revision") == release.getString("fusion_revision"))
-            require(device.getString("source_snapshot_sha256") == sourceSnapshotHash) { "Device evaluation source snapshot mismatch" }
-            val fusionKotlinHash = artifacts.getString("fusion/XGBoostMetaClassifier.kt")
-            boundArtifact("fusion/XGBoostMetaClassifier.kt", fusionKotlinHash)
-            require(device.getString("fusion_kotlin_sha256") == fusionKotlinHash) { "Device evaluation fusion source mismatch" }
+            val deviceValidated = deviceValidation.get("passed") == true
+            val device: JSONObject? = if (deviceValidated) {
+                val report = boundReport("device_evaluation.json", deviceValidation.getString("report_hash"))
+                require(report.get("passed") == true && report.get("kotlin_parity_passed") == true && report.get("offline_verified") == true) { "Device/offline validation failed" }
+                require(report.getString("fusion_revision") == release.getString("fusion_revision"))
+                require(report.getString("source_snapshot_sha256") == sourceSnapshotHash) { "Device evaluation source snapshot mismatch" }
+                val fusionKotlinHash = artifacts.getString("fusion/XGBoostMetaClassifier.kt")
+                boundArtifact("fusion/XGBoostMetaClassifier.kt", fusionKotlinHash)
+                require(report.getString("fusion_kotlin_sha256") == fusionKotlinHash) { "Device evaluation fusion source mismatch" }
+                report
+            } else null
             required.forEach { name ->
                 val model = models.getJSONObject(name)
                 val desktop = evaluation.getJSONObject("models").getJSONObject(name)
@@ -154,8 +177,10 @@ object ModelIntegrityChecker {
                 val desktopCalibration = desktop.getJSONObject("calibration")
                 require(desktopCalibration.getString("model_hash") == model.getString("sha256") &&
                     desktopCalibration.getString("frontend_id") == model.getString("frontend_id")) { "Desktop model/frontend linkage mismatch" }
-                val tested = device.getJSONObject("models").getJSONObject(name)
-                require(tested.getString("sha256") == model.getString("sha256") && tested.getString("frontend_id") == model.getString("frontend_id") && tested.get("parity_passed") == true) { "Device model/frontend linkage mismatch" }
+                if (device != null) {
+                    val tested = device.getJSONObject("models").getJSONObject(name)
+                    require(tested.getString("sha256") == model.getString("sha256") && tested.getString("frontend_id") == model.getString("frontend_id") && tested.get("parity_passed") == true) { "Device model/frontend linkage mismatch" }
+                }
             }
             // â”€â”€ Optional Engine C ("Lite C") second engine â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             // When the release declares it, it is held to the SAME standard as
@@ -175,17 +200,27 @@ object ModelIntegrityChecker {
                 val cascadeOut = cascade.getJSONArray("output_shape")
                 positiveShape(cascadeOut)
                 require(cascadeOut.length() == 2 && cascadeOut.getInt(0) == 1 && cascadeOut.getInt(1) == 1) { "Cascade model output shape invalid" }
-                require(cascade.getString("frontend_id") ==
-                    "clip-appearance-bicubic${cascadeShape.getInt(1)}-clipnorm-meanstd-float32") { "Cascade frontend contract mismatch" }
+                // The slot-6 probe's frontend contract depends on WHICH probe
+                // ships: the distilled student consumes CLIP normalization,
+                // the frozen tower consumes SigLIP normalization. They are
+                // not interchangeable, so the declared contract is checked
+                // against the model that is actually packaged.
+                val expectedCascadeFrontend = when (CASCADE_MODEL) {
+                    "siglip_probe_int8.tflite" -> "vfm-siglip${cascadeShape.getInt(1)}-siglip-base-patch16-224-bicubic-clamp-meanstd-float32"
+                    else -> "clip-appearance-bicubic${cascadeShape.getInt(1)}-clipnorm-meanstd-float32"
+                }
+                require(cascade.getString("frontend_id") == expectedCascadeFrontend) { "Cascade frontend contract mismatch" }
                 val desktopCascade = evaluation.getJSONObject("models").getJSONObject(CASCADE_MODEL)
                 require(desktopCascade.getJSONObject("parity").get("passed") == true) { "Desktop cascade parity missing" }
                 val desktopCascadeCalibration = desktopCascade.getJSONObject("calibration")
                 require(desktopCascadeCalibration.getString("model_hash") == cascade.getString("sha256") &&
                     desktopCascadeCalibration.getString("frontend_id") == cascade.getString("frontend_id")) { "Desktop cascade model/frontend linkage mismatch" }
-                val testedCascade = device.getJSONObject("models").getJSONObject(CASCADE_MODEL)
-                require(testedCascade.getString("sha256") == cascade.getString("sha256") &&
-                    testedCascade.getString("frontend_id") == cascade.getString("frontend_id") &&
-                    testedCascade.get("parity_passed") == true) { "Device cascade model/frontend linkage mismatch" }
+                if (device != null) {
+                    val testedCascade = device.getJSONObject("models").getJSONObject(CASCADE_MODEL)
+                    require(testedCascade.getString("sha256") == cascade.getString("sha256") &&
+                        testedCascade.getString("frontend_id") == cascade.getString("frontend_id") &&
+                        testedCascade.get("parity_passed") == true) { "Device cascade model/frontend linkage mismatch" }
+                }
                 val cascadeCalibration = calibrations.getJSONObject(CASCADE_MODEL)
                 require(cascadeCalibration.getString("model_hash") == cascade.getString("sha256") &&
                     cascadeCalibration.getString("frontend_id") == cascade.getString("frontend_id")) { "Cascade calibration lineage mismatch" }
@@ -293,8 +328,10 @@ object ModelIntegrityChecker {
             val primaryThreshold = if (IMAGE_MODEL in required) fusionThreshold else modelThresholds[AUDIO_MODEL]
 
             Report(
-                true, emptyList(), true, "Validated release", releaseId, frontend, primaryThreshold,
-                cascadeValidated, fusionThreshold, modelThresholds.toMap(),
+                true, emptyList(), true,
+                if (deviceValidated) "Validated release (device verified)" else "Validated release (desktop verified; device evaluation pending)",
+                releaseId, frontend, primaryThreshold,
+                cascadeValidated, deviceValidated, fusionThreshold, modelThresholds.toMap(),
             )
         } catch (e: Exception) { Report(false, listOf("Release contract invalid: ${e.message}")) }
     }

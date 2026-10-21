@@ -7,8 +7,31 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from data.contracts import sha256_file
+from training.acceptance import (
+    ACADEMIC_TARGETS,
+    MINIMUM_ACCEPTANCE,
+    MINIMUM_FUSION_ACCEPTANCE,
+)
 
-CASCADE_MODEL = "semantic_probe_int8.tflite"
+CASCADE_MODEL = "siglip_probe_int8.tflite"
+
+
+def read_object(path):
+    return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
+def _meets(test, target):
+    """True when the measured report clears every component of a target."""
+    if not target or not isinstance(test, dict):
+        return False
+    min_tpr_1, min_tpr_01, min_auc = target
+    auc = test.get("auc")
+    tpr_1 = test.get("tpr_at_fpr_1pct")
+    tpr_01 = test.get("tpr_at_fpr_0_1pct")
+    if auc is None or tpr_1 is None or tpr_01 is None:
+        return False
+    return auc >= min_auc and tpr_1 >= min_tpr_1 and tpr_01 >= min_tpr_01
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -90,6 +113,32 @@ def main():
         model_hash=results["model_hash"],
         frontend_id=visual["frontend_id"],
     )
+    # Record what was measured against both the ENFORCED floor and the
+    # ASPIRATIONAL target, so the gap between the shipped system and the
+    # literature is visible in the release itself and not only in a document.
+    acceptance = {}
+    for name, entry in (read_object(bundle / "evaluation_report.json").get("models") or {}).items():
+        test = entry.get("test") if isinstance(entry, dict) else None
+        if not isinstance(test, dict):
+            continue
+        acceptance[name] = {
+            "measured_auc": test.get("auc"),
+            "measured_tpr_at_fpr_1pct": test.get("tpr_at_fpr_1pct"),
+            "measured_tpr_at_fpr_0_1pct": test.get("tpr_at_fpr_0_1pct"),
+            "enforced_floor": list(MINIMUM_ACCEPTANCE.get(name, ())),
+            "academic_target": list(ACADEMIC_TARGETS.get(name, ())),
+            "meets_academic_target": _meets(test, ACADEMIC_TARGETS.get(name)),
+        }
+    fusion_test = results.get("test") or {}
+    acceptance["fusion_xgboost"] = {
+        "measured_auc": fusion_test.get("auc"),
+        "measured_tpr_at_fpr_1pct": fusion_test.get("tpr_at_fpr_1pct"),
+        "measured_tpr_at_fpr_0_1pct": fusion_test.get("tpr_at_fpr_0_1pct"),
+        "enforced_floor": list(MINIMUM_FUSION_ACCEPTANCE),
+        "academic_target": list(ACADEMIC_TARGETS.get("fusion_xgboost", ())),
+        "meets_academic_target": _meets(fusion_test, ACADEMIC_TARGETS.get("fusion_xgboost")),
+    }
+    manifest["acceptance"] = acceptance
     manifest["validation_status"] = "desktop_pipeline_passed_requires_independent_device_evaluation"
     manifest["validated"] = False
     temporary = manifest_path.with_suffix(".json.tmp")

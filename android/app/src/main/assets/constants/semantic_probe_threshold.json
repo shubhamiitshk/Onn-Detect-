@@ -1,15 +1,15 @@
 {
-  "threshold_at_eer": 0.51953125,
-  "auc": 0.6604125000000001,
+  "threshold_at_eer": 0.49412423372268677,
+  "auc": 0.8982,
   "n_calibration": 400,
   "split_manifest_hash": "9b0400fcc82e08d117c5cb245fd2c3081b3ba8ed9fd2f169a5455248c84c9312",
-  "model_hash": "38d1b692c3023b52b0e139d0a17257d3742019e8cc7edd1d8bb636ff91048d79",
-  "frontend_id": "clip-appearance-bicubic224-clipnorm-meanstd-float32",
+  "model_hash": "76454452bae9af17e315e78440d283ac2ea7a8551a9e05e16b9350fb40f97ea0",
+  "frontend_id": "vfm-siglip224-siglip-base-patch16-224-bicubic-clamp-meanstd-float32",
   "score_semantics": {
     "model_output": "P(synthetic) in [0,1]",
     "real_label": 0,
     "synthetic_label": 1
   },
   "calibration_split": "calibration",
-  "engine": "C_semantic"
+  "engine": "C_vfm"
 }

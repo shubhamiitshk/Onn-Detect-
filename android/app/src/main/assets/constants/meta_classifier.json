@@ -11,13 +11,13 @@
     "lip_sync_corr",
     "landmark_jitter"
   ],
-  "decision_threshold": 0.5121619701385498,
-  "calibration_auc": 0.6705749999999999,
-  "test_auc": 0.7152375,
-  "test_accuracy": 0.6475,
-  "n_trees": 14,
-  "base_margin_intercept": 3.465838095684237e-09,
-  "release_id": "onn-20261020-v6",
-  "fusion_model_hash": "96c0178d1b04b6183e153245751cb22b9caec722f689d72c34e0c8f8b1366329",
+  "decision_threshold": 0.5855898857116699,
+  "calibration_auc": 0.9010500000000001,
+  "test_auc": 0.89405,
+  "test_accuracy": 0.815,
+  "n_trees": 16,
+  "base_margin_intercept": 3.190582629694627e-09,
+  "release_id": "onn-20261021-v7",
+  "fusion_model_hash": "c9606462172771abcbe5e05386ae0484294b705481e499ba2088d50033e65c78",
   "visual_model_hash": "d74a657c454e00f2181f4a3d98fa981ca63daf51d23e978da19c60c59e9b37c1"
 }

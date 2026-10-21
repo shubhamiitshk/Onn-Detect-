@@ -212,6 +212,7 @@ def package_and_install_release(
     release_id: str,
     fusion_config: str,
     skip_gradle: bool = False,
+    cascade_frontend: str = "clip",
     cascade_tflite: Path = None,
     cascade_dir: Path = None,
     data_root: str = r"D:\onn_data\openfake_visual",
@@ -238,8 +239,13 @@ def package_and_install_release(
     ]
     if cascade_tflite is not None:
         export_args += ["--cascade-tflite", str(cascade_tflite)]
+        export_args += ["--cascade-frontend", cascade_frontend]
     run_cmd(export_args)
 
+    cascade_asset_name = (
+        "siglip_probe_int8.tflite" if cascade_frontend == "siglip"
+        else "semantic_probe_int8.tflite"
+    )
     fusion_args = [
         sys.executable,
         ML_ROOT / "scripts" / "train_xgboost_meta.py",
@@ -253,7 +259,9 @@ def package_and_install_release(
     if cascade_tflite is not None:
         fusion_args += [
             "--semantic-tflite",
-            str(bundle_dir / "models" / "semantic_probe_int8.tflite"),
+            str(bundle_dir / "models" / cascade_asset_name),
+            "--semantic-frontend",
+            cascade_frontend,
         ]
     run_cmd(fusion_args)
 

@@ -56,11 +56,11 @@ class PackagedInferenceTest {
                 val pipeline = DetectionPipeline(DeviceTier.HIGH_END, SignalFusion(), SRMForensicAnalyzer(context, engine),
                     FFTSpectralAnalyzer(), KLCooccurrenceAnalyzer(context), XGBoostMetaClassifier(),
                     EXIFAnalyzer(), C2PAManifestChecker(), PRNUAnalyzer(),
-                    // semanticProbe was added to the DetectionPipeline
+                    // The slot-6 probe was added to the DetectionPipeline
                     // constructor in 34bd2f2. Omitting it left this
                     // instrumentation test with one argument too few and
                     // the androidTest source set uncompilable.
-                    SemanticProbeAnalyzer(context, engine), context)
+                    VfmProbeAnalyzer(context, engine), context)
                 val result = pipeline.analyzeMedia(bitmap, ScanMode.IMAGE_ONLY).last().result!!
                 if (!report.validated) {
                     assertEquals(DetectionVerdict.INCONCLUSIVE, result.verdict)

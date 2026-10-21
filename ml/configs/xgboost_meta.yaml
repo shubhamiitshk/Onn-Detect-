@@ -3,7 +3,14 @@ model:
   type: xgboost
 training:
   n_estimators: 40
-  max_depth: 3
+  # max_depth was re-selected on the fusion_val MODEL-SELECTION split once
+  # slot 6 became the fusion's base margin (the probe is the prior and the
+  # trees only correct it). Measured fusion_val AUC: depth 2 -> 0.8591,
+  # depth 3 -> 0.8578, depth 4 -> 0.8580, depth 6 -> 0.8585. Depth 2 wins,
+  # and it also has the best fusion_val TPR@1%FPR (0.2650 vs 0.2450-0.2600).
+  # With the base margin the tree only supplies a correction, so a shallower
+  # tree is both better and less able to overfit.
+  max_depth: 2
   learning_rate: 0.1
   subsample: 0.8
   colsample_bytree: 0.8

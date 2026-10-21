@@ -308,11 +308,25 @@ class CascadeModelContractTests(unittest.TestCase):
     the required models may change.
     """
 
-    def _add_cascade(self, root, manifest, frontend=None, shape=(1, 224, 224, 3)):
-        name = next(iter(release_bundle.CASCADE_MODEL_NAMES))
+    def _add_cascade(self, root, manifest, frontend=None, shape=(1, 224, 224, 3),
+                     name=None):
+        # The slot-6 probe's frontend contract depends on WHICH probe ships:
+        # the distilled student consumes CLIP normalization, the frozen
+        # tower consumes SigLIP normalization. The fixture must declare the
+        # contract the validator expects for that model, or the test would
+        # be asserting a mismatch rather than a contract.
+        if name is None:
+            name = 'siglip_probe_int8.tflite'
         path = root / 'models' / name
         path.write_bytes(b'\0\0\0\0TFL3' + bytes(range(64)))
-        frontend_id = frontend or f'clip-appearance-bicubic{shape[1]}-clipnorm-meanstd-float32'
+        if frontend is None:
+            if release_bundle.CASCADE_FRONTEND_KIND.get(name) == 'siglip':
+                from export.vfm_frontend import vfm_frontend_id
+                frontend_id = vfm_frontend_id(shape[1])
+            else:
+                frontend_id = f'clip-appearance-bicubic{shape[1]}-clipnorm-meanstd-float32'
+        else:
+            frontend_id = frontend
         manifest['models'][name] = {'sha256': sha256_file(path), 'input_shape': list(shape),
                                    'output_shape': [1, 1], 'dtype': 'FLOAT32', 'frontend_id': frontend_id}
         manifest['calibration'][name] = {'model_hash': sha256_file(path), 'frontend_id': frontend_id,
@@ -344,7 +358,7 @@ class CascadeModelContractTests(unittest.TestCase):
             root = Path(directory) / 'bundle'
             fixture(root)
             manifest = release_bundle.validate_bundle(root)
-            self.assertNotIn(next(iter(release_bundle.CASCADE_MODEL_NAMES)), manifest['models'])
+            self.assertNotIn('siglip_probe_int8.tflite', manifest['models'])
 
     def test_a_complete_cascade_model_is_accepted(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -352,7 +366,24 @@ class CascadeModelContractTests(unittest.TestCase):
             manifest = fixture(root)
             self._add_cascade(root, manifest)
             validated = release_bundle.validate_bundle(root)
-            self.assertIn(next(iter(release_bundle.CASCADE_MODEL_NAMES)), validated['models'])
+            self.assertIn('siglip_probe_int8.tflite', validated['models'])
+
+    def test_the_distilled_student_still_validates_with_its_own_frontend(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / 'bundle'
+            manifest = fixture(root)
+            self._add_cascade(root, manifest, name='semantic_probe_int8.tflite')
+            validated = release_bundle.validate_bundle(root)
+            self.assertIn('semantic_probe_int8.tflite', validated['models'])
+
+    def test_the_frozen_tower_is_rejected_with_the_student_frontend(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / 'bundle'
+            manifest = fixture(root)
+            self._add_cascade(root, manifest, name='siglip_probe_int8.tflite',
+                              frontend='clip-appearance-bicubic224-clipnorm-meanstd-float32')
+            with self.assertRaises(ValueError):
+                release_bundle.validate_bundle(root)
 
     def test_a_cascade_model_with_the_wrong_frontend_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -378,7 +409,7 @@ class CascadeModelContractTests(unittest.TestCase):
             root = Path(directory) / 'bundle'
             manifest = fixture(root)
             self._add_cascade(root, manifest)
-            name = next(iter(release_bundle.CASCADE_MODEL_NAMES))
+            name = 'siglip_probe_int8.tflite'
             manifest['calibration'][name]['auc'] = 0.5
             (root / 'release_manifest.json').write_text(json.dumps(manifest), encoding='utf-8')
             with self.assertRaises(ValueError):

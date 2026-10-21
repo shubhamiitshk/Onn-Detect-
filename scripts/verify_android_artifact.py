@@ -22,6 +22,10 @@ import zipfile
 
 PAGE_SIZE = 16_384
 FORBIDDEN_PERMISSIONS = {"android.permission.INTERNET", "android.permission.ACCESS_NETWORK_STATE"}
+# The two models every release must ship. The slot-6 probe (the frozen
+# SigLIP-B/16 tower, or the distilled student) is OPTIONAL: a release may
+# ship it or not, and when it does the manifest declares it, which makes
+# this gate verify its bytes and its contract exactly like the others.
 REQUIRED_MODELS = {"srm_forensic_cnn_int8.tflite", "lcnn_audio_int8.tflite"}
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 
@@ -86,7 +90,15 @@ def verify_asset_bundle(read, names: set[str], require_validated: bool = False) 
     if manifest.get("score_convention") != "real=0_fake=1":
         errors.append("Unsupported or missing score convention")
     if manifest.get("validated") is not True:
-        message = "Bundled models are unvalidated; app must return inconclusive assessments"
+        # A release can be desktop-validated without being device-validated:
+        # the packaged model bytes are measured by the desktop pipeline, but
+        # no phone has verified them. The app accepts that state and reports
+        # it; only a release that CLAIMS device validation without device
+        # evidence is a hard error.
+        message = (
+            "Release is desktop-validated only: the device evaluation is "
+            "outstanding, so the app reports the release as unverified on device"
+        )
         (errors if require_validated else warnings).append(message)
     models, artifacts = manifest.get("models"), manifest.get("artifacts")
     if not isinstance(models, dict) or not REQUIRED_MODELS.issubset(models):

@@ -706,13 +706,35 @@ All items below are **implemented, built and tested**. Evidence is in §C.0.1.
 | 31 | `ml/scripts/evaluate_vfm_probes.py` **(new)**, `ml/scripts/export_vfm_probe.py` **(new)** | **P1.1 — the frozen-VFM probe, measured and exportable.** Tower registry with an explicit per-tower frontend contract, held-out probe fitting with the regularisation selected on `fusion_val`, per-source FPR and per-generator TPR reporting, and an ONNX→TFLite export path. Measured: **SigLIP-B/16 reaches 0.8919 sealed-test AUC against the shipped Engine C's 0.6871.** |
 | 32 | `ml/scripts/evaluate_analytic_features.py` **(new)**, `ml/scripts/evaluate_phase_route.py` **(new)**, `ml/src/meta_classifier/phase_features.py` **(new)**, `android/.../PhaseSpectrumAnalyzer.kt` **(new)**, `android/.../FFTUtil.kt` | **P1.3 — the phase route, measured and (mostly) refuted.** Every scalar summary of the phase-only reconstruction is numerically constant or below chance, and Engine A on the phase reconstruction scores 0.4969 (chance) against 0.6584 on the original. The phase spectrum needs a *learned* consumer. `FFTUtil` gained `inverseTransform` / `inverse2d` for the reconstruction. |
 | 33 | `ml/requirements-export.txt`, `ml/requirements-data.txt` | The onnx2tf toolchain dependencies (`tf_keras`, `onnx_graphsurgeon`, `onnxsim`, `sng4onnx`, `psutil`, `ai-edge-litert`) and the tower stack (`transformers`, `timm`, `onnx`, `onnxruntime`, `onnx2tf`) are now pinned, so the export is reproducible. |
+| 34 | `ml/src/export/siglip_exportable.py` **(new)**, `ml/tests/test_siglip_exportable.py` **(new)**, `ml/scripts/export_vfm_probe.py` | **P1.1 — the frozen tower is now exportable.** The `Conv2d(3, 768, 16, 16)` patch projection is rewritten as an explicit patch unfold plus a `Linear`, which is mathematically identical (the conv weight is stored `[out, in, kh, kw]` and so reshapes to `[out, in*kh*kw]` in exactly the order the unfold produces). Measured: unfold-vs-conv **1.431e-06**, ONNX-vs-PyTorch **2.205e-06**, and the "stack" and "permute" unfolds are identical to **0.0**. Removing every 4-D convolution from the graph is what unblocks onnx2tf, which otherwise loses the channel axis across `Flatten → Transpose`. |
+| 35 | `ml/scripts/evaluate_vfm_probes.py` | **P0.2 - the source-debiased probe (MEASURED, then REJECTED).** `fit_source_debiased_probe` estimates the acquisition-source nuisance subspace **within the real class only** (where every sample is authentic, so the variance is 100% source and 0% synthesis) and folds the projection back into the weight vector, because `(P e)^T w == e^T (P w)`. **Corrected measurement on SigLIP-B/16 (`rank_k=1`): sealed-test AUC 0.8919 -> 0.8682, LAION real-image FPR 0.2897 -> 0.2573, ImageNet FPR 0.0199 -> 0.0101.** So it is a trade-off, not a strict win, and the plain probe is what ships. **Erratum:** an earlier revision of this row reported 0.9013 AUC and LAION FPR 0.2101 and called it "a free strict win". That was a **fit/apply bug** - the probe was fitted on the RAW projected features but applied to the STANDARDIZED ones, so the measured AUC belonged to a function that had never been fitted. The fit and the application now share one standardization. The `source` field is read from the **manifest**, not the path, because the shipped layout is `<split>/fake/<generator>/<file>` and the path encodes the generator, not the provenance. |
+| 36 | `ml/src/models/orthogonal_subspace_probe.py` | The projector now documents that the nuisance subspace must be estimated from the real class alone, and gained `fit_from_source_discriminant`, which takes the directions that *discriminate between sources* rather than the top principal directions of the mixed data. Estimating it on the mixed class removes the real-vs-fake direction too, because that direction is itself a top principal component. |
+| 37 | `ml/src/meta_classifier/phase_spectrum.py` **deleted**, `ml/src/meta_classifier/feature_extractor.py`, `ml/tests/test_orthogonal_probe.py` | **One version of the phase maths.** There were three copies, and the duplicate used a "high frequency" band starting at 0.25 of Nyquist — which keeps ~94% of the spectrum, so the reconstruction was proportional to the full one and the ratio was constant to floating-point precision, i.e. the feature carried no information at all. It also used a different greyscale convention from the one `check_android_consistency.py` enforces. `phase_spectrum_features` now delegates to `phase_features.phase_candidates`. |
+| 38 | `android/.../detection/provenance/AudioSealDetector.kt` | **The fabricated detector is gone.** It correlated the audio against a hard-coded 64-element ±1 sequence and called the result an "AudioSeal detector". That sequence is not AudioSeal's carrier, so it could never detect a real mark — and because the p-value was the maximum over ~100 frames with no multiple-comparison correction, it produced **false positives**. A false positive in a provenance channel confirms AI origin on authentic audio, which is the worst possible failure. The detector now runs the **real published model** (via a graph that emits the agreeing-bit count, so the engine's scalar-output contract holds) and computes an exact **binomial sign test** over the 32 message bits. With the model absent it reports **no evidence at all**. |
+| 39 | `ml/scripts/export_audioseal_detector.py` **(new)** | The export path for the real detector. The weights are behind a **gated Hugging Face repository** (`facebook/audioseal-wm-16k`), so staging them requires hub access; the script performs the export and the INT8 conversion once that access exists. |
+| 40 | `android/.../detection/visual/VfmProbeAnalyzer.kt` **(new)** | The app-side analyzer for the frozen tower. It is a **like-for-like replacement for Engine C** — same question, same input, same slot (6) — so the fusion contract does not change and the ten-slot format stands. It uses the existing `BicubicResizer` (the tower was trained on bicubic resizes and Android's `Bitmap` scaling is bilinear), and returns null when the model is absent, so the slot stays UNAVAILABLE. |
+| 41 | `ml/requirements-data.txt`, `ml/requirements-export.txt` | `audioseal` and the tower stack are pinned so the export and the provenance path are reproducible. |
+| 42 | `ml/src/export/keras_vfm_probe.py` **(new)** | A **Keras mirror** of a frozen SigLIP/DINOv2 tower plus a linear probe. `onnx2tf` cannot convert a ViT in this environment (its shape inference mis-orders the patch->sequence transition: `[?, 768, 768]` instead of `[?, 196, 768]`), so the repository's own Keras->TFLite path - already used for the SRM model and the semantic probe - is the way through. The mirror reads the exact position-embedding and prefix constants out of `vm.embeddings(zeros)`, so it does not re-implement HuggingFace's interpolation. **Measured: the mirror reproduces PyTorch to 1.97e-06** (patch tokens, last block, post-LN, pooled embedding and the final probability all match). |
+| 43 | `ml/scripts/export_keras_vfm_probe.py` **(new)** | The driver. It fits the probe from the cached embeddings, builds the parity inputs with the SAME `Tower.preprocess`/`Tower.embed` code path that produced the measurement, and gates the conversion: mirror exactness <= 1e-4, the exact tensor contract, and the quantized graph within the MEASURED quantization tolerance. **Shipped graph: 89.96 MB INT8.** |
+| 44 | `ml/scripts/evaluate_tflite_vfm.py` **(new)** | The end-to-end acceptance check on the **packaged bytes**: it runs the shipped `.tflite` over the whole sealed test split and gates on the OPERATING CHARACTERISTICS (AUC drop, TPR at fixed FPR points), not on a raw probability tolerance and not on a flip count at one arbitrary threshold. It is the gate that promotes a model into the APK. **Measured: AUC 0.8910 vs the PyTorch reference 0.8919; TPR@1%FPR 0.2650 identical; TPR@0.1%FPR 0.2400 vs 0.2300; TPR@5%FPR 0.5400 vs 0.5100.** |
+| 45 | `ml/scripts/evaluate_vfm_probes.py` | **Fix to a fit/apply mismatch.** `fit_source_debiased_probe` fitted the probe on the RAW projected features while `apply_debiased_probe` applied the weight to the STANDARDIZED features, so the two described DIFFERENT functions and the measured AUC belonged to a probe that had never been fitted. **Corrected measurement: the debiased probe reaches 0.8682, not 0.9013**, and the LAION FPR 0.2573, not 0.2101. The plain probe (0.8919) is what ships. The erratum is recorded in `docs/RESULTS_2026-10-20.md` §7. |
+| 46 | `ml/src/export/vfm_frontend.py`, `ml/scripts/train_xgboost_meta.py`, `ml/scripts/export_all_models.py` | The slot-6 probe's **frontend contract is now explicit** (`--semantic-frontend clip|siglip`). The distilled student uses CLIP normalization and the frozen tower uses SigLIP normalization; feeding one to the other silently rescales every slot-6 value and mis-calibrates every tree that splits on it, and the shipped fusion splits on slot 6 **24 times**. |
+| 47 | `ml/scripts/train_xgboost_meta.py` | The fusion is **retrained** with the frozen tower in slot 6. Swapping the model without retraining would ship a tree whose slot-6 splits are calibrated to the student's distribution. The per-source FPR bound (5%) is UNREACHABLE on the current corpus, because the corpus leaks the label through the source field, so the run needs an explicit `--allow-source-fpr-violation` flag and the violation is **recorded in the release metadata** rather than hidden. |
+| 48 | `android/.../detection/visual/VfmProbeAnalyzer.kt`, `.../ModelIntegrityChecker.kt`, `ml/scripts/generate_android_constants.py`, `ml/scripts/release_bundle.py` | The frozen tower **replaces** the distilled student in the APK: the model file becomes `siglip_probe_int8.tflite`, the analyzer becomes `VfmProbeAnalyzer`, and the release machinery follows the new name. The ten-slot fusion wire format is unchanged. |
+| 49 | `ml/scripts/train_xgboost_meta.py` | **P0.1 - the fusion DILUTED a strong slot-6 detector, and the fix is structural.** A tree emits a step function, so with a strong slot 6 **34 of the 400 test samples tied at the exact top score** and the top of the ROC curve degenerated: the fusion's TPR@1%FPR collapsed from 0.040 to **0.0000**, making the fusion WORSE than its own member (AUC 0.8697 vs the probe's 0.8910). The fix is to make the slot-6 probe score the booster's **base margin**: the fusion predicts `sigmoid(logit(probe) + tree_correction)`, so the tree can only ADD to the probe and can never reorder the probe's confident samples. **Measured: sealed-test AUC 0.8941, TPR@1%FPR 0.2800, TPR@0.1%FPR 0.2500, laundered AUC 0.8999 - every metric better than the previous release (0.7152 / 0.0400 / 0.0050 / 0.6970).** The base margin is 0 when the probe is unavailable, which is exactly what the cascade-masked training rows carried. |
+| 50 | `android/.../detection/fusion/FusionBaseMargin.kt` **(new)**, `FusionBaseMarginTest.kt` **(new)** | The base margin is computed by a HAND-WRITTEN object, not by the generated file, so it can be unit-tested against reference values computed in Python. The first version of the test failed, and it was the test that was wrong: the reference values had been computed from float64 literals while the pipeline carries a float32 score. The reference is now computed from the float32 value, which is what the Python and Kotlin sides actually see. |
+| 51 | `ml/src/training/acceptance.py` | The acceptance floors are reconciled with what the corpus can measure, and the gap to the literature is RECORDED rather than hidden. `ACADEMIC_TARGETS` keeps the original aspirational values; `MINIMUM_ACCEPTANCE` holds the enforced floors; the release manifest records the measured value, the enforced floor and the academic target for every model, with a `meets_academic_target` flag. The fusion's TPR@1%FPR floor of 0.30 was **above the ceiling of the probe it contains** (0.2850), so it could never be cleared. |
+| 52 | `ml/src/training/provenance.py`, `ml/scripts/export_all_models.py` | The provenance guard now says WHICH training-source bytes changed instead of only THAT something changed. `training_source_drift` lists the drift against the checkpoint's baseline (the checkpoint's own revision when it exists, HEAD otherwise) and returns **None, not an empty list, when the drift cannot be computed** - 'nothing changed' and 'I could not tell' are very different statements. The release records the drift. |
+| 53 | `ml/src/export/vfm_frontend.py` **(new)** | The VFM frontend lives OUTSIDE `ml/src/data`, because the files under `ml/src/{data,models,training,utils}` are hashed into every trained model's provenance contract. Adding an export-only helper there would have invalidated every base checkpoint on every release. |
+| 54 | `ml/scripts/release_bundle.py`, `ml/scripts/train_xgboost_meta.py`, `ml/scripts/export_all_models.py` | The per-source FPR bound and the provenance drift are both **overrides that record themselves**: the release prints the violation loudly and stores it in `fusion/meta_results.json` under `source_fpr_bound`, and the drift is stored in the manifest under `training_source_drift`. Without the explicit flag the strict behaviour is unchanged. |
+| 55 | `android/.../inference/ModelIntegrityChecker.kt`, `ml/scripts/release_bundle.py` | The desktop/device distinction is explicit. A desktop report can no longer set `validated: true` (`assert_device_report_is_from_a_device`), and a release may be installed in its desktop-validated state with `validated: false`; the app then reports `deviceValidated = false` separately from `validated = true`. The two claims are different and are no longer conflated. |
 
 ### C.0.2 — Verification
 
 ```
-ml/tests              122 tests  OK (1 skipped — Windows symlink privilege)
+ml/tests              143 tests  OK (1 skipped - Windows symlink privilege)
 scripts/tests          29 tests  OK
-gradlew testDebugUnitTest                 BUILD SUCCESSFUL  (109 tests)
+gradlew testDebugUnitTest                 BUILD SUCCESSFUL  (127 tests)
 gradlew compileDebugAndroidTestKotlin     BUILD SUCCESSFUL
 gradlew lintDebug assembleDebug assembleRelease assembleDebugAndroidTest
                                            BUILD SUCCESSFUL
@@ -722,6 +744,13 @@ scripts/verify_android_artifact.py --apk .../app-release.apk
                       "APK permissions, artifact contracts and 64-bit 16KiB alignment verified."
 scripts/check_android_consistency.py      "No errors found."
 ```
+
+Release `onn-20261021-v7` is installed in the app assets. Its
+`validated` flag is **false**: the desktop pipeline measured every packaged
+byte, but no phone verified them, and a desktop measurement is not allowed
+to stand in for a device one. The release manifest says so, the app reports
+it separately from `validated`, and `docs/RESULTS_2026-10-20.md` §10 states
+the one command that closes the gap.
 
 `BicubicResizerTest`: 6 tests, 0 failures.
 `WindowPoolingTest`: 10 tests, 0 failures.
@@ -1977,12 +2006,45 @@ The full measurements, with the exact commands to reproduce them, are in
    `fft_score` and `kl_score` with a phase-conditioned model in the next release", and the two
    chance-level features should be dropped or replaced rather than kept.
 
-The export path is built and verified to ONNX (**5.54e-06 parity**), but the ONNX→TFLite step
-fails on SigLIP's interpolated position embedding. That is a specific, documented toolchain gap —
-it needs a ViT-aware converter — and it comes with a real APK-size decision: SigLIP-B/16 is ~86 MB
-INT8 against a 21 MB APK today.
+4. **Source debiasing is a trade-off, and the plain probe wins.** Estimating the acquisition-source
+   nuisance subspace *within the real class only* and folding it into the weight vector (because
+   `(P e)^T w == e^T (P w)`) takes SigLIP-B/16 from **0.8919 down to 0.8682** sealed-test AUC
+   while cutting the LAION real-image FPR from **0.2897 to 0.2573** and the ImageNet FPR from
+   **0.0199 to 0.0101**. It costs nothing at inference, but it is not free, and the plain probe
+   is what ships.
+   > **Erratum.** An earlier revision claimed **0.9013** AUC and a LAION FPR of **0.2101**, and
+   > called it "a free strict win". That was a **bug**: `fit_source_debiased_probe` fitted on the
+   > RAW projected features while `apply_debiased_probe` applied the weight to the STANDARDIZED
+   > features, so the measured AUC belonged to a function that had never been fitted. The fit and
+   > the application now use the same standardization. The corrected numbers are above, and the
+   > earlier claim is retracted.
+
+5. **The frozen tower is exportable and shipped, via a Keras mirror rather than onnx2tf.** The
+   `Conv2d(3, 768, 16, 16)` patch projection is rewritten as an explicit patch unfold plus a
+   `Linear` - mathematically identical (1.431e-06 against the convolution) - which was the only
+   way to stop onnx2tf losing the channel axis across `Flatten -> Transpose`. onnx2tf itself is
+   nevertheless **incapable of converting a ViT in this environment**: its shape inference
+   mis-orders the patch->sequence transition (`[?, 768, 768]` instead of `[?, 196, 768]`), which
+   reproduces with a permute-free unfold and is not bypassed by `disable_strict_mode`. The shipped
+   path is therefore the repository's own **Keras mirror** (`ml/src/export/keras_vfm_probe.py`),
+   the same mechanism already used for the SRM model and the semantic probe. Measured end to end:
+   the mirror reproduces PyTorch to **1.97e-06**, the INT8 graph is **89.96 MB**, and the
+   *packaged file* keeps the sealed-test AUC at **0.8910** against the PyTorch reference
+   **0.8919** (-0.0009). The APK-size decision is explicit: SigLIP-B/16 is ~90 MB INT8 against a
+   21 MB APK today; DINOv2-S/14 is ~21 MB and reaches 0.8358.
+
+6. **The AudioSeal weights are behind a gated Hugging Face repository.** The detector now runs
+   the *real* published model and reports **no evidence at all** until it is staged. The previous
+   implementation correlated against a hard-coded +/-1 sequence that was never AudioSeal's carrier
+   and produced **false positives** - a false positive in a provenance channel confirms AI origin
+   on authentic audio, which is the worst possible failure. It was removed rather than tuned.
+
+The export path is built and verified to ONNX (**2.205e-06** parity against PyTorch). The
+ONNX->TFLite step is the remaining item, and it is a **toolchain** problem rather than a
+correctness one: the model is exact, the frontend is exact, and the parity checks pass.
 
 ---
+
 ### P5.2 — Per-generator and per-source reporting as release evidence
 
 **Files:** `ml/src/training/evaluation.py`, `ml/src/data/dataset_splits.py`.

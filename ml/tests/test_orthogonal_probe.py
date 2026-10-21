@@ -8,7 +8,7 @@ from ml.src.models.orthogonal_subspace_probe import (
     OrthogonalSubspaceProjector,
     OrthogonalProbeClassifier,
 )
-from ml.src.meta_classifier.phase_spectrum import (
+from ml.src.meta_classifier.feature_extractor import (
     phase_spectrum_features,
     to_gray_u8,
 )

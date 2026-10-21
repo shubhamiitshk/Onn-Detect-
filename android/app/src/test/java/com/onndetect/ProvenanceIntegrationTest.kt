@@ -52,22 +52,30 @@ class ProvenanceIntegrationTest {
     }
 
     @Test
-    fun audioSealDetectorRejectsSilenceAndRandomNoise() {
-        val detector = AudioSealDetector()
-        val silence = FloatArray(16000) { 0f }
-        assertEquals(ProvenanceEvidence.Absent, detector.analyze(silence))
-
-        val randomNoise = FloatArray(16000) { ((it % 10) - 5) * 0.01f }
-        val noiseEvidence = detector.analyze(randomNoise)
-        assertEquals(ProvenanceEvidence.Absent, noiseEvidence)
-    }
-
-    @Test
-    fun audioSealDetectorErfcAccuracy() {
-        val detector = AudioSealDetector()
-        assertEquals(1.0, detector.approximateErfc(0.0), 1e-5)
-        // erfc(3.0) ≈ 2.209e-5
-        val erfc3 = detector.approximateErfc(3.0)
-        assertTrue("erfc(3.0) should be small (~2.2e-5)", erfc3 in 1e-5..5e-5)
+    fun audioSealBinomialTailIsCorrect() {
+        // The real AudioSeal graph is NOT in the release yet (its weights
+        // are behind a gated Hugging Face repository), so the detector's
+        // device-level behaviour is asserted by the instrumented test. What
+        // is asserted here is the STATISTIC, which is where the previous
+        // implementation was wrong: it took the maximum correlation over
+        // ~100 frames and treated it as a single Gaussian tail.
+        //
+        // The null hypothesis is a RANDOM 32-bit message, so a random
+        // message agrees with the expected pattern on about 16 bits. Under
+        // the two-sided sign test:
+        //   16 agreeing bits -> p = 1.0     (a coin flip, not evidence)
+        //   24 agreeing bits -> p = 0.007
+        //   32 agreeing bits -> p = 4.7e-10
+        assertEquals(1.0, AudioSealDetector.binomialTwoTailed(16, 32), 1e-9)
+        assertTrue(AudioSealDetector.binomialTwoTailed(32, 32) < 1e-9)
+        // More agreeing bits must be strictly more significant.
+        assertTrue(
+            AudioSealDetector.binomialTwoTailed(24, 32) < AudioSealDetector.binomialTwoTailed(16, 32)
+        )
+        assertTrue(
+            AudioSealDetector.binomialTwoTailed(28, 32) < AudioSealDetector.binomialTwoTailed(24, 32)
+        )
+        // A degenerate input is not significant.
+        assertEquals(1.0, AudioSealDetector.binomialTwoTailed(0, 0), 1e-9)
     }
 }

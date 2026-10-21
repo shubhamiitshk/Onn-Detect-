@@ -25,6 +25,16 @@ def main():
                              "pipeline reproduces the dual-engine release. Engine C must be "
                              "trained BEFORE fusion, because fusion reads its scores.")
     parser.add_argument("--semantic-input-size", type=int, default=224)
+    parser.add_argument(
+        "--vfm-tflite",
+        default=None,
+        help=(
+            "The frozen SigLIP-B/16 probe TFLite that replaces the distilled "
+            "Engine C student in fusion slot 6. It uses a DIFFERENT frontend "
+            "contract (SigLIP normalization, not CLIP), so every stage that "
+            "touches slot 6 is told which one it is."
+        ),
+    )
     parser.add_argument("--cascade-mask-rate", type=float, default=0.25,
                         help="Fraction of fusion training rows whose slot 6 is masked to NaN so the "
                              "tree learns a real missing branch for a probe that did not run.")
@@ -80,10 +90,23 @@ def main():
         call("export_semantic_probe.py", "--checkpoint", args.semantic_checkpoint,
              "--output", semantic_tflite, "--input-size", args.semantic_input_size,
              "--data-root", configs["visual"]["data"]["root_dir"])
+    # The frozen SigLIP tower replaces the distilled student in slot 6.
+    # Its frontend contract is DIFFERENT (SigLIP normalization, not CLIP),
+    # so every stage that touches slot 6 must be told which one it is.
+    vfm_tflite = bundle / "models" / "siglip_probe_int8.tflite"
+    if args.vfm_tflite:
+        import shutil as _shutil
+        vfm_tflite.parent.mkdir(parents=True, exist_ok=True)
+        _shutil.copy2(args.vfm_tflite, vfm_tflite)
     fusion_arguments = ["--config", args.fusion_config, "--visual-checkpoint", visual_checkpoint,
                         "--visual-tflite", bundle / "models/srm_forensic_cnn_int8.tflite",
                         "--output-dir", fusion, "--release-id", release_id]
-    if semantic_tflite.is_file():
+    if vfm_tflite.is_file():
+        fusion_arguments += ["--semantic-tflite", vfm_tflite,
+                             "--semantic-input-size", args.semantic_input_size,
+                             "--semantic-frontend", "siglip",
+                             "--cascade-mask-rate", args.cascade_mask_rate]
+    elif semantic_tflite.is_file():
         fusion_arguments += ["--semantic-tflite", semantic_tflite,
                              "--semantic-input-size", args.semantic_input_size,
                              "--cascade-mask-rate", args.cascade_mask_rate]

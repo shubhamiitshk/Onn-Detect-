@@ -2,7 +2,7 @@
 *.yml text eol=lf
 *.yaml text eol=lf
 android/gradlew text eol=lf
-*.tflite binary
+*.tflite filter=lfs diff=lfs merge=lfs -text
 *.jar binary
 android/app/src/main/assets/** -text
 android/app/src/main/java/com/onndetect/detection/fusion/XGBoostMetaClassifier.kt -text

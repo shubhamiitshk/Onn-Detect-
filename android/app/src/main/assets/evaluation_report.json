@@ -1,5 +1,5 @@
 {
-  "release_id": "onn-20261020-v6",
+  "release_id": "onn-20261021-v7",
   "models": {
     "srm_forensic_cnn_int8.tflite": {
       "fp32_max_error": 4.172325134277344e-07,
@@ -918,14 +918,14 @@
       ]
     },
     "lcnn_audio_int8.tflite": {
-      "fp32_max_error": 1.1920928955078125e-07,
+      "fp32_max_error": 1.4901161193847656e-07,
       "parity": {
-        "mae": 0.0068034690478816625,
-        "max_error": 0.08327257633209229,
-        "agreement": 0.99,
+        "mae": 0.0066717481706291435,
+        "max_error": 0.0756072998046875,
+        "agreement": 0.9925,
         "threshold": 0.36052772402763367,
         "reference_auc": 0.8650749999999999,
-        "candidate_auc": 0.8646,
+        "candidate_auc": 0.8648625,
         "reference_tpr_at_fpr_1pct": 0.355,
         "candidate_tpr_at_fpr_1pct": 0.34,
         "n_real": 200,
@@ -933,37 +933,37 @@
         "passed": true
       },
       "calibration": {
-        "model_hash": "56607bbfcf0c5b1bfab69d19f70e675116f6ed91356cbb8aed4d2483dcabba21",
+        "model_hash": "6963363f0e51f6338ceac34575e4c9fdeeb8ecbebe33605695721232377af508",
         "frontend_id": "lfcc-v3-sr16000-f128-c40-nfft512-hop160-topdbnone-resampler-quadratic_window_sinc_v1-float64stft-float32",
-        "threshold": 0.375,
-        "auc": 0.8646,
+        "threshold": 0.35546875,
+        "auc": 0.8648625,
         "n_calibration": 400,
         "split_manifest_hash": "6d56263cfdce0b8d1fc8f83cdef9261b91438a5a511e83a3401892be1e1fb524"
       },
       "checkpoint_sha256": "0c5dd8813c74980f7e15e578346d11106361acf9f1a42196f85a08c94922b3ad",
-      "test_auc": 0.8749499999999999,
-      "test_eer": 0.19499999999999998,
-      "test_accuracy": 0.84,
+      "test_auc": 0.874725,
+      "test_eer": 0.19749999999999998,
+      "test_accuracy": 0.83,
       "test": {
-        "auc": 0.8749499999999999,
-        "eer": 0.19499999999999998,
-        "accuracy": 0.84,
-        "balanced_accuracy": 0.8400000000000001,
-        "threshold": 0.375,
+        "auc": 0.874725,
+        "eer": 0.19749999999999998,
+        "accuracy": 0.83,
+        "balanced_accuracy": 0.8300000000000001,
+        "threshold": 0.35546875,
         "n_real": 200,
         "n_fake": 200,
         "tpr": 0.795,
-        "fpr": 0.115,
+        "fpr": 0.135,
         "tpr_wilson_95pct": [
           0.7337430194757748,
           0.8451382379616379
         ],
         "fpr_wilson_95pct": [
-          0.07786373232561955,
-          0.16664716898487572
+          0.09446570454787906,
+          0.18929138370752552
         ],
         "tpr_at_fpr_1pct": 0.595,
-        "tpr_at_fpr_0_1pct": 0.35,
+        "tpr_at_fpr_0_1pct": 0.345,
         "uncertainty_note": "Wilson intervals assume independent examples; recording/source clustering can widen uncertainty.",
         "n_independent_declared_groups": 42,
         "groups": {
@@ -972,13 +972,13 @@
               "n_real": 130,
               "n_fake": 130,
               "tpr": 0.6923076923076923,
-              "fpr": 0.046153846153846156
+              "fpr": 0.05384615384615385
             },
             "inthewild": {
               "n_real": 70,
               "n_fake": 70,
               "tpr": 0.9857142857142858,
-              "fpr": 0.24285714285714285
+              "fpr": 0.2857142857142857
             }
           },
           "generator": {
@@ -1064,7 +1064,7 @@
               "n_real": 200,
               "n_fake": 0,
               "tpr": null,
-              "fpr": 0.115
+              "fpr": 0.135
             },
             "in_the_wild_tts_vc": {
               "n_real": 0,
@@ -1078,7 +1078,7 @@
               "n_real": 2,
               "n_fake": 7,
               "tpr": 0.7142857142857143,
-              "fpr": 0.0
+              "fpr": 0.5
             },
             "asv_LA_0008": {
               "n_real": 5,
@@ -1306,7 +1306,7 @@
               "n_real": 15,
               "n_fake": 15,
               "tpr": 1.0,
-              "fpr": 0.13333333333333333
+              "fpr": 0.3333333333333333
             },
             "itw_Jerry_Seinfeld": {
               "n_real": 8,
@@ -1733,7 +1733,7 @@
         "test\\real\\in_the_wild_tts_vc\\inthewild_0069_d40aacca61.wav"
       ]
     },
-    "semantic_probe_int8.tflite": {
+    "siglip_probe_int8.tflite": {
       "fp32_max_error": 0.0,
       "parity": {
         "passed": true,
@@ -1742,37 +1742,37 @@
         "max_error": 0.0
       },
       "calibration": {
-        "model_hash": "38d1b692c3023b52b0e139d0a17257d3742019e8cc7edd1d8bb636ff91048d79",
-        "frontend_id": "clip-appearance-bicubic224-clipnorm-meanstd-float32",
-        "threshold": 0.51953125,
-        "auc": 0.6604125000000001,
+        "model_hash": "76454452bae9af17e315e78440d283ac2ea7a8551a9e05e16b9350fb40f97ea0",
+        "frontend_id": "vfm-siglip224-siglip-base-patch16-224-bicubic-clamp-meanstd-float32",
+        "threshold": 0.49412423372268677,
+        "auc": 0.8982,
         "n_calibration": 400,
         "split_manifest_hash": "9b0400fcc82e08d117c5cb245fd2c3081b3ba8ed9fd2f169a5455248c84c9312"
       },
-      "checkpoint_sha256": "38d1b692c3023b52b0e139d0a17257d3742019e8cc7edd1d8bb636ff91048d79",
-      "test_auc": 0.6871375,
-      "test_eer": 0.3875,
-      "test_accuracy": 0.6175,
+      "checkpoint_sha256": "76454452bae9af17e315e78440d283ac2ea7a8551a9e05e16b9350fb40f97ea0",
+      "test_auc": 0.891,
+      "test_eer": 0.18499999999999997,
+      "test_accuracy": 0.8125,
       "test": {
-        "auc": 0.6871375,
-        "eer": 0.3875,
-        "accuracy": 0.6175,
-        "balanced_accuracy": 0.6174999999999999,
-        "threshold": 0.51953125,
+        "auc": 0.891,
+        "eer": 0.18499999999999997,
+        "accuracy": 0.8125,
+        "balanced_accuracy": 0.8125,
+        "threshold": 0.49412423372268677,
         "n_real": 200,
         "n_fake": 200,
-        "tpr": 0.585,
-        "fpr": 0.35,
+        "tpr": 0.81,
+        "fpr": 0.185,
         "tpr_wilson_95pct": [
-          0.5157391490134403,
-          0.6510571455024242
+          0.7499876129240015,
+          0.8583282847220932
         ],
         "fpr_wilson_95pct": [
-          0.28728824127358077,
-          0.4183653566395992
+          0.13730192800616042,
+          0.2445706276115175
         ],
-        "tpr_at_fpr_1pct": 0.065,
-        "tpr_at_fpr_0_1pct": 0.03,
+        "tpr_at_fpr_1pct": 0.285,
+        "tpr_at_fpr_0_1pct": 0.24,
         "uncertainty_note": "Wilson intervals assume independent examples; recording/source clustering can widen uncertainty.",
         "n_independent_declared_groups": 400,
         "groups": {
@@ -1781,31 +1781,31 @@
               "n_real": 17,
               "n_fake": 0,
               "tpr": null,
-              "fpr": 0.17647058823529413
+              "fpr": 0.23529411764705882
             },
             "imagenet": {
               "n_real": 33,
               "n_fake": 0,
               "tpr": null,
-              "fpr": 0.06060606060606061
+              "fpr": 0.0
             },
             "laion": {
               "n_real": 81,
               "n_fake": 0,
               "tpr": null,
-              "fpr": 0.5185185185185185
+              "fpr": 0.25925925925925924
             },
             "openfake": {
               "n_real": 0,
               "n_fake": 200,
-              "tpr": 0.585,
+              "tpr": 0.81,
               "fpr": null
             },
             "pexels": {
               "n_real": 69,
               "n_fake": 0,
               "tpr": null,
-              "fpr": 0.3333333333333333
+              "fpr": 0.17391304347826086
             }
           },
           "generator": {
@@ -1818,13 +1818,13 @@
             "anima-preview": {
               "n_real": 0,
               "n_fake": 1,
-              "tpr": 0.0,
+              "tpr": 1.0,
               "fpr": null
             },
             "anima-preview2": {
               "n_real": 0,
               "n_fake": 1,
-              "tpr": 0.0,
+              "tpr": 1.0,
               "fpr": null
             },
             "animagine-xl-3.0": {
@@ -1848,13 +1848,13 @@
             "chroma": {
               "n_real": 0,
               "n_fake": 1,
-              "tpr": 0.0,
+              "tpr": 1.0,
               "fpr": null
             },
             "cyberrealistic-pony-v14.0": {
               "n_real": 0,
               "n_fake": 1,
-              "tpr": 0.0,
+              "tpr": 1.0,
               "fpr": null
             },
             "cyberrealistic-pony-v14.1": {
@@ -1878,31 +1878,31 @@
             "cyberrealistic-pony-v17.0": {
               "n_real": 0,
               "n_fake": 1,
-              "tpr": 0.0,
+              "tpr": 1.0,
               "fpr": null
             },
             "cyberrealistic-xl-v9.0": {
               "n_real": 0,
               "n_fake": 1,
-              "tpr": 0.0,
+              "tpr": 1.0,
               "fpr": null
             },
             "dalle-3": {
               "n_real": 0,
               "n_fake": 4,
-              "tpr": 1.0,
+              "tpr": 0.75,
               "fpr": null
             },
             "ernie-image": {
               "n_real": 0,
               "n_fake": 1,
-              "tpr": 0.0,
+              "tpr": 1.0,
               "fpr": null
             },
             "flux-1.1-pro": {
               "n_real": 0,
               "n_fake": 3,
-              "tpr": 0.6666666666666666,
+              "tpr": 1.0,
               "fpr": null
             },
             "flux-amateursnapshotphotos": {
@@ -1914,19 +1914,19 @@
             "flux-mvc5000": {
               "n_real": 0,
               "n_fake": 2,
-              "tpr": 1.0,
+              "tpr": 0.5,
               "fpr": null
             },
             "flux-realism": {
               "n_real": 0,
               "n_fake": 1,
-              "tpr": 0.0,
+              "tpr": 1.0,
               "fpr": null
             },
             "flux.1-dev": {
               "n_real": 0,
               "n_fake": 12,
-              "tpr": 0.75,
+              "tpr": 0.5,
               "fpr": null
             },
             "flux.1-schnell": {
@@ -1938,7 +1938,7 @@
             "flux.2-dev": {
               "n_real": 0,
               "n_fake": 2,
-              "tpr": 0.5,
+              "tpr": 1.0,
               "fpr": null
             },
             "flux.2-klein-4b": {
@@ -1950,7 +1950,7 @@
             "flux.2-klein-9b": {
               "n_real": 0,
               "n_fake": 9,
-              "tpr": 0.7777777777777778,
+              "tpr": 0.6666666666666666,
               "fpr": null
             },
             "flux.2-klein-base-4b": {
@@ -1962,19 +1962,19 @@
             "gpt-image-1": {
               "n_real": 0,
               "n_fake": 3,
-              "tpr": 0.3333333333333333,
+              "tpr": 1.0,
               "fpr": null
             },
             "gpt-image-1.5": {
               "n_real": 0,
               "n_fake": 5,
-              "tpr": 0.6,
+              "tpr": 1.0,
               "fpr": null
             },
             "gpt-image-2": {
               "n_real": 0,
               "n_fake": 1,
-              "tpr": 0.0,
+              "tpr": 1.0,
               "fpr": null
             },
             "grok-2-image-1212": {
@@ -1986,7 +1986,7 @@
             "hidream-i1-full": {
               "n_real": 0,
               "n_fake": 4,
-              "tpr": 1.0,
+              "tpr": 0.5,
               "fpr": null
             },
             "ideogram-3.0": {
@@ -1998,37 +1998,37 @@
             "illustrious": {
               "n_real": 0,
               "n_fake": 6,
-              "tpr": 0.8333333333333334,
+              "tpr": 1.0,
               "fpr": null
             },
             "imagen-3.0-002": {
               "n_real": 0,
               "n_fake": 1,
-              "tpr": 0.0,
+              "tpr": 1.0,
               "fpr": null
             },
             "imagen-4.0": {
               "n_real": 0,
               "n_fake": 3,
-              "tpr": 0.6666666666666666,
+              "tpr": 1.0,
               "fpr": null
             },
             "midjourney-6": {
               "n_real": 0,
               "n_fake": 5,
-              "tpr": 0.0,
+              "tpr": 0.6,
               "fpr": null
             },
             "midjourney-7": {
               "n_real": 0,
               "n_fake": 3,
-              "tpr": 0.3333333333333333,
+              "tpr": 0.6666666666666666,
               "fpr": null
             },
             "mystic": {
               "n_real": 0,
               "n_fake": 3,
-              "tpr": 0.3333333333333333,
+              "tpr": 0.6666666666666666,
               "fpr": null
             },
             "nano-banana-2": {
@@ -2040,7 +2040,7 @@
             "novaanimexl_ilv140": {
               "n_real": 0,
               "n_fake": 1,
-              "tpr": 0.0,
+              "tpr": 1.0,
               "fpr": null
             },
             "one-obsession-17-red-sdxl": {
@@ -2052,7 +2052,7 @@
             "playground-v2.5-1024px-aesthetic": {
               "n_real": 0,
               "n_fake": 2,
-              "tpr": 0.5,
+              "tpr": 1.0,
               "fpr": null
             },
             "qwen-image": {
@@ -2065,30 +2065,30 @@
               "n_real": 200,
               "n_fake": 0,
               "tpr": null,
-              "fpr": 0.35
+              "fpr": 0.185
             },
             "realistic_vision_v5.1_novae": {
               "n_real": 0,
               "n_fake": 2,
-              "tpr": 0.5,
+              "tpr": 1.0,
               "fpr": null
             },
             "recraft-v3": {
               "n_real": 0,
               "n_fake": 1,
-              "tpr": 1.0,
+              "tpr": 0.0,
               "fpr": null
             },
             "sd-1.5": {
               "n_real": 0,
               "n_fake": 4,
-              "tpr": 0.75,
+              "tpr": 1.0,
               "fpr": null
             },
             "sd-1.5-dreamshaper": {
               "n_real": 0,
               "n_fake": 5,
-              "tpr": 0.6,
+              "tpr": 1.0,
               "fpr": null
             },
             "sd-1.5-epicdream": {
@@ -2100,13 +2100,13 @@
             "sd-2.1": {
               "n_real": 0,
               "n_fake": 12,
-              "tpr": 0.5,
+              "tpr": 0.75,
               "fpr": null
             },
             "sd-3.5": {
               "n_real": 0,
               "n_fake": 15,
-              "tpr": 0.4666666666666667,
+              "tpr": 0.8,
               "fpr": null
             },
             "sd-turbo": {
@@ -2118,13 +2118,13 @@
             "sd-xl-v1.0-vae-fix": {
               "n_real": 0,
               "n_fake": 2,
-              "tpr": 0.5,
+              "tpr": 1.0,
               "fpr": null
             },
             "sdxl": {
               "n_real": 0,
               "n_fake": 5,
-              "tpr": 0.6,
+              "tpr": 0.8,
               "fpr": null
             },
             "sdxl-1.0": {
@@ -2136,37 +2136,37 @@
             "sdxl-epic-realism": {
               "n_real": 0,
               "n_fake": 6,
-              "tpr": 0.16666666666666666,
+              "tpr": 1.0,
               "fpr": null
             },
             "sdxl-juggernaut": {
               "n_real": 0,
               "n_fake": 5,
-              "tpr": 0.6,
+              "tpr": 1.0,
               "fpr": null
             },
             "sdxl-realvis-v5": {
               "n_real": 0,
               "n_fake": 4,
-              "tpr": 0.75,
+              "tpr": 0.0,
               "fpr": null
             },
             "sdxl-touchofrealism": {
               "n_real": 0,
               "n_fake": 4,
-              "tpr": 0.25,
+              "tpr": 1.0,
               "fpr": null
             },
             "sdxl-turbo": {
               "n_real": 0,
               "n_fake": 2,
-              "tpr": 0.5,
+              "tpr": 1.0,
               "fpr": null
             },
             "seedream-v4.0": {
               "n_real": 0,
               "n_fake": 2,
-              "tpr": 0.5,
+              "tpr": 1.0,
               "fpr": null
             },
             "seedream-v4.5": {
@@ -2178,7 +2178,7 @@
             "sora-2": {
               "n_real": 0,
               "n_fake": 1,
-              "tpr": 0.0,
+              "tpr": 1.0,
               "fpr": null
             },
             "stable-diffusion-v1-4": {
@@ -2202,7 +2202,7 @@
             "studio-ghibli-wan2.1-t2v-14b-v1.0": {
               "n_real": 0,
               "n_fake": 1,
-              "tpr": 0.0,
+              "tpr": 1.0,
               "fpr": null
             },
             "tiny-random-sana": {
@@ -2214,25 +2214,25 @@
             "veo-3": {
               "n_real": 0,
               "n_fake": 2,
-              "tpr": 0.0,
+              "tpr": 0.5,
               "fpr": null
             },
             "wan-video-2.2": {
               "n_real": 0,
               "n_fake": 1,
-              "tpr": 0.0,
+              "tpr": 1.0,
               "fpr": null
             },
             "wan-video-2.5": {
               "n_real": 0,
               "n_fake": 1,
-              "tpr": 0.0,
+              "tpr": 1.0,
               "fpr": null
             },
             "z-image-turbo": {
               "n_real": 0,
               "n_fake": 10,
-              "tpr": 0.8,
+              "tpr": 0.9,
               "fpr": null
             }
           }
@@ -2644,5 +2644,5 @@
     }
   },
   "status": "desktop_validation_only",
-  "source_snapshot_sha256": "75ca35f80e40dad02325c04118fa5b216c53c4900bbae4c5c8a344c8049da8e0"
+  "source_snapshot_sha256": "9da954d7e8d9acfc7090d33f3ede6852206183e3e28dc5d40ae34c05a775e89c"
 }

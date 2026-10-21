@@ -52,7 +52,7 @@ class VideoForensicAnalyzer @Inject constructor(private val context: Context,
     private val videoDecoder: VideoDecoder, private val srmAnalyzer: SRMForensicAnalyzer,
     private val fftAnalyzer: FFTSpectralAnalyzer, private val klAnalyzer: KLCooccurrenceAnalyzer,
     private val metaClassifier: XGBoostMetaClassifier, private val audioClassifier: AudioClassifier,
-    private val semanticProbe: com.onndetect.detection.visual.SemanticProbeAnalyzer) {
+    private val vfmProbe: com.onndetect.detection.visual.VfmProbeAnalyzer) {
     data class Outcome(val overallScore: Float, val isAiGenerated: Boolean, val confidence: Float,
         val srmScore: Float, val fftScore: Float, val klScore: Float, val flatnessScore: Float,
         val temporalScore: Float, val audioScore: Float, val framesAnalyzed: Int,
@@ -113,7 +113,7 @@ class VideoForensicAnalyzer @Inject constructor(private val context: Context,
                             // validated it; otherwise slot 6 stays
                             // UNAVAILABLE (NaN) - never a neutral constant.
                             val probe = if (report.cascadeValidated) {
-                                semanticProbe.analyze(bitmap, ::checkProgress)
+                                vfmProbe.analyze(bitmap, ::checkProgress)
                             } else null
                             if (probe != null) semanticScores += probe
                             val features = FusionFeatureSchema.build(

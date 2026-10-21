@@ -1,134 +1,181 @@
 package com.onndetect.detection.provenance
 
+import android.content.Context
+import com.onndetect.inference.LiteRTInferenceEngine
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import javax.inject.Inject
 import kotlin.math.abs
-import kotlin.math.exp
-import kotlin.math.sqrt
+import kotlin.math.min
+import kotlin.math.pow
+import kotlin.math.roundToInt
 
 /**
- * Offline neural watermark detector for speech based on Meta AudioSeal
- * (facebookresearch/audioseal).
+ * Offline AudioSeal watermark detection.
  *
- * ## Principles
- * 1. 100% Offline: Performs localized detection on 16 kHz PCM audio chunks
- *    without network permissions or external server calls.
- * 2. Positive-Evidence Discipline: A statistically significant detection
- *    (p < [ProvenanceEvidence.SIGNIFICANT_P_VALUE]) confirms generative origin.
- * 3. Absence Invariant: Absence of an AudioSeal mark NEVER lowers or changes
- *    the statistical score; watermarks can be stripped by re-encoding.
+ * ## Why the real detector, and why it is optional
+ *
+ * An earlier implementation correlated the audio against a hard-coded
+ * 64-element +/-1 sequence and called the result an "AudioSeal detector".
+ * That was wrong in a way that mattered:
+ *
+ *  * AudioSeal's carrier is a pseudo-random sequence derived from a
+ *    secret key. A correlation against an arbitrary fixed pattern can
+ *    never detect a genuine AudioSeal watermark, because it is not the
+ *    carrier the watermark was embedded with.
+ *  * Worse, the p-value was the maximum correlation over ~100 frames
+ *    with no correction for taking a maximum, so the reported
+ *    significance was wildly overstated and the detector produced
+ *    **false positives** on ordinary audio.
+ *
+ * A false positive in a provenance channel is the worst possible failure:
+ * it confirms AI origin on authentic audio. So the detector is now built
+ * on the REAL published model, and when that model is not present in the
+ * release it reports **no evidence at all** rather than guessing.
+ *
+ * Staging the real weights requires access to the gated
+ * `facebook/audioseal-wm-16k` repository on the Hugging Face hub.
+ * `ml/scripts/export_audioseal_detector.py` performs the export once that
+ * access exists.
+ *
+ * ## The absence invariant
+ *
+ * Absence of a mark NEVER lowers the statistical score and never
+ * confirms anything. It is reported as
+ * [ProvenanceEvidence.Absent], which carries no claim in either
+ * direction.
  */
-class AudioSealDetector @Inject constructor() {
+class AudioSealDetector @Inject constructor(
+    private val engine: LiteRTInferenceEngine,
+) {
 
     data class DetectionResult(
         val detected: Boolean,
         val pValue: Double,
-        val peakConfidence: Float,
+        val agreeingBits: Int,
+        val totalBits: Int,
     )
 
     /**
-     * Inspect a 16 kHz mono PCM float audio buffer for an AudioSeal watermark.
+     * Inspect 16 kHz mono PCM for an AudioSeal watermark.
+     *
+     * Returns [ProvenanceEvidence.Absent] when the detector is not
+     * available, when the audio is too short, or when no mark is present.
      */
     fun analyze(audioSamples: FloatArray): ProvenanceEvidence {
-        if (audioSamples.isEmpty() || audioSamples.size < MIN_SAMPLES) {
-            return ProvenanceEvidence.Absent
-        }
-
-        val result = detectWatermark(audioSamples)
-        return if (result.detected && result.pValue < ProvenanceEvidence.SIGNIFICANT_P_VALUE) {
-            ProvenanceEvidence.WatermarkMark(
-                detected = true,
-                kind = "AudioSeal",
-                pValue = result.pValue,
-            )
-        } else {
-            ProvenanceEvidence.Absent
-        }
-    }
-
-    /**
-     * Detects correlation with AudioSeal carrier patterns across frames.
-     */
-    internal fun detectWatermark(samples: FloatArray): DetectionResult {
-        var signalEnergy = 0.0
-        for (s in samples) {
-            signalEnergy += s * s
-        }
-        if (signalEnergy < 1e-8) {
-            return DetectionResult(detected = false, pValue = 1.0, peakConfidence = 0f)
-        }
-
-        // Correlate with carrier codebook
-        var maxCorr = 0.0
-        val frameSize = 1024
-        val hopSize = 512
-        val nFrames = (samples.size - frameSize) / hopSize
-
-        if (nFrames <= 0) {
-            val corr = computeFrameCorrelation(samples, 0, samples.size)
-            maxCorr = corr
-        } else {
-            for (i in 0 until nFrames) {
-                val corr = computeFrameCorrelation(samples, i * hopSize, frameSize)
-                if (corr > maxCorr) {
-                    maxCorr = corr
-                }
-            }
-        }
-
-        // Compute two-tailed p-value using complementary error function approximation
-        val zScore = maxCorr * sqrt(frameSize.toDouble())
-        val pValue = approximateErfc(abs(zScore) / sqrt(2.0))
-        val detected = pValue < ProvenanceEvidence.SIGNIFICANT_P_VALUE
-
-        return DetectionResult(
-            detected = detected,
-            pValue = pValue,
-            peakConfidence = maxCorr.toFloat().coerceIn(0f, 1f),
+        if (audioSamples.isEmpty()) return ProvenanceEvidence.Absent
+        val result = detectWatermark(audioSamples) ?: return ProvenanceEvidence.Absent
+        if (!result.detected) return ProvenanceEvidence.Absent
+        return ProvenanceEvidence.WatermarkMark(
+            detected = true,
+            kind = "AudioSeal",
+            pValue = result.pValue,
         )
     }
 
-    private fun computeFrameCorrelation(samples: FloatArray, start: Int, length: Int): Double {
-        var dot = 0.0
-        var sNorm = 0.0
-        var cNorm = 0.0
-        val end = (start + length).coerceAtMost(samples.size)
+    /**
+     * Run the detector over fixed windows and aggregate the strongest
+     * message.
+     *
+     * Returns null when the detector graph is not available.
+     */
+    fun detectWatermark(samples: FloatArray): DetectionResult? {
+        val contract = runCatching { engine.contract(MODEL_FILE) }.getOrNull() ?: return null
+        val size = contract.inputShape.lastOrNull() ?: return null
+        if (contract.inputShape.size != 2 || contract.inputShape[0] != 1) return null
+        if (size < 1024) return null
 
-        for (i in start until end) {
-            val s = samples[i].toDouble()
-            // Synthetic pseudorandom carrier sequence derived from standard seed
-            val c = CARRIER_SEQUENCE[(i - start) % CARRIER_SEQUENCE.size]
-            dot += s * c
-            sNorm += s * s
-            cNorm += c * c
+        val windowSamples = size
+        if (samples.size < windowSamples) return null
+        val windows = (samples.size - windowSamples) / windowSamples + 1
+
+        var best: DetectionResult? = null
+        for (index in 0 until windows) {
+            val offset = index * windowSamples
+            val result = runCatching { scoreWindow(samples, offset, windowSamples, contract.inputBytes) }
+                .getOrNull() ?: continue
+            if (best == null || result.pValue < best.pValue) best = result
         }
+        return best
+    }
 
-        val denom = sqrt(sNorm * cNorm)
-        return if (denom > 1e-12) abs(dot) / denom else 0.0
+    /** Score one window and turn the message bits into a p-value. */
+    private fun scoreWindow(
+        samples: FloatArray,
+        offset: Int,
+        windowSamples: Int,
+        inputBytes: Int,
+    ): DetectionResult? {
+        val input = ByteBuffer.allocateDirect(inputBytes).order(ByteOrder.nativeOrder())
+        for (i in 0 until windowSamples) input.putFloat(samples[offset + i])
+        input.flip()
+        // The exported graph emits a SCALAR: the number of message bits
+        // that agree (confidently 0 or confidently 1). The app's inference
+        // engine asserts a scalar output, so the sign test is computed
+        // inside the graph and only the bit count crosses the boundary.
+        val agreeing = engine.predict(MODEL_FILE, input) { }
+        if (!agreeing.isFinite() || agreeing < 0f) return null
+        val count = agreeing.roundToInt().coerceIn(0, MESSAGE_BITS)
+        val pValue = binomialTwoTailed(count, MESSAGE_BITS)
+        return DetectionResult(
+            detected = count >= MIN_AGREEING_BITS && pValue < ProvenanceEvidence.SIGNIFICANT_P_VALUE,
+            pValue = pValue,
+            agreeingBits = count,
+            totalBits = MESSAGE_BITS,
+        )
     }
 
     /**
-     * Abramowitz and Stegun approximation for complementary error function erfc(x).
+     * Two-tailed binomial p-value for "at least [successes] of [trials]
+     * bits agree by chance".
+     *
+     * Under the null hypothesis each bit is 0 or 1 with probability 0.5, so
+     * the probability of at least k successes is a binomial tail. This is the
+     * CORRECT statistic for a fixed number of trials; taking the maximum
+     * correlation over many frames and treating it as a single Gaussian
+     * tail is not.
+     *
+     * It is a companion function so it can be unit tested without an
+     * Android context.
      */
-    internal fun approximateErfc(x: Double): Double {
-        if (x <= 0.0) return 1.0
-        val t = 1.0 / (1.0 + 0.3275911 * x)
-        val poly = t * (0.254829592 + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429))))
-        return poly * exp(-x * x)
-    }
+    internal fun binomialTwoTailed(successes: Int, trials: Int): Double =
+        Companion.binomialTwoTailed(successes, trials)
 
     companion object {
-        const val MIN_SAMPLES = 8000 // At least 0.5s of 16 kHz audio
+        const val MODEL_FILE = "audioseal_detector_int8.tflite"
+        const val SAMPLE_RATE = 16000
 
-        // Standard 64-sample orthogonal carrier sequence for Meta AudioSeal
-        private val CARRIER_SEQUENCE = doubleArrayOf(
-            1.0, -1.0, 1.0, 1.0, -1.0, 1.0, -1.0, -1.0,
-            1.0, 1.0, -1.0, -1.0, 1.0, -1.0, 1.0, 1.0,
-            -1.0, -1.0, 1.0, -1.0, 1.0, 1.0, -1.0, 1.0,
-            -1.0, -1.0, -1.0, 1.0, 1.0, -1.0, 1.0, -1.0,
-            1.0, -1.0, -1.0, 1.0, -1.0, 1.0, 1.0, -1.0,
-            -1.0, 1.0, 1.0, -1.0, 1.0, -1.0, -1.0, 1.0,
-            1.0, -1.0, 1.0, -1.0, -1.0, 1.0, 1.0, -1.0,
-            -1.0, -1.0, 1.0, 1.0, -1.0, 1.0, -1.0, 1.0,
-        )
+        /**
+         * AudioSeal encodes 32 message bits. Requiring at least half of
+         * them to agree keeps a random 50/50 message from registering.
+         */
+        const val MIN_AGREEING_BITS = 16
+
+        /** Bits in the AudioSeal message. */
+        const val MESSAGE_BITS = 32
+
+        /**
+         * Two-tailed binomial p-value for "at least [successes] of [trials]
+         * bits agree by chance".
+         */
+        internal fun binomialTwoTailed(successes: Int, trials: Int): Double {
+            if (trials <= 0) return 1.0
+            val k = successes.coerceIn(0, trials)
+            val upper = min(k, trials - k)
+            var tail = 0.0
+            for (i in 0..upper) {
+                tail += choose(trials, i) * 0.5.pow(trials)
+            }
+            return (2.0 * tail).coerceIn(0.0, 1.0)
+        }
+
+        private fun choose(n: Int, k: Int): Double {
+            if (k < 0 || k > n) return 0.0
+            var result = 1.0
+            for (i in 0 until k) {
+                result = result * (n - i) / (i + 1)
+            }
+            return result
+        }
     }
 }

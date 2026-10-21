@@ -212,6 +212,85 @@ def fit_logistic_probe(X_fit, y_fit, X_apply, l2_reg: float):
     return w[:-1].astype(np.float32), np.float32(w[-1]), mean.astype(np.float32), std.astype(np.float32)
 
 
+def fit_source_debiased_probe(
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    sources_train: list[str],
+    rank_k: int = 3,
+    laion_real_weight: float = 3.0,
+) -> tuple[np.ndarray, float, np.ndarray]:
+    """Project out the top-k real-source directions, then fold the projection back.
+
+    The source nuisance subspace is estimated **strictly within the real
+    class** (``y == 0``). Every sample there is authentic, so any variance
+    between ``laion`` and ``pexels``/``docci``/``imagenet`` is 100% source
+    nuisance and 0% synthesis signal. Estimating it on the mixed class
+    would also remove the real-vs-fake direction, which is the signal.
+
+    Because the probe is linear, the projection folds into the weight
+    vector: ``(P e)^T w == e^T (P w)``. So the DEPLOYED head is still a
+    single 768-element vector and costs nothing at inference.
+
+    Returns ``(weight, bias, projection)``.
+    """
+    from sklearn.linear_model import LogisticRegression
+
+    sources = np.asarray(sources_train)
+    real_mask = y_train == 0
+    if real_mask.sum() < 10:
+        raise ValueError("Too few real samples to estimate the source subspace")
+    X_real = X_train[real_mask]
+    s_real = sources[real_mask]
+    if len(set(s_real.tolist())) < 2:
+        raise ValueError(
+            "The real class has fewer than two acquisition sources; there is "
+            "no source subspace to remove"
+        )
+
+    # 1. Fit a linear model predicting acquisition source WITHIN real images.
+    classifier = LogisticRegression(C=1.0, max_iter=1000).fit(X_real, s_real)
+    # 2. SVD on the source classifier's weights -> the nuisance basis V_k.
+    _, _, vt = np.linalg.svd(classifier.coef_, full_matrices=False)
+    V_k = vt[:rank_k].T                                   # (D, k)
+    projection = np.eye(X_train.shape[1], dtype=np.float64) - (V_k @ V_k.T)
+
+    # 3. Upweight LAION reals so false positives on LAION are penalised.
+    sample_weight = np.ones(len(y_train), dtype=np.float64)
+    sample_weight[real_mask & (sources == "laion")] = laion_real_weight
+
+    # 4. Fit the binary probe on the STANDARDIZED, PROJECTED embeddings.
+    #
+    # The standardization must match the application exactly. An earlier
+    # version fitted on the RAW projected features while the application
+    # standardized first, so the two described DIFFERENT functions and the
+    # measured AUC belonged to a probe that had never been fitted.
+    mean = X_train.mean(axis=0, keepdims=True)
+    std = X_train.std(axis=0, keepdims=True) + 1e-6
+    z_train = (X_train - mean) / std
+    probe = LogisticRegression(C=1.0, max_iter=1000)
+    probe.fit(z_train @ projection, y_train, sample_weight=sample_weight)
+    # (Z @ P) @ coef == Z @ (P @ coef), so the projection folds into the
+    # weight vector and the deployed head stays a single vector.
+    folded_weight = (projection @ probe.coef_.reshape(-1)).astype(np.float32)
+    return folded_weight, float(probe.intercept_[0]), projection.astype(np.float32)
+
+
+def apply_debiased_probe(
+    X: np.ndarray,
+    weight: np.ndarray,
+    bias: float,
+    mean: np.ndarray,
+    std: np.ndarray,
+) -> np.ndarray:
+    """Score with a folded-projection probe.
+
+    The folded weight is applied to the RAW features, not to the projected
+    ones, because the projection is already folded into the weight.
+    """
+    z = (X - mean) / std
+    return 1.0 / (1.0 + np.exp(-(z @ weight + bias)))
+
+
 def apply_probe(X, w, b, mean, std) -> np.ndarray:
     Z = (X - mean) / std
     return 1.0 / (1.0 + np.exp(-(Z @ w + b)))
@@ -285,6 +364,89 @@ def group_report(data_root: Path, split: str, scores: np.ndarray, labels: np.nda
 # Main
 # ---------------------------------------------------------------------------
 
+def split_sources(data_root: Path, split: str) -> list[str]:
+    """The acquisition source of every sample in a split, in sample order.
+
+    The source comes from the MANIFEST, not from the path: the shipped
+    layout is ``<split>/fake/<generator>/<file>``, so the path encodes the
+    generator and says nothing about where the image came from.
+    """
+    manifest = json.loads((data_root / "dataset_manifest.json").read_text(encoding="utf-8"))
+    by_path = {record["path"].replace("\\", "/"): record for record in manifest["records"]}
+    samples = discover_samples(data_root, split, IMAGE_EXTS)
+    sources = []
+    for path, _ in samples:
+        relative = str(Path(path).relative_to(data_root)).replace("\\", "/")
+        record = by_path.get(relative)
+        if record is None:
+            raise KeyError(f"Manifest has no record for {relative!r}")
+        sources.append(str(record.get("source")))
+    return sources
+
+
+def evaluate_debiased_probe(
+    data: dict,
+    data_root: Path,
+    rank_grid=(1, 2, 3, 4),
+    laion_weight: float = 3.0,
+) -> dict:
+    """Compare the plain probe with the source-debiased probe.
+
+    The rank is selected on ``fusion_val`` only, exactly like the
+    regularisation sweep, and the per-source FPR is reported on the sealed
+    test split.
+    """
+    stacking_sources = split_sources(data_root, "stacking")
+    fusion_sources = split_sources(data_root, "fusion_val")
+    test_sources = split_sources(data_root, "test")
+
+    plain = sweep_regularisation(data, [30.0])[1]
+    plain_scores = plain["scores"]["test"]
+    plain_groups = group_report(data_root, "test", plain_scores, data["y_test"])
+
+    rows = []
+    for rank in rank_grid:
+        weight, bias, _ = fit_source_debiased_probe(
+            data["X_stacking"], data["y_stacking"], stacking_sources,
+            rank_k=rank, laion_real_weight=laion_weight,
+        )
+        # The SAME standardization the fit used, so the applied function is
+        # the fitted one.
+        mean = data["X_stacking"].mean(axis=0, keepdims=True).astype(np.float32)
+        std = (data["X_stacking"].std(axis=0, keepdims=True) + 1e-6).astype(np.float32)
+        scores = {
+            split: apply_debiased_probe(data[f"X_{split}"], weight, bias, mean, std)
+            for split in SPLITS
+        }
+        aucs = {
+            split: float(compute_auc(data[f"y_{split}"], scores[split]))
+            for split in SPLITS
+        }
+        groups = group_report(data_root, "test", scores["test"], data["y_test"])
+        rows.append({
+            "rank_k": rank,
+            "aucs": aucs,
+            "test_groups": groups,
+            "scores": scores,
+        })
+
+    best = max(rows, key=lambda r: r["aucs"]["fusion_val"])
+    return {
+        "plain": {
+            "aucs": {s: plain["aucs"][s] for s in SPLITS},
+            "test_groups": plain_groups,
+        },
+        "debiased": {
+            "rank_k": best["rank_k"],
+            "aucs": best["aucs"],
+            "test_groups": best["test_groups"],
+        },
+        "all_ranks": [
+            {"rank_k": r["rank_k"], "aucs": r["aucs"]} for r in rows
+        ],
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-root", required=True)
@@ -293,6 +455,10 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--l2-grid", type=float, nargs="+",
                         default=[0.003, 0.01, 0.03, 0.1, 0.3, 1.0, 3.0, 10.0, 30.0])
+    parser.add_argument("--debias", action="store_true",
+                        help="Also measure the source-debiased probe: the source nuisance "
+                             "subspace is estimated within the real class only and folded "
+                             "back into the weight vector.")
     args = parser.parse_args()
 
     data_root = Path(args.data_root).resolve()
@@ -340,6 +506,27 @@ def main() -> None:
         zero = [g for g, s in groups["generator"].items() if s["tpr"] == 0.0]
         if zero:
             print(f"  generators with TPR=0: {zero}")
+
+        if args.debias:
+            print("\n  --- source debiasing ---")
+            debiased = evaluate_debiased_probe(data, data_root)
+            plain_groups = debiased["plain"]["test_groups"]["source"]
+            debiased_groups = debiased["debiased"]["test_groups"]["source"]
+            print(f"  plain probe     : AUC {debiased['plain']['aucs']['test']:.4f}")
+            print(f"  debiased probe  : AUC {debiased['debiased']['aucs']['test']:.4f} "
+                  f"(rank_k={debiased['debiased']['rank_k']})")
+            print(f"  {'source':<12}{'plain FPR':>12}{'debiased FPR':>15}{'delta':>10}")
+            for source in sorted(set(plain_groups) | set(debiased_groups)):
+                p = (plain_groups.get(source) or {}).get("fpr")
+                d = (debiased_groups.get(source) or {}).get("fpr")
+                delta = "" if (p is None or d is None) else f"{d - p:+.4f}"
+                print(f"  {source:<12}{'n/a' if p is None else f'{p:.4f}':>12}"
+                      f"{'n/a' if d is None else f'{d:.4f}':>15}{delta:>10}")
+            entry["source_debiasing"] = {
+                "plain": debiased["plain"],
+                "debiased": debiased["debiased"],
+                "all_ranks": debiased["all_ranks"],
+            }
 
     out = output_dir / "vfm_probe_report.json"
     out.write_text(json.dumps(report, indent=2), encoding="utf-8")

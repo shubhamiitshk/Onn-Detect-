@@ -10,7 +10,7 @@ import com.onndetect.detection.provenance.VerdictConfidence
 import com.onndetect.detection.visual.FFTSpectralAnalyzer
 import com.onndetect.detection.visual.KLCooccurrenceAnalyzer
 import com.onndetect.detection.visual.SRMForensicAnalyzer
-import com.onndetect.detection.visual.SemanticProbeAnalyzer
+import com.onndetect.detection.visual.VfmProbeAnalyzer
 import com.onndetect.detection.visual.CalibrationStore
 import com.onndetect.inference.ModelIntegrityChecker
 import com.onndetect.inference.ModelIntegrityGate
@@ -43,7 +43,7 @@ class DetectionPipeline @Inject constructor(
     private val exifAnalyzer: com.onndetect.detection.provenance.EXIFAnalyzer,
     private val c2paChecker: com.onndetect.detection.provenance.C2PAManifestChecker,
     private val prnuAnalyzer: com.onndetect.detection.visual.PRNUAnalyzer,
-    private val semanticProbe: SemanticProbeAnalyzer,
+    private val vfmProbe: VfmProbeAnalyzer,
     @param:ApplicationContext private val appContext: Context,
 ) {
     private val c2paVerifier: com.onndetect.detection.provenance.C2PAVerifier =
@@ -205,7 +205,7 @@ class DetectionPipeline @Inject constructor(
             if (budget == DegradationLevel.FULL && report.cascadeValidated) {
                 checkStop()
                 emit(ScanProgress("Evaluating Engine C SigLIP appearance probe…", 78f))
-                engineCScore = semanticProbe.analyze(bitmap, checkStop)
+                engineCScore = vfmProbe.analyze(bitmap, checkStop)
                 checkStop()
                 val score = engineCScore
                 if (score != null && score.isFinite()) {

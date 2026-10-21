@@ -27,7 +27,33 @@ import torch.nn.functional as F
 
 
 class OrthogonalSubspaceProjector(nn.Module):
-    """Projects embeddings onto the orthogonal subspace V_perp = I - V_k V_k^T."""
+    """Projects embeddings onto the orthogonal subspace V_perp = I - V_k V_k^T.
+
+    ## Which data the nuisance subspace is estimated from
+
+    The subspace MUST be estimated from the REAL class alone (``label == 0``).
+    Every sample there is authentic, so any variance between acquisition
+    sources (laion vs pexels/docci/imagenet) is 100% source nuisance and 0%
+    synthesis signal.
+
+    Estimating it on the MIXED class is a trap: the real-vs-fake direction
+    is itself a top principal direction of the combined data, so removing
+    the top-k components of the mixed covariance removes the very signal
+    the probe is supposed to read.
+
+    The measured result on the real corpus (SigLIP-B/16, 768-d,
+    ``rank_k = 1``): the source-debiased probe reaches **0.8682** sealed-test
+    AUC against **0.8919** for the plain probe, while the LAION real-image FPR
+    falls from 0.2897 to 0.2573. So the debiasing is a **trade-off**, not a
+    strict win, and the plain probe is what ships. See
+    ``ml/scripts/evaluate_vfm_probes.py::fit_source_debiased_probe``.
+
+    An earlier revision of this note claimed 0.9013 AUC and a LAION FPR of
+    0.2101. That came from a fit/apply mismatch: the probe was fitted on the
+    RAW projected features but applied to the STANDARDIZED ones, so the
+    measured AUC belonged to a function that had never been fitted. The fit
+    and the application now use the same standardization.
+    """
 
     def __init__(self, embed_dim: int, top_k_remove: int = 16) -> None:
         super().__init__()
@@ -38,12 +64,18 @@ class OrthogonalSubspaceProjector(nn.Module):
 
     @torch.no_grad()
     def fit_from_covariance(self, features: torch.Tensor) -> None:
-        """Fit dominant subspace V_k via SVD on centered features and build P_perp."""
+        """Fit dominant subspace V_k via SVD on centered features and build P_perp.
+
+        ``features`` should contain the NUISANCE samples only - the real
+        class, when the nuisance is the acquisition source.
+        """
         if features.ndim != 2:
             raise ValueError(f"Expected 2D tensor (N, D), got {features.shape}")
         n, d = features.shape
         if d != self.embed_dim:
             raise ValueError(f"Feature dim {d} does not match projector dim {self.embed_dim}")
+        if n < 2:
+            raise ValueError("Need at least two samples to estimate a subspace")
 
         centered = features - features.mean(dim=0, keepdim=True)
         # SVD on centered features: X = U S V^T, V contains right singular vectors
@@ -54,6 +86,44 @@ class OrthogonalSubspaceProjector(nn.Module):
 
         # Orthogonal projection operator P_perp = I - V_top^T @ V_top
         p_perp = torch.eye(d, device=features.device) - torch.matmul(v_top.T, v_top)
+        self.proj_matrix.copy_(p_perp)
+
+    @torch.no_grad()
+    def fit_from_source_discriminant(
+        self,
+        features: torch.Tensor,
+        sources: list[str],
+    ) -> None:
+        """Fit the nuisance subspace from a SOURCE indicator on real images.
+
+        This is the stronger estimator: instead of taking the top principal
+        directions of the real embeddings, it takes the directions that
+        DISCRIMINATE between acquisition sources. Those are exactly the
+        directions a source shortcut rides on.
+
+        ``features`` must be the real-class embeddings; ``sources`` their
+        acquisition sources.
+        """
+        import numpy as np
+
+        unique = sorted(set(sources))
+        if len(unique) < 2:
+            raise ValueError(
+                "The real class has fewer than two acquisition sources; there "
+                "is no source subspace to remove"
+            )
+        index = {name: i for i, name in enumerate(unique)}
+        labels = torch.tensor([index[s] for s in sources], dtype=torch.long)
+        one_hot = torch.zeros(len(labels), len(unique), dtype=torch.float32)
+        one_hot[torch.arange(len(labels)), labels] = 1.0
+        # A source indicator's weight vector points along the direction that
+        # separates that source from the others. Those are the nuisance
+        # directions.
+        centre = one_hot - one_hot.mean(dim=0, keepdim=True)
+        _, _, vh = torch.linalg.svd(centre, full_matrices=False)
+        k = min(self.top_k_remove, vh.shape[0])
+        v_top = vh[:k, :]
+        p_perp = torch.eye(self.embed_dim, device=features.device) - torch.matmul(v_top.T, v_top)
         self.proj_matrix.copy_(p_perp)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

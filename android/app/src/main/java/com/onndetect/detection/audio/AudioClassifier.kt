@@ -15,7 +15,7 @@ import java.util.concurrent.CancellationException
 /** Speech-model diagnostics; a missing/invalid signal never becomes a verdict. */
 class AudioClassifier(private val context: Context, private val engine: LiteRTInferenceEngine,
     private val decoder: AudioDecoder = AudioDecoder(context), private val lfcc: LFCCExtractor = LFCCExtractor(),
-    private val audioSealDetector: AudioSealDetector = AudioSealDetector()) {
+    private val audioSealDetector: AudioSealDetector = AudioSealDetector(engine)) {
     companion object {
         const val MODEL_FILE = "lcnn_audio_int8.tflite"
         const val TARGET_RATE = 16000

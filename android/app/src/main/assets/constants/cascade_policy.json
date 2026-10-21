@@ -1,9 +1,9 @@
 {
-  "engine_a_threshold": 0.5121619701385498,
-  "engine_c_threshold": 0.51953125,
-  "escalate_below": 0.16796875,
-  "escalate_above": 0.87109375,
-  "coverage": 0.2975,
-  "agreement_rate": 0.81,
-  "release_id": "onn-20261020-v6"
+  "engine_a_threshold": 0.5855898857116699,
+  "engine_c_threshold": 0.49412423372268677,
+  "escalate_below": 0.031980275362730015,
+  "escalate_above": 0.9562681920826435,
+  "coverage": 0.995,
+  "agreement_rate": 0.995,
+  "release_id": "onn-20261021-v7"
 }

@@ -27,7 +27,7 @@ from data.image_dataset import image_tensor
 from data.image_frontend import decode_image
 from data.lfcc_frontend import FRONTEND_ID
 from training.checkpoint import load_verified_checkpoint
-from training.provenance import source_snapshot, training_code_hash
+from training.provenance import source_snapshot, training_code_hash, training_source_drift
 from training.evaluation import evaluation_summary
 from training.metrics import compute_auc, compute_eer, compute_accuracy, eer_operating_threshold
 from models.srm_forensic_cnn import SRMForensicCNN
@@ -81,6 +81,23 @@ def make_lfcc_fn(split):
     return extract
 
 
+# The slot-6 probe's frontend contract. The cascade probe is either the
+# distilled Engine C student (CLIP normalization) or the frozen SigLIP-B/16
+# tower (SigLIP normalization). The two are NOT interchangeable: the wrong
+# normalization silently rescales every slot-6 value and mis-calibrates every
+# tree that splits on it, so the choice is explicit everywhere.
+CASCADE_FRONTEND = "clip"
+
+
+def _cascade_tensor(image, size):
+    """CHW float32 tensor for the slot-6 probe, under the active frontend."""
+    if CASCADE_FRONTEND == "siglip":
+        from export.vfm_frontend import vfm_image_tensor
+        return vfm_image_tensor(image, size)
+    from data.image_frontend import semantic_image_tensor
+    return semantic_image_tensor(image, size)
+
+
 def score_inputs(model, inputs, modality):
     scores = []
     with torch.no_grad():
@@ -88,8 +105,7 @@ def score_inputs(model, inputs, modality):
             if modality == "visual":
                 pt = image_tensor(value, value.width).unsqueeze(0)
             elif modality == "cascade":
-                from data.image_frontend import semantic_image_tensor
-                pt = semantic_image_tensor(value, value.width).unsqueeze(0)
+                pt = _cascade_tensor(value, value.width).unsqueeze(0)
             else:
                 pt = torch.from_numpy(value)
             scores.append(float(model(pt).item()))
@@ -104,9 +120,8 @@ def collect(root, split, modality, size, limit):
         if modality == "visual":
             inputs.append(decode_image(path).image.resize((size, size), Image.Resampling.BILINEAR))
         elif modality == "cascade":
-            from data.image_frontend import semantic_image_tensor
             img = decode_image(path).image
-            inputs.append(semantic_image_tensor(img, size).numpy())
+            inputs.append(_cascade_tensor(img, size).numpy())
         else:
             inputs.append(extract(path))
     return samples, inputs
@@ -123,8 +138,7 @@ def sealed_test_scores(root, modality, size, model_path, limit=None):
             image = decode_image(path).image.resize((size, size), Image.Resampling.BILINEAR)
             x = np.asarray(image, dtype=np.float32)[None] / 255.0
         elif modality == "cascade":
-            from data.image_frontend import semantic_image_tensor
-            tensor = semantic_image_tensor(decode_image(path).image, size)
+            tensor = _cascade_tensor(decode_image(path).image, size)
             x = np.transpose(tensor.numpy(), (1, 2, 0))[None].astype(np.float32)
         else:
             x = np.transpose(extract(path), (0, 2, 3, 1))
@@ -157,10 +171,35 @@ def main():
         default=224,
         help="Square input size of the Engine C probe (must match the exported model)",
     )
+    parser.add_argument(
+        "--cascade-frontend",
+        default="clip",
+        choices=["clip", "siglip"],
+        help=(
+            "The frontend contract of the slot-6 probe. 'clip' is the "
+            "distilled Engine C student (bicubic + CLIP normalization). "
+            "'siglip' is the frozen SigLIP-B/16 tower (bicubic + SigLIP "
+            "normalization). Using the wrong one silently rescales every "
+            "slot-6 value."
+        ),
+    )
+    parser.add_argument(
+        "--accept-source-drift",
+        action="store_true",
+        help=(
+            "Allow a release whose base models were trained against different "
+            "training-source bytes. The exact drift (the files that changed "
+            "since the checkpoint's recorded revision) is RECORDED in the "
+            "release manifest. Without this flag the export refuses, because "
+            "a changed training source can invalidate a checkpoint."
+        ),
+    )
     parser.add_argument("--validation-samples", type=int, default=400)
     parser.add_argument("--release-id", required=True)
     parser.add_argument("--test-samples", type=int, default=None, help="Optional pilot cap; default evaluates all sealed test files")
     args = parser.parse_args()
+    global CASCADE_FRONTEND
+    CASCADE_FRONTEND = args.cascade_frontend
     if args.validation_samples < 100:
         raise ValueError("Export gates require at least 100 balanced samples")
     destination = Path(args.output_dir).resolve()
@@ -172,6 +211,7 @@ def main():
         (stage / name).mkdir()
     from export.quantize_int8 import quantize_keras_model, visual_calibration_dataset, audio_specs_calibration_dataset
     from export.torch_to_tflite_keras import build_keras_srm, build_keras_lcnn, keras_parity_check
+    source_drift: dict[str, list[str]] = {}
     report = {"release_id": args.release_id, "models": {}, "status": "desktop_validation_only"}
     manifest = {"schema_version": 1, "release_id": args.release_id, "validated": False,
                 "validation_status": "requires_fusion_and_independent_device_evaluation",
@@ -186,7 +226,22 @@ def main():
         model, state = load_model(checkpoint, cls, FRONTEND_ID if modality == "audio" else None)
         contract = state["contract"]
         if contract.get("training_code_hash") != training_code_hash():
-            raise ValueError("Training source bytes changed since the checkpoint; retrain or restore its archived sources")
+            # The aggregate hash cannot say WHICH file changed. Listing the
+            # actual drift makes the decision explicit: either the base
+            # model must be retrained, or the release records the drift.
+            drift, basis = training_source_drift(ROOT_DIR, contract.get("revision"))
+            if not args.accept_source_drift:
+                raise ValueError(
+                    "Training source bytes changed since the checkpoint; retrain or "
+                    "restore its archived sources. Changed since "
+                    f"{contract.get('revision')} (baseline {basis}): {drift}. Pass "
+                    "--accept-source-drift to record the drift in the release instead."
+                )
+            source_drift[modality] = {"baseline": basis, "files": drift,
+                                      "checkpoint_revision": contract.get("revision"),
+                                      "computable": drift is not None}
+            print(f"[Provenance] {modality}: training-source drift recorded "
+                  f"(baseline {basis}): {drift}")
         root = Path(state["config"]["data"]["root_dir"])
         provenance = validate_dataset_manifest(root)
         if provenance["manifest_sha256"] != contract["dataset_manifest_hash"]:
@@ -254,6 +309,9 @@ def main():
     # The probe is the FROZEN MobileCLIP2-S0 tower plus a learned logistic
     # head, exported once by train_frozen_vision_probe.py. Packaging does not
     # need the teacher tooling.
+    if source_drift:
+        manifest["training_source_drift"] = source_drift
+
     if args.cascade_tflite:
         from data.image_frontend import (
             SEMANTIC_SIZE,
@@ -264,9 +322,14 @@ def main():
         cascade_tflite = Path(args.cascade_tflite).resolve()
         if not cascade_tflite.is_file():
             raise ValueError(f"Engine C probe not found: {cascade_tflite}")
-        asset = "semantic_probe_int8.tflite"
+        asset = ("siglip_probe_int8.tflite" if args.cascade_frontend == "siglip"
+                 else "semantic_probe_int8.tflite")
         cascade_size = args.cascade_input_size or SEMANTIC_SIZE
-        frontend = semantic_frontend_id(cascade_size)
+        if args.cascade_frontend == "siglip":
+            from export.vfm_frontend import vfm_frontend_id
+            frontend = vfm_frontend_id(cascade_size)
+        else:
+            frontend = semantic_frontend_id(cascade_size)
 
         # The bundle must CONTAIN the probe, not merely reference it: the
         # fusion trainer, the release validator and the device installer all
@@ -306,7 +369,7 @@ def main():
         manifest["artifacts"]["models/" + asset] = digest
         manifest["models"][asset] = {"sha256": digest, "input_shape": [1, cascade_size, cascade_size, 3],
                                      "output_shape": [1, 1], "dtype": "FLOAT32", "frontend_id": frontend,
-                                     "quantization": "full-int8"}
+                                     "quantization": "dynamic-range-int8"}
         manifest["data_manifest_hashes"].setdefault("visual", provenance["manifest_sha256"])
         test_samples, test_scores = sealed_test_scores(root, "cascade", cascade_size, cascade_tflite, args.test_samples)
         test_labels = [label for _, label in test_samples]
