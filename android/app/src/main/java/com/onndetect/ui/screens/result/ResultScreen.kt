@@ -127,7 +127,8 @@ fun ResultScreen(navController: NavController, viewModel: ResultViewModel = hilt
                 AssessmentDetails(
                     e = current.entry,
                     onDoneClick = { navController.popBackStack() },
-                    onHistoryClick = { navController.navigate("history") }
+                    onHistoryClick = { navController.navigate("history") },
+                    onExportReceipt = { viewModel.generateReceipt(current.entry) }
                 )
             }
         }
@@ -138,7 +139,10 @@ fun ResultScreen(navController: NavController, viewModel: ResultViewModel = hilt
 fun AssessmentDetails(
     e: ScanHistoryEntity,
     onDoneClick: () -> Unit = {},
-    onHistoryClick: () -> Unit = {}
+    onHistoryClick: () -> Unit = {},
+    onExportReceipt: () -> com.onndetect.detection.provenance.ForensicReceipt = {
+        com.onndetect.detection.provenance.ForensicReceipt("", "", "", "TEE")
+    }
 ) {
     val context = LocalContext.current
     // 1. Verdict Banner
@@ -209,6 +213,9 @@ fun AssessmentDetails(
 
     // 4. Forensic Evidence & Metadata Container
     EvidenceMetadataCard(e = e, evidence = evidence)
+
+    // 4.5. Hardware Forensic Receipt Card (StrongBox / TEE)
+    ForensicReceiptCard(e = e, evidence = evidence, onExportReceipt = onExportReceipt)
 
     // 5. Limitations Notice
     LimitationsCard()
@@ -714,6 +721,120 @@ fun DualEngineCascadeCard(
                         fontSize = 11.sp,
                         lineHeight = 15.sp
                     )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ForensicReceiptCard(
+    e: ScanHistoryEntity,
+    evidence: JSONObject,
+    onExportReceipt: () -> com.onndetect.detection.provenance.ForensicReceipt
+) {
+    val context = LocalContext.current
+    var copied by remember { mutableStateOf(false) }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(SurfaceCard)
+            .border(1.dp, BorderSubtle, RoundedCornerShape(20.dp))
+            .padding(20.dp)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("🛡️", fontSize = 16.sp)
+                    Text(
+                        text = "HARDWARE FORENSIC RECEIPT",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = TextPrimary,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(CyberCyan.copy(alpha = 0.15f))
+                        .border(1.dp, CyberCyan.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = "ECDSA P-256",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = CyberCyan,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            Text(
+                text = "Cryptographically signed inside the Android Hardware Keystore enclave (StrongBox/TEE). Binds the verdict, media SHA-256 digest, and frozen model release hashes for enterprise audit compliance.",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextSecondary,
+                lineHeight = 18.sp
+            )
+
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                MetadataRow(
+                    label = "Attestation Standard",
+                    value = "RFC 8785 (onn-receipt-v1)"
+                )
+                MetadataRow(
+                    label = "Hardware Root",
+                    value = "Google Hardware Keystore Root CA"
+                )
+                MetadataRow(
+                    label = "Media Binding",
+                    value = "SHA-256 Bound"
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        val receipt = onExportReceipt()
+                        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("ONN-DETECT Forensic Receipt", receipt.toExportJson()))
+                        copied = true
+                    },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(10.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, BorderSubtle),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = CyberCyan)
+                ) {
+                    Text(if (copied) "Copied!" else "Copy JSON", fontSize = 13.sp)
+                }
+
+                Button(
+                    onClick = {
+                        val receipt = onExportReceipt()
+                        val sendIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                            type = "application/json"
+                            putExtra(android.content.Intent.EXTRA_TEXT, receipt.toExportJson())
+                            putExtra(android.content.Intent.EXTRA_SUBJECT, "ONN-DETECT Forensic Receipt (${e.id.take(8)})")
+                        }
+                        context.startActivity(android.content.Intent.createChooser(sendIntent, "Export Forensic Receipt"))
+                    },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = SurfaceElevated, contentColor = TextPrimary)
+                ) {
+                    Text("Export Audit File", fontSize = 13.sp)
                 }
             }
         }

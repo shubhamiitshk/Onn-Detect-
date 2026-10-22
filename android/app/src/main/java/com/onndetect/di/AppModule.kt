@@ -23,6 +23,11 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun provideReceiptSigner(@ApplicationContext context: Context): com.onndetect.detection.provenance.ReceiptSigner =
+        com.onndetect.detection.provenance.StrongBoxReceiptSigner(context)
+
+    @Provides
+    @Singleton
     fun provideDeviceTier(@ApplicationContext context: Context): DeviceTier {
         val am = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
         val memoryClassMb = am.memoryClass

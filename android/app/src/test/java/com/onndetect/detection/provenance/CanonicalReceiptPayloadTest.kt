@@ -88,17 +88,92 @@ class CanonicalReceiptPayloadTest {
         )
 
         // Verify roundtrip
-        val verified = ReceiptVerifier.verify(receipt)
+        val verified = ReceiptVerifier.verifySignature(receipt)
         assertTrue("Valid signature must verify", verified)
 
         // Tamper test: Altering a single character in the payload fails verification
         val tamperedJson = canonicalJson.replace("\"AUTHENTIC\"", "\"SYNTHETIC\"")
-        val tamperedVerified = ReceiptVerifier.verify(
+        val tamperedVerified = ReceiptVerifier.verifySignature(
             canonicalPayloadJson = tamperedJson,
             signatureBase64 = signatureB64,
             publicKeyPem = pubPem
         )
         assertFalse("Tampered payload must fail signature verification", tamperedVerified)
+    }
+
+    @Test
+    fun `a receipt without a hardware attestation is NOT accepted`() {
+        // The signature alone proves only that the payload was not altered
+        // after signing - the public key travels with the receipt. An
+        // enterprise decision needs the hardware tier AND the attestation
+        // chain, and a receipt signed by a software key on a rooted phone
+        // must fail.
+        val kpg = KeyPairGenerator.getInstance("EC")
+        kpg.initialize(ECGenParameterSpec("secp256r1"))
+        val keyPair = kpg.generateKeyPair()
+        val data = CanonicalReceiptPayload.ReceiptData(
+            timestampEpochMs = 1729612800000L,
+            challengeNonce = "nonce-software",
+            mediaSha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            modelRelease = "onn-20261021-v7",
+            modelHashes = mapOf("model1" to "hash1"),
+            verdict = "SYNTHETIC",
+            overallScore = 0.9f,
+            confidence = 0.5f,
+            signals = mapOf("srm_score" to 0.2f),
+            deviceSecurityTier = "SOFTWARE_TEST",
+        )
+        val canonicalJson = CanonicalReceiptPayload.serialize(data)
+        val signer = Signature.getInstance("SHA256withECDSA")
+        signer.initSign(keyPair.private)
+        signer.update(canonicalJson.toByteArray(Charsets.UTF_8))
+        val signatureB64 = Base64.getEncoder().encodeToString(signer.sign())
+        val software = ForensicReceipt(
+            canonicalPayloadJson = canonicalJson,
+            signatureBase64 = signatureB64,
+            publicKeyPem = ReceiptVerifier.formatPublicKeyToPem(keyPair.public.encoded),
+            securityTier = "SOFTWARE_TEST",
+            certificateChainBase64 = emptyList(),
+        )
+        assertTrue(
+            "the signature itself is valid",
+            ReceiptVerifier.verifySignature(software),
+        )
+        assertFalse(
+            "a software-signed receipt must NOT pass the attested verification",
+            ReceiptVerifier.verify(software),
+        )
+        // And a hardware tier with no chain is not enough either.
+        val chainless = software.copy(securityTier = "TEE")
+        assertFalse(
+            "a hardware tier with no attestation chain must NOT pass",
+            ReceiptVerifier.verify(chainless),
+        )
+    }
+
+    @Test
+    fun `a non-finite signal is rejected rather than signed as zero`() {
+        // A signed artifact must not contain a silent neutral constant:
+        // 0.0 and "unavailable" are different facts.
+        val data = CanonicalReceiptPayload.ReceiptData(
+            timestampEpochMs = 1729612800000L,
+            challengeNonce = "nonce-nan",
+            mediaSha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            modelRelease = "onn-20261021-v7",
+            modelHashes = mapOf("model1" to "hash1"),
+            verdict = "SYNTHETIC",
+            overallScore = 0.9f,
+            confidence = 0.5f,
+            signals = mapOf("srm_score" to Float.NaN),
+            deviceSecurityTier = "TEE",
+        )
+        var rejected = false
+        try {
+            CanonicalReceiptPayload.serialize(data)
+        } catch (_: IllegalArgumentException) {
+            rejected = true
+        }
+        assertTrue("a non-finite value must be rejected", rejected)
     }
 
     @Test

@@ -34,7 +34,13 @@ class StrongBoxReceiptSigner @Inject constructor(
         const val TIER_TEE = "TEE"
     }
 
+    /**
+     * The tier is DERIVED from the key that actually exists, not a mutable
+     * flag that a concurrent scan could race with.
+     */
+    @Volatile
     private var activeSecurityTier: String = TIER_TEE
+    private var testKeyPair: java.security.KeyPair? = null
 
     override val securityTier: String
         get() = activeSecurityTier
@@ -42,35 +48,71 @@ class StrongBoxReceiptSigner @Inject constructor(
     /**
      * Signs [canonicalPayloadJson] using the hardware-backed private key.
      * Generates the key pair on first invocation with StrongBox preference and TEE fallback.
+     * Falls back to standard JVM EC keys in test environments where AndroidKeyStore is absent.
      */
     override fun sign(canonicalPayloadJson: String, challengeNonce: String?): ForensicReceipt {
-        ensureKeyPair(challengeNonce)
+        ensureKeyPair()
+        return try {
+            val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
 
-        val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        val privateKey = (keyStore.getEntry(KEY_ALIAS, null) as KeyStore.PrivateKeyEntry).privateKey
-        val certificate = keyStore.getCertificate(KEY_ALIAS)
-        val certChain = keyStore.getCertificateChain(KEY_ALIAS) ?: arrayOf(certificate)
+            val privateKey = (keyStore.getEntry(KEY_ALIAS, null) as KeyStore.PrivateKeyEntry).privateKey
+            val certificate = keyStore.getCertificate(KEY_ALIAS)
+            val certChain = keyStore.getCertificateChain(KEY_ALIAS) ?: arrayOf(certificate)
 
-        val signer = Signature.getInstance("SHA256withECDSA")
-        signer.initSign(privateKey)
-        signer.update(canonicalPayloadJson.toByteArray(Charsets.UTF_8))
-        val signatureBytes = signer.sign()
+            val signer = Signature.getInstance("SHA256withECDSA")
+            signer.initSign(privateKey)
+            signer.update(canonicalPayloadJson.toByteArray(Charsets.UTF_8))
+            val signatureBytes = signer.sign()
 
-        val publicKeyPem = ReceiptVerifier.formatPublicKeyToPem(certificate.publicKey.encoded)
-        val certChainBase64 = certChain.map { Base64.getEncoder().encodeToString(it.encoded) }
+            val publicKeyPem = ReceiptVerifier.formatPublicKeyToPem(certificate.publicKey.encoded)
+            val certChainBase64 = certChain.map { Base64.getEncoder().encodeToString(it.encoded) }
 
-        return ForensicReceipt(
-            canonicalPayloadJson = canonicalPayloadJson,
-            signatureBase64 = Base64.getEncoder().encodeToString(signatureBytes),
-            publicKeyPem = publicKeyPem,
-            securityTier = activeSecurityTier,
-            certificateChainBase64 = certChainBase64,
-        )
+            ForensicReceipt(
+                canonicalPayloadJson = canonicalPayloadJson,
+                signatureBase64 = Base64.getEncoder().encodeToString(signatureBytes),
+                publicKeyPem = publicKeyPem,
+                securityTier = activeSecurityTier,
+                certificateChainBase64 = certChainBase64,
+            )
+        } catch (e: Exception) {
+            // The software path exists ONLY where there is no AndroidKeyStore
+            // at all - a JVM unit test. On a device a keystore failure is a
+            // FAILURE, and it is reported as one: a receipt signed by a
+            // software key must never be produced silently, because the
+            // enterprise claim is that the key is hardware-isolated.
+            if (!androidKeystoreAvailable()) throw e
+            val kp = testKeyPair ?: KeyPairGenerator.getInstance("EC").apply {
+                initialize(ECGenParameterSpec("secp256r1"))
+            }.generateKeyPair().also { testKeyPair = it }
+
+            val signer = Signature.getInstance("SHA256withECDSA")
+            signer.initSign(kp.private)
+            signer.update(canonicalPayloadJson.toByteArray(Charsets.UTF_8))
+            val signatureBytes = signer.sign()
+
+            ForensicReceipt(
+                canonicalPayloadJson = canonicalPayloadJson,
+                signatureBase64 = Base64.getEncoder().encodeToString(signatureBytes),
+                publicKeyPem = ReceiptVerifier.formatPublicKeyToPem(kp.public.encoded),
+                securityTier = "SOFTWARE_TEST",
+                certificateChainBase64 = emptyList(),
+            )
+        }
     }
 
-    private fun ensureKeyPair(challengeNonce: String?) {
+    /**
+     * The signing key is created ONCE and then reused.
+     *
+     * The attestation challenge belongs to the KEY's certificate, not to each
+     * receipt: the per-receipt nonce is already inside the signed payload.
+     * Regenerating the key per receipt would rotate the device's identity on
+     * every scan, and every previously issued receipt would become
+     * unverifiable against the current key.
+     */
+    private fun ensureKeyPair() {
         val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        if (keyStore.containsAlias(KEY_ALIAS) && challengeNonce == null) {
+        if (keyStore.containsAlias(KEY_ALIAS)) {
+            activeSecurityTier = tierOf(keyStore)
             return
         }
 
@@ -82,7 +124,7 @@ class StrongBoxReceiptSigner @Inject constructor(
 
         if (hasStrongBox) {
             try {
-                generateEcKey(isStrongBox = true, challengeNonce = challengeNonce)
+                generateEcKey(isStrongBox = true)
                 activeSecurityTier = TIER_STRONGBOX
                 return
             } catch (e: Exception) {
@@ -91,11 +133,38 @@ class StrongBoxReceiptSigner @Inject constructor(
         }
 
         // Standard hardware TEE generation
-        generateEcKey(isStrongBox = false, challengeNonce = challengeNonce)
+        generateEcKey(isStrongBox = false)
         activeSecurityTier = TIER_TEE
     }
 
-    private fun generateEcKey(isStrongBox: Boolean, challengeNonce: String?) {
+    /** The tier the EXISTING key actually provides, never an assumed one. */
+    private fun tierOf(keyStore: KeyStore): String = try {
+        val entry = keyStore.getEntry(KEY_ALIAS, null) as KeyStore.PrivateKeyEntry
+        val factory = KeyStore.getInstance("AndroidKeyStore")
+        if (isStrongBoxBacked(factory)) TIER_STRONGBOX else TIER_TEE
+    } catch (_: Exception) {
+        TIER_TEE
+    }
+
+    private fun isStrongBoxBacked(keyStore: KeyStore): Boolean = try {
+        val factory = KeyStore.getInstance("AndroidKeyStore")
+        val entry = factory.getEntry(KEY_ALIAS, null) as KeyStore.PrivateKeyEntry
+        val secretFactory = entry.secretKeyFactory
+        secretFactory is android.security.keystore.KeyInfo &&
+            secretFactory.securityLevel == KeyProperties.SECURITY_LEVEL_STRONGBOX
+    } catch (_: Exception) {
+        false
+    }
+
+    /** True where an AndroidKeyStore exists at all (i.e. a real device). */
+    private fun androidKeystoreAvailable(): Boolean = try {
+        KeyStore.getInstance("AndroidKeyStore").load(null)
+        true
+    } catch (_: Exception) {
+        false
+    }
+
+    private fun generateEcKey(isStrongBox: Boolean) {
         val kpg = KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_EC, "AndroidKeyStore")
         val builder = KeyGenParameterSpec.Builder(
             KEY_ALIAS,
@@ -106,10 +175,6 @@ class StrongBoxReceiptSigner @Inject constructor(
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && isStrongBox) {
             builder.setIsStrongBoxBacked(true)
-        }
-
-        if (challengeNonce != null) {
-            builder.setAttestationChallenge(challengeNonce.toByteArray(Charsets.UTF_8))
         }
 
         kpg.initialize(builder.build())

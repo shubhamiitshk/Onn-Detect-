@@ -74,11 +74,20 @@ object CanonicalReceiptPayload {
         return digest.joinToString("") { "%02x".format(it) }
     }
 
+    /**
+     * A signed float, in a fixed format.
+     *
+     * A non-finite value is REJECTED, not written as 0.0. A signed artifact
+     * must not contain a silent neutral constant: 0.0 and "the measurement
+     * was unavailable" are different facts, and a verifier reading the
+     * receipt cannot tell them apart if they are encoded the same way.
+     * (Unavailable signals are carried as -1, which is finite and
+     * distinguishable.)
+     */
     private fun formatFloat(value: Float): String {
-        return if (value.isNaN() || value.isInfinite()) {
-            "0.0"
-        } else {
-            "%.4f".format(java.util.Locale.US, value)
+        require(!value.isNaN() && !value.isInfinite()) {
+            "A signed payload cannot carry a non-finite value"
         }
+        return "%.4f".format(java.util.Locale.US, value)
     }
 }

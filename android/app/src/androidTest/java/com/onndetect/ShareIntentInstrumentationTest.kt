@@ -84,18 +84,35 @@ class ShareIntentInstrumentationTest {
         assertNull(SharedMediaIntents.consume(null))
     }
 
-    @Test fun `the app declares itself a share target for images and audio`() {
+    @Test fun `the app is offered as a share target for images and audio`() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val info = context.packageManager.getPackageInfo(
-            context.packageName, PackageManager.GET_ACTIVITIES,
-        )
-        val actions = (info.activities ?: emptyArray())
-            .filter { it.name.endsWith("MainActivity") }
-            .flatMap { activity -> activity.intentFilters }
-            .flatMap { filter -> filter.actions.map { action -> action.name } }
-        assertTrue(
-            "the app is not registered as a share target: $actions",
-            actions.contains(Intent.ACTION_SEND),
-        )
+        for (type in listOf("image/jpeg", "audio/mp4")) {
+            val intent = Intent(Intent.ACTION_SEND).apply { this.type = type }
+            val handlers = context.packageManager.queryIntentActivities(
+                intent, PackageManager.MATCH_DEFAULT_ONLY,
+            )
+            val ours = handlers.filter { it.activityInfo.packageName == context.packageName }
+            assertTrue(
+                "the app is not offered as a share target for $type",
+                ours.isNotEmpty(),
+            )
+            assertTrue(
+                "the share target for $type is not MainActivity: " +
+                    ours.map { it.activityInfo.name },
+                ours.any { it.activityInfo.name.endsWith("MainActivity") },
+            )
+        }
+    }
+
+    @Test fun `the app is NOT offered as a share target for video`() {
+        // The video-level blend is not calibrated on a video split, so the
+        // app must not appear in a video share sheet and then return a
+        // verdict it has not validated.
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val intent = Intent(Intent.ACTION_SEND).apply { type = "video/mp4" }
+        val ours = context.packageManager
+            .queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY)
+            .filter { it.activityInfo.packageName == context.packageName }
+        assertTrue("the app must not claim to be a video share target", ours.isEmpty())
     }
 }
