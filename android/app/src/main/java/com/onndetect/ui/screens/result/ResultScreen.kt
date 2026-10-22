@@ -919,7 +919,11 @@ private fun DocumentForgeryCard(docForgery: JSONObject) {
                         .padding(horizontal = 8.dp, vertical = 4.dp)
                 ) {
                     Text(
-                        text = if (isForged) "TAMPERED" else "AUTHENTIC",
+                        text = if (isForged) {
+                        stringResource(R.string.document_forgery_tampering_indicated)
+                    } else {
+                        stringResource(R.string.document_forgery_none_detected)
+                    },
                         style = MaterialTheme.typography.labelSmall,
                         color = statusColor,
                         fontWeight = FontWeight.Bold
@@ -1011,6 +1015,16 @@ private fun DocumentForgeryCard(docForgery: JSONObject) {
                             lineHeight = 16.sp
                         )
                     }
+
+                    // The caveat is not optional. This detector is an
+                    // uncalibrated heuristic, and its clean branch means
+                    // "no anomaly detected", not "authentic".
+                    Text(
+                        text = stringResource(R.string.document_forgery_caveat),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextTertiary,
+                        lineHeight = 16.sp
+                    )
                 }
             }
         }

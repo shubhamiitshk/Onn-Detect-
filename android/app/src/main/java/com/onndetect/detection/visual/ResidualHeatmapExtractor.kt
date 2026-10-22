@@ -38,8 +38,9 @@ object ResidualHeatmapExtractor {
         // been altered.
         val longSide = 256
         val scale = longSide.toFloat() / max(bitmap.width, bitmap.height)
-        val scaledW = max(2, (bitmap.width * scale).toInt() and 0xFFFFFFFE)
-        val scaledH = max(2, (bitmap.height * scale).toInt() and 0xFFFFFFFE)
+        // Even dimensions, so the 32x32 grid divides exactly.
+        val scaledW = max(2, (bitmap.width * scale).toInt() and 0x7FFFFFFE)
+        val scaledH = max(2, (bitmap.height * scale).toInt() and 0x7FFFFFFE)
         val scaled = if (scaledW == bitmap.width && scaledH == bitmap.height) {
             bitmap
         } else {
