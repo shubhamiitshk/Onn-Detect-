@@ -199,9 +199,16 @@ class VirtualCameraDetector {
         val hw = hardware?.lowercase() ?: ""
         val prod = product?.lowercase() ?: ""
         val mfg = manufacturer?.lowercase() ?: ""
-        val brd = board?.lowercase() ?: ""
-        val br = brand?.lowercase() ?: ""
 
+        // Only the FINGERPRINT, HARDWARE and PRODUCT signals are decisive.
+        //
+        // `Build.BRAND == "generic"` and `Build.BOARD == "unknown"` were
+        // previously part of this test, and they are NOT emulator signals:
+        // plenty of genuine low-cost OEM devices report exactly those
+        // values. Including them meant a real customer's KYC session could
+        // be rejected as "emulator detected", which is the worst possible
+        // failure for an anti-fraud check. They are still read (the
+        // parameters exist) but they are no longer consulted.
         return fp.startsWith("generic") ||
             fp.startsWith("unknown") ||
             fp.contains("vbox") ||
@@ -212,8 +219,6 @@ class VirtualCameraDetector {
             prod.contains("sdk") ||
             prod.contains("vbox") ||
             prod.contains("emulator") ||
-            mfg.contains("genymotion") ||
-            brd.equals("unknown", ignoreCase = true) ||
-            br.equals("generic", ignoreCase = true)
+            mfg.contains("genymotion")
     }
 }

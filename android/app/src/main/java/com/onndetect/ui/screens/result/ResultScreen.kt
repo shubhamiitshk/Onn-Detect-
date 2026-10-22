@@ -1039,7 +1039,10 @@ private fun DocumentForgeryCard(docForgery: JSONObject) {
 
 @Composable
 private fun VirtualCameraShieldCard(kycInjection: JSONObject) {
-    val isGenuine = kycInjection.optBoolean("isHardwareGenuine", true)
+    // An ABSENT report is "not assessed", not "genuine". The previous
+    // default rendered a missing report as a clean bill of health.
+    val assessed = kycInjection.has("isHardwareGenuine")
+    val isGenuine = assessed && kycInjection.optBoolean("isHardwareGenuine", false)
     val hookDetected = kycInjection.optBoolean("hookDetected", false)
     val emulatorDetected = kycInjection.optBoolean("emulatorDetected", false)
     val halLevel = kycInjection.optString("cameraHardwareLevel", "UNKNOWN")
@@ -1098,7 +1101,8 @@ private fun VirtualCameraShieldCard(kycInjection: JSONObject) {
                         text = if (!isGenuine) {
                             stringResource(R.string.kyc_tampering_detected)
                         } else {
-                            stringResource(R.string.kyc_genuine_camera)
+                            if (!assessed) stringResource(R.string.kyc_not_assessed)
+            else stringResource(R.string.kyc_genuine_camera)
                         },
                         style = MaterialTheme.typography.labelSmall,
                         color = statusColor,
