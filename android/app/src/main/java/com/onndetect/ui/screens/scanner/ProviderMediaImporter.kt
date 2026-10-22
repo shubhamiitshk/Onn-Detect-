@@ -32,18 +32,21 @@ internal class ProviderMediaImporter(private val context: Context) {
             }
             checkActive()
             val descriptor = own(context.contentResolver.openAssetFileDescriptor(uri, "r", signal))
+            if (descriptor != null && descriptor.declaredLength > 0L) {
+                requireMedia(descriptor.declaredLength <= maxBytes, R.string.input_too_large)
+            }
+            val input = own(descriptor?.createInputStream()) ?: own(context.contentResolver.openInputStream(uri))
                 ?: throw MediaImportException(R.string.invalid_input)
-            requireMedia(descriptor.declaredLength <= maxBytes, R.string.input_too_large)
             val file = File.createTempFile("scan-", ".media", context.cacheDir)
             var delivered = false
             try {
-                own(descriptor.createInputStream())!!.use { input ->
+                input.use { inStream ->
                     own(file.outputStream())!!.use { output ->
                         val buffer = ByteArray(32 * 1024)
                         var total = 0L
                         while (true) {
                             checkActive()
-                            val count = input.read(buffer)
+                            val count = inStream.read(buffer)
                             checkActive()
                             if (count < 0) break
                             if (count == 0) continue

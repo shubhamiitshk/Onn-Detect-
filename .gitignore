@@ -26,3 +26,4 @@ android/app/src/main/assets.failed-*/
 android/app/src/main/assets.install-*/
 ml/resolved-requirements.txt
 *.npz
+.kotlin/

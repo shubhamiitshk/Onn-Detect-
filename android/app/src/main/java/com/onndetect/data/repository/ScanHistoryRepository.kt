@@ -46,6 +46,9 @@ class ScanHistoryRepository @Inject constructor(private val dao: ScanHistoryDao)
                 put("dark", result.qualityInfo.isDark)
                 // A detected marker is unverified. Never persist source EXIF/GPS by default.
                 put("provenance", if (result.provenance?.hasC2PA == true) "unverified marker" else "not verified")
+                result.heatmap?.takeIf { it.isNotEmpty() }?.let { hm ->
+                    put("heatmap", hm.joinToString(",") { "%.3f".format(java.util.Locale.US, it) })
+                }
             }.toString(),
         )
     }

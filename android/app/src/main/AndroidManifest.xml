@@ -28,6 +28,25 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Share-sheet target: "share -> ONN-DETECT" is the only
+                 distribution surface that needs no permission, no background
+                 service and no network call. The hand-off is a content://
+                 URI, which the existing importer already copies safely.
+                 VIDEO is deliberately NOT declared: the video-level blend is
+                 not calibrated on a video split (VideoScorePolicy's temporal
+                 weight is 0), and offering an uncalibrated verdict in a
+                 share sheet is exactly what this project has refused to do
+                 everywhere else. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="audio/*" />
+            </intent-filter>
         </activity>
     </application>
 

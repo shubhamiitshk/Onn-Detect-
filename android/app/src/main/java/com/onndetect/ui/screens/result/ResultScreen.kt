@@ -199,6 +199,14 @@ fun AssessmentDetails(
         SignalBreakdownCard(signals = it)
     }
 
+    // 3.5. Spatial Residual Energy Heatmap (When visual heatmap was generated)
+    val heatmap = remember(evidence) {
+        evidence?.optString("heatmap")?.takeIf { it.isNotEmpty() }?.split(",")?.mapNotNull { it.toFloatOrNull() }?.toFloatArray()
+    }
+    if (heatmap != null && heatmap.isNotEmpty()) {
+        HeatmapViewer(heatmap = heatmap)
+    }
+
     // 4. Forensic Evidence & Metadata Container
     EvidenceMetadataCard(e = e, evidence = evidence)
 
