@@ -46,6 +46,11 @@ class ScanHistoryRepository @Inject constructor(private val dao: ScanHistoryDao)
                 put("dark", result.qualityInfo.isDark)
                 // A detected marker is unverified. Never persist source EXIF/GPS by default.
                 put("provenance", if (result.provenance?.hasC2PA == true) "unverified marker" else "not verified")
+                // The SHA-256 of the analysed media bytes. A forensic receipt
+                // binds itself to the content through this digest, so it has
+                // to be persisted with the assessment.
+                result.mediaSha256?.let { put("mediaSha256", it) }
+                result.mediaSha256?.let { put("mediaSha256", it) }
                 result.heatmap?.takeIf { it.isNotEmpty() }?.let { hm ->
                     put("heatmap", hm.joinToString(",") { "%.3f".format(java.util.Locale.US, it) })
                 }

@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import java.io.File
+import java.security.MessageDigest
 import java.util.UUID
 import javax.inject.Inject
 
@@ -68,10 +69,11 @@ class ScannerViewModel @Inject constructor(
                     }
                     val imported = importer.import(uri, maxBytes)
                     try {
+                        val mediaSha256 = computeFileSha256(imported)
                         when (mode) {
-                            "IMAGE_ONLY" -> scanImage(imported)
-                            "AUDIO_ONLY" -> scanAudio(Uri.fromFile(imported))
-                            "VIDEO_ONLY" -> scanVideo(Uri.fromFile(imported))
+                            "IMAGE_ONLY" -> scanImage(imported, mediaSha256)
+                            "AUDIO_ONLY" -> scanAudio(Uri.fromFile(imported), mediaSha256)
+                            "VIDEO_ONLY" -> scanVideo(Uri.fromFile(imported), mediaSha256)
                         }
                     } finally { imported.delete() }
                 }
@@ -107,11 +109,24 @@ class ScannerViewModel @Inject constructor(
             _state.value = UiState(error = message(R.string.save_failed), unsavedResult = result)
         }
     }
-    private suspend fun scanImage(file: File) {
+    private fun computeFileSha256(file: File): String = runCatching {
+        val md = MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { inStream ->
+            val buf = ByteArray(32 * 1024)
+            var n: Int
+            while (inStream.read(buf).also { n = it } > 0) {
+                md.update(buf, 0, n)
+            }
+        }
+        md.digest().joinToString("") { "%02x".format(it) }
+    }.getOrDefault("0".repeat(64))
+
+    private suspend fun scanImage(file: File, mediaSha256: String) {
         val decoded = decodeScaled(file)
         try {
             pipeline.analyzeMedia(decoded.bitmap, ScanMode.IMAGE_ONLY, sourceUri = Uri.fromFile(file),
-                isCompressed = decoded.mime == "image/jpeg", originalMinEdge = decoded.originalMinEdge).collect { progress ->
+                isCompressed = decoded.mime == "image/jpeg", originalMinEdge = decoded.originalMinEdge,
+                mediaSha256 = mediaSha256).collect { progress ->
                 currentCoroutineContext().ensureActive()
                 progress.result?.let { finish(it) } ?: run {
                     if (progress.percent >= 100f && !progress.indeterminate) {
@@ -121,7 +136,7 @@ class ScannerViewModel @Inject constructor(
             }
         } finally { decoded.bitmap.recycle() }
     }
-    private suspend fun scanAudio(uri: Uri) {
+    private suspend fun scanAudio(uri: Uri, mediaSha256: String) {
         val started = SystemClock.elapsedRealtime()
         val v = runInterruptible(Dispatchers.Default) { audioClassifier.analyze(uri) { stage -> _state.update { it.copy(stage = stage) } } }
         finish(ScanResult(UUID.randomUUID().toString(), ScanMode.AUDIO_ONLY, System.currentTimeMillis(),
@@ -131,10 +146,11 @@ class ScannerViewModel @Inject constructor(
                 if (v.isAiGenerated) DetectionVerdict.SYNTHETIC else DetectionVerdict.AUTHENTIC
             } else DetectionVerdict.INCONCLUSIVE, reason = v.reason, modelValidated = v.modelValidated,
             decisionThreshold = v.threshold, analyzedDurationMs = v.analyzedDurationMs, totalDurationMs = v.totalDurationMs,
+            mediaSha256 = mediaSha256,
             analyzedTimestampsMs = v.analyzedTimestampsMs, modelVersion = v.modelVersion,
             preprocessingVersion = v.preprocessingVersion, calibrationVersion = v.calibrationVersion))
     }
-    private suspend fun scanVideo(uri: Uri) {
+    private suspend fun scanVideo(uri: Uri, mediaSha256: String) {
         val started = SystemClock.elapsedRealtime()
         val o = runInterruptible(Dispatchers.Default) { videoAnalyzer.analyze(uri) { stage -> _state.update { it.copy(stage = stage) } } }
         val verdict = VerdictPolicy.decide(o.overallScore, o.status, o.modelValidated, o.decisionThreshold)
@@ -144,7 +160,8 @@ class ScannerViewModel @Inject constructor(
             status = o.status, verdict = verdict, reason = o.reason, modelValidated = o.modelValidated,
             decisionThreshold = o.decisionThreshold, modelVersion = o.modelVersion,
             preprocessingVersion = o.preprocessingVersion, calibrationVersion = o.calibrationVersion,
-            totalDurationMs = o.durationMs, analyzedDurationMs = o.audioAnalyzedDurationMs, analyzedTimestampsMs = o.timestampsMs))
+            totalDurationMs = o.durationMs, analyzedDurationMs = o.audioAnalyzedDurationMs, analyzedTimestampsMs = o.timestampsMs,
+            mediaSha256 = mediaSha256))
     }
     private data class DecodedImage(val bitmap: Bitmap, val originalMinEdge: Int, val mime: String?)
     private suspend fun decodeScaled(file: File): DecodedImage = cancellableProviderWork(dispose = { it: DecodedImage -> it.bitmap.recycle() }) {

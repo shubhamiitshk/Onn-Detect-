@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
+import java.security.KeyFactory
 import java.security.KeyPairGenerator
 import java.security.KeyStore
 import java.security.Signature
@@ -139,19 +140,20 @@ class StrongBoxReceiptSigner @Inject constructor(
 
     /** The tier the EXISTING key actually provides, never an assumed one. */
     private fun tierOf(keyStore: KeyStore): String = try {
-        val entry = keyStore.getEntry(KEY_ALIAS, null) as KeyStore.PrivateKeyEntry
-        val factory = KeyStore.getInstance("AndroidKeyStore")
-        if (isStrongBoxBacked(factory)) TIER_STRONGBOX else TIER_TEE
+        if (isStrongBoxBacked(keyStore)) TIER_STRONGBOX else TIER_TEE
     } catch (_: Exception) {
         TIER_TEE
     }
 
     private fun isStrongBoxBacked(keyStore: KeyStore): Boolean = try {
-        val factory = KeyStore.getInstance("AndroidKeyStore")
-        val entry = factory.getEntry(KEY_ALIAS, null) as KeyStore.PrivateKeyEntry
-        val secretFactory = entry.secretKeyFactory
-        secretFactory is android.security.keystore.KeyInfo &&
-            secretFactory.securityLevel == KeyProperties.SECURITY_LEVEL_STRONGBOX
+        val entry = keyStore.getEntry(KEY_ALIAS, null) as KeyStore.PrivateKeyEntry
+        val factory = KeyFactory.getInstance(entry.privateKey.algorithm, "AndroidKeyStore")
+        val keyInfo = factory.getKeySpec(entry.privateKey, android.security.keystore.KeyInfo::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            keyInfo.securityLevel == KeyProperties.SECURITY_LEVEL_STRONGBOX
+        } else {
+            false
+        }
     } catch (_: Exception) {
         false
     }

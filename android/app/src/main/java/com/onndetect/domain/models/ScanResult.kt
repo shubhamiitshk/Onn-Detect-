@@ -53,6 +53,15 @@ data class ScanResult(
      */
     val provenanceEvidence: ProvenanceEvidence = ProvenanceEvidence.Absent,
     /**
+     * The SHA-256 of the MEDIA BYTES that were analysed, or null.
+     *
+     * It is computed over the imported file, before the import is deleted,
+     * and it is what binds a forensic receipt to the content it describes.
+     * A receipt without it is not produced: hashing anything else (a scan
+     * id, say) would bind the receipt to nothing.
+     */
+    val mediaSha256: String? = null,
+    /**
      * True when an independent ON-DEVICE evaluation verified this release.
      *
      * [modelValidated] means the release is USABLE: its packaged bytes are

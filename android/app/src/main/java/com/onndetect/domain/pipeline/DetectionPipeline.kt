@@ -76,7 +76,13 @@ class DetectionPipeline @Inject constructor(
 
     @Suppress("UNUSED_PARAMETER")
     suspend fun analyzeMedia(bitmap: Bitmap, mode: ScanMode, provenance: ProvenanceInfo? = null,
-        sourceUri: android.net.Uri? = null, isCompressed: Boolean = false, originalMinEdge: Int? = null): Flow<ScanProgress> = flow {
+        sourceUri: android.net.Uri? = null, isCompressed: Boolean = false, originalMinEdge: Int? = null,
+        /**
+         * The SHA-256 of the media bytes, when the caller has them. It is
+         * carried into the result so a forensic receipt can bind itself to
+         * the exact content it describes.
+         */
+        mediaSha256: String? = null): Flow<ScanProgress> = flow {
         val started = SystemClock.elapsedRealtime()
         val jobContext = currentCoroutineContext()
         val checkStop = {
@@ -93,7 +99,8 @@ class DetectionPipeline @Inject constructor(
         var provenanceEvidence: ProvenanceEvidence = ProvenanceEvidence.Absent
         fun result(status: AnalysisStatus, reason: String?, score: Float = -1f,
             report: ModelIntegrityChecker.Report? = null,
-            decisionThreshold: Float? = report?.threshold): ScanResult {
+            decisionThreshold: Float? = report?.threshold,
+            mediaSha256: String? = null): ScanResult {
             val verdict = VerdictPolicy.decide(score, status, report?.validated == true, decisionThreshold)
             val confirmed = when (val evidence = provenanceEvidence) {
                 is ProvenanceEvidence.C2PAClaim -> evidence.confirmsAiInvolvement
@@ -133,7 +140,8 @@ class DetectionPipeline @Inject constructor(
                 report?.releaseId ?: "unknown", report?.frontendId ?: "unknown",
                 if (finalModelValidated) (report?.releaseId ?: "c2pa-verified") else "unvalidated", finalThreshold,
                 verdictConfidence = confidence, provenanceEvidence = provenanceEvidence,
-                releaseDeviceValidated = report?.deviceValidated == true)
+                releaseDeviceValidated = report?.deviceValidated == true,
+                mediaSha256 = mediaSha256)
         }
         try {
             emit(ScanProgress("Validating input...", 5f))
@@ -278,7 +286,8 @@ class DetectionPipeline @Inject constructor(
             }
 
             emit(ScanProgress("Analysis complete", 100f, result = result(
-                decision.status, null, decision.score, report, decisionThreshold)))
+                decision.status, null, decision.score, report, decisionThreshold,
+                mediaSha256 = mediaSha256)))
         } catch (e: CancellationException) { throw e }
         catch (e: Exception) {
             emit(ScanProgress("Analysis inconclusive", 100f, result = result(AnalysisStatus.MODEL_FAILURE, e.message ?: "Analysis failed")))
