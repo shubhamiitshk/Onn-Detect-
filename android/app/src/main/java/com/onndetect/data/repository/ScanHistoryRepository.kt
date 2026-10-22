@@ -66,6 +66,18 @@ class ScanHistoryRepository @Inject constructor(private val dao: ScanHistoryDao)
                         put("indicators", JSONArray(dfr.indicators))
                     })
                 }
+                result.kycInjectionReport?.let { kyc ->
+                    put("kycInjection", JSONObject().apply {
+                        put("isHardwareGenuine", kyc.isHardwareGenuine)
+                        put("virtualCameraDetected", kyc.virtualCameraDetected)
+                        put("hookDetected", kyc.hookDetected)
+                        put("emulatorDetected", kyc.emulatorDetected)
+                        put("cameraHardwareLevel", kyc.cameraHardwareLevel)
+                        put("physicalSensorVerified", kyc.physicalSensorVerified)
+                        put("injectionScore", kyc.injectionScore)
+                        put("flags", JSONArray(kyc.flags))
+                    })
+                }
             }.toString(),
         )
     }

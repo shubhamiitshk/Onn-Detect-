@@ -154,6 +154,9 @@ class ScannerViewModel @Inject constructor(
         val started = SystemClock.elapsedRealtime()
         val o = runInterruptible(Dispatchers.Default) { videoAnalyzer.analyze(uri) { stage -> _state.update { it.copy(stage = stage) } } }
         val verdict = VerdictPolicy.decide(o.overallScore, o.status, o.modelValidated, o.decisionThreshold)
+        val kycReport = runCatching {
+            com.onndetect.detection.kyc.VirtualCameraDetector().inspect(appContext, o.temporalScore)
+        }.getOrNull()
         finish(ScanResult(UUID.randomUUID().toString(), ScanMode.VIDEO_ONLY, System.currentTimeMillis(), o.overallScore,
             verdict == DetectionVerdict.SYNTHETIC, 0f, SignalBreakdown(o.semanticScore,o.srmScore,o.fftScore,o.klScore,-1f,-1f,o.audioScore,o.temporalScore,-1f),
             null, null, QualityInfo(minOf(o.width,o.height),true,null,false,false), SystemClock.elapsedRealtime() - started,
@@ -161,7 +164,8 @@ class ScannerViewModel @Inject constructor(
             decisionThreshold = o.decisionThreshold, modelVersion = o.modelVersion,
             preprocessingVersion = o.preprocessingVersion, calibrationVersion = o.calibrationVersion,
             totalDurationMs = o.durationMs, analyzedDurationMs = o.audioAnalyzedDurationMs, analyzedTimestampsMs = o.timestampsMs,
-            mediaSha256 = mediaSha256))
+            mediaSha256 = mediaSha256,
+            kycInjectionReport = kycReport))
     }
     private data class DecodedImage(val bitmap: Bitmap, val originalMinEdge: Int, val mime: String?)
     private suspend fun decodeScaled(file: File): DecodedImage = cancellableProviderWork(dispose = { it: DecodedImage -> it.bitmap.recycle() }) {

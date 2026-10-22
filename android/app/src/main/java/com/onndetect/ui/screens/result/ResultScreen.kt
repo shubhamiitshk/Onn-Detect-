@@ -220,6 +220,12 @@ fun AssessmentDetails(
         DocumentForgeryCard(docForgery = docForgery)
     }
 
+    // 4.35. Video-KYC (V-CIP) Virtual Camera & Injection Shield Card
+    val kycInjection = remember(evidence) { evidence.optJSONObject("kycInjection") }
+    if (kycInjection != null) {
+        VirtualCameraShieldCard(kycInjection = kycInjection)
+    }
+
     // 4.5. Hardware Forensic Receipt Card (StrongBox / TEE)
     ForensicReceiptCard(e = e, evidence = evidence, onExportReceipt = onExportReceipt)
 
@@ -1021,6 +1027,173 @@ private fun DocumentForgeryCard(docForgery: JSONObject) {
                     // "no anomaly detected", not "authentic".
                     Text(
                         text = stringResource(R.string.document_forgery_caveat),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextTertiary,
+                        lineHeight = 16.sp
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun VirtualCameraShieldCard(kycInjection: JSONObject) {
+    val isGenuine = kycInjection.optBoolean("isHardwareGenuine", true)
+    val hookDetected = kycInjection.optBoolean("hookDetected", false)
+    val emulatorDetected = kycInjection.optBoolean("emulatorDetected", false)
+    val halLevel = kycInjection.optString("cameraHardwareLevel", "UNKNOWN")
+    val physicalSensor = kycInjection.optBoolean("physicalSensorVerified", false)
+    val score = kycInjection.optDouble("injectionScore", 0.0).toFloat()
+    val flagsArray = kycInjection.optJSONArray("flags")
+    val flags = remember(flagsArray) {
+        val list = mutableListOf<String>()
+        if (flagsArray != null) {
+            for (i in 0 until flagsArray.length()) {
+                list.add(flagsArray.getString(i))
+            }
+        }
+        list
+    }
+
+    val statusColor = if (!isGenuine) SyntheticRed else CyberCyan
+    val statusBg = if (!isGenuine) SyntheticRedContainer.copy(alpha = 0.3f) else CyberCyan.copy(alpha = 0.1f)
+    val statusBorder = if (!isGenuine) SyntheticRed.copy(alpha = 0.6f) else CyberCyan.copy(alpha = 0.4f)
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(SurfaceCard)
+            .border(1.dp, BorderSubtle, RoundedCornerShape(20.dp))
+            .padding(20.dp)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(if (!isGenuine) "⚠️" else "🛡️", fontSize = 16.sp)
+                    Text(
+                        text = stringResource(R.string.kyc_virtual_camera_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = TextPrimary,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(statusBg)
+                        .border(1.dp, statusBorder, RoundedCornerShape(6.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = if (!isGenuine) {
+                            stringResource(R.string.kyc_tampering_detected)
+                        } else {
+                            stringResource(R.string.kyc_genuine_camera)
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = statusColor,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            Text(
+                text = if (!isGenuine)
+                    "Camera HAL telemetry, physical sensor metrics, or memory inspection detected a virtual camera driver, dynamic injection framework (Xposed/Pine/VCam), or emulator stream feed."
+                else
+                    "Camera HAL registers confirm physical front-facing camera silicon with valid hardware shutter bounds, no runtime injection hooks, and genuine hardware execution.",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextSecondary,
+                lineHeight = 18.sp
+            )
+
+            // Injection Likelihood Progress Bar
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "Injection Likelihood",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextTertiary
+                    )
+                    Text(
+                        text = "${(score * 100).toInt()}%",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = statusColor,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                LinearProgressIndicator(
+                    progress = { score.coerceIn(0f, 1f) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp)),
+                    color = statusColor,
+                    trackColor = SurfaceElevated
+                )
+            }
+
+            // Forensic Telemetry Rows
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                MetadataRow(
+                    label = "Camera Hardware HAL",
+                    value = "Level $halLevel"
+                )
+                MetadataRow(
+                    label = "Silicon Sensor Geometry",
+                    value = if (physicalSensor) "Verified Physical Sensor" else "Missing / Virtual Sensor"
+                )
+                MetadataRow(
+                    label = "Dynamic Injection Hooks",
+                    value = if (hookDetected) "ACTIVE (Xposed / VCam detected)" else "Clean Memory Space"
+                )
+                MetadataRow(
+                    label = "Execution Environment",
+                    value = if (emulatorDetected) "Virtual Emulator (Mock Fingerprint)" else "Physical Device"
+                )
+            }
+
+            // Flagged indicators list
+            if (flags.isNotEmpty()) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (!isGenuine) SyntheticRedContainer.copy(alpha = 0.25f) else SurfaceElevated)
+                        .padding(12.dp)
+                ) {
+                    Text(
+                        text = "INJECTION ALERTS:",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (!isGenuine) SyntheticRed else CyberCyan,
+                        fontWeight = FontWeight.Bold
+                    )
+                    flags.forEach { item ->
+                        Text(
+                            text = "• $item",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextPrimary,
+                            fontSize = 12.sp,
+                            lineHeight = 16.sp
+                        )
+                    }
+
+                    Text(
+                        text = stringResource(R.string.kyc_hardware_caveat),
                         style = MaterialTheme.typography.bodySmall,
                         color = TextTertiary,
                         lineHeight = 16.sp

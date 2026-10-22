@@ -73,6 +73,8 @@ data class ScanResult(
     val releaseDeviceValidated: Boolean = false,
     /** Forensic analysis of document/screenshot splicing, ELA, and layout. */
     val documentForgeryReport: com.onndetect.detection.document.DocumentForgeryReport? = null,
+    /** Video-KYC (V-CIP) camera injection, virtual camera drivers, and live stream tampering report. */
+    val kycInjectionReport: com.onndetect.detection.kyc.KycInjectionReport? = null,
 ) {
     init {
         require(overallScore.isFinite() && (overallScore == -1f || overallScore in 0f..1f))

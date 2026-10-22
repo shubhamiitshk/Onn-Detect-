@@ -46,4 +46,26 @@ class AssessmentPersistenceTest {
         assertEquals("release1",json.getString("modelVersion")); assertEquals(4000L,json.getLong("analyzedDurationMs"))
         assertEquals(2,json.getJSONArray("timestampsMs").length()); assertFalse(entry.evidenceJson!!.contains("private"))
     }
+    @Test fun evidencePersistsKycInjectionReport() {
+        val kyc = com.onndetect.detection.kyc.KycInjectionReport(
+            isHardwareGenuine = false,
+            virtualCameraDetected = true,
+            hookDetected = true,
+            emulatorDetected = false,
+            cameraHardwareLevel = "LEGACY",
+            physicalSensorVerified = false,
+            injectionScore = 0.85f,
+            flags = listOf("Dynamic hooking framework active", "Missing physical silicon sensor")
+        )
+        val entry = ScanHistoryRepository.toEntry(result().copy(kycInjectionReport = kyc))
+        val json = JSONObject(entry.evidenceJson!!)
+        assertTrue(json.has("kycInjection"))
+        val kycJson = json.getJSONObject("kycInjection")
+        assertFalse(kycJson.getBoolean("isHardwareGenuine"))
+        assertTrue(kycJson.getBoolean("virtualCameraDetected"))
+        assertTrue(kycJson.getBoolean("hookDetected"))
+        assertEquals("LEGACY", kycJson.getString("cameraHardwareLevel"))
+        assertEquals(0.85f, kycJson.getDouble("injectionScore").toFloat(), 0.001f)
+        assertEquals(2, kycJson.getJSONArray("flags").length())
+    }
 }

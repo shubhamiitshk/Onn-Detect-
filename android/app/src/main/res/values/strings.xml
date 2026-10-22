@@ -38,6 +38,11 @@
     <string name="document_forgery_tampering_indicated">TAMPERING INDICATED</string>
     <string name="document_forgery_none_detected">NO TAMPERING DETECTED</string>
     <string name="document_forgery_caveat">Uncalibrated heuristic: a normalised relative score, not a probability, and no measured operating point. A clean result is NOT evidence that the document is genuine - verify independently.</string>
+    <!-- Video-KYC (V-CIP) camera injection and virtual camera detector -->
+    <string name="kyc_virtual_camera_title">V-CIP KYC HARDWARE SHIELD</string>
+    <string name="kyc_genuine_camera">PHYSICAL SENSOR GENUINE</string>
+    <string name="kyc_tampering_detected">VIRTUAL INJECTION DETECTED</string>
+    <string name="kyc_hardware_caveat">On-device camera HAL inspection against OBS/ManyCam/VCam virtual drivers, Xposed/Pine memory hooks, and emulator injection. Complete regulatory compliance requires server-side attestation.</string>
     <string name="signals_title">Evaluated signals</string>
     <string name="signal_semantic">Semantic appearance probe</string>
     <string name="signal_srm">Image residual model</string>
