@@ -89,7 +89,7 @@ class ShareIntentInstrumentationTest {
         val info = context.packageManager.getPackageInfo(
             context.packageName, PackageManager.GET_ACTIVITIES,
         )
-        val actions = info.activities
+        val actions = (info.activities ?: emptyArray())
             .filter { it.name.endsWith("MainActivity") }
             .flatMap { activity -> activity.intentFilters }
             .flatMap { filter -> filter.actions.map { action -> action.name } }

@@ -29,7 +29,9 @@ class MainActivity : ComponentActivity() {
         // A share hand-off is consumed ONCE. Android re-delivers the same
         // Intent after a configuration change, and a scan must not run twice
         // because the user rotated the device.
-        liveSharedMedia.value = SharedMediaIntents.consume(intent)
+        if (savedInstanceState == null) {
+            liveSharedMedia.value = SharedMediaIntents.consume(intent)
+        }
         setContent {
             OnnDetectTheme {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
