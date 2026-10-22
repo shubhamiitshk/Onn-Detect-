@@ -71,6 +71,8 @@ data class ScanResult(
      * fully verified release.
      */
     val releaseDeviceValidated: Boolean = false,
+    /** Forensic analysis of document/screenshot splicing, ELA, and layout. */
+    val documentForgeryReport: com.onndetect.detection.document.DocumentForgeryReport? = null,
 ) {
     init {
         require(overallScore.isFinite() && (overallScore == -1f || overallScore in 0f..1f))

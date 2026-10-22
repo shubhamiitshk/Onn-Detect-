@@ -49,6 +49,7 @@ class DetectionPipeline @Inject constructor(
 ) {
     private val c2paVerifier: com.onndetect.detection.provenance.C2PAVerifier =
         com.onndetect.detection.provenance.C2PAVerifier(c2paChecker)
+    private val documentAnalyzer = com.onndetect.detection.document.DocumentForgeryAnalyzer()
     companion object {
         const val NEUTRAL_LIP_SYNC = 0.9f
         const val NEUTRAL_JITTER = 0.1f
@@ -92,6 +93,7 @@ class DetectionPipeline @Inject constructor(
         var signals = SignalBreakdown(-1f, -1f, -1f, -1f, -1f, -1f, -1f, -1f, -1f)
         var quality = QualityInfo(originalMinEdge ?: 0, isCompressed, null, false, false)
         var residualHeatmap: FloatArray? = null
+        var docReport: com.onndetect.detection.document.DocumentForgeryReport? = null
         // Provenance evidence is collected independently of the statistical
         // detectors and NEVER enters the score. It is categorical: a
         // VERIFIED claim or a significant watermark detection is a
@@ -140,8 +142,9 @@ class DetectionPipeline @Inject constructor(
                 report?.releaseId ?: "unknown", report?.frontendId ?: "unknown",
                 if (finalModelValidated) (report?.releaseId ?: "c2pa-verified") else "unvalidated", finalThreshold,
                 verdictConfidence = confidence, provenanceEvidence = provenanceEvidence,
+                mediaSha256 = mediaSha256,
                 releaseDeviceValidated = report?.deviceValidated == true,
-                mediaSha256 = mediaSha256)
+                documentForgeryReport = docReport)
         }
         try {
             emit(ScanProgress("Validating input...", 5f))
@@ -155,6 +158,7 @@ class DetectionPipeline @Inject constructor(
             }
             quality = qualityInfo(bitmap, originalMinEdge).copy(isCompressed = isCompressed)
             residualHeatmap = runCatching { ResidualHeatmapExtractor.computeResidualHeatmap(bitmap, 32) }.getOrNull()
+            docReport = runCatching { documentAnalyzer.analyze(bitmap) }.getOrNull()
             val report = ModelIntegrityGate.report(appContext, setOf(ModelIntegrityChecker.IMAGE_MODEL))
             if (!report.allOk) {
                 emit(ScanProgress("Model unavailable", 100f, result = result(AnalysisStatus.MODEL_FAILURE, report.failures.joinToString())))

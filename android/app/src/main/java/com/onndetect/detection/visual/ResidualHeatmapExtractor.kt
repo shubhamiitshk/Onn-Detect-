@@ -8,10 +8,17 @@ import kotlin.math.sqrt
 /**
  * Computes a spatial 32x32 residual-energy heatmap across an image canvas.
  *
- * Uses high-pass spatial Laplacian residuals on luma:
- * In natural camera captures, sensor noise is spatially uniform. In generative or
- * spliced images, in-painted text, faces, or pasted regions exhibit sharp localized
- * variance discontinuities compared to background noise.
+ * Uses high-pass spatial Laplacian residuals on luma.
+ *
+ * The map shows the LOCAL RESIDUAL ENERGY of each cell - how much
+ * high-frequency energy sits in that part of the image relative to the rest
+ * of it. A pasted or in-painted region usually carries energy that does not
+ * match its surroundings, so it shows up as a localised spike.
+ *
+ * It is an ANOMALY map, not a verdict. A uniformly noisy generative image
+ * has no localised anomaly at all, so a flat map does NOT mean "natural" -
+ * it means "no localised discontinuity". The scale is normalised per image,
+ * so it says nothing about absolute noise.
  */
 object ResidualHeatmapExtractor {
 
@@ -23,21 +30,31 @@ object ResidualHeatmapExtractor {
             return FloatArray(0)
         }
 
-        val targetSide = 256
-        val scaled = if (bitmap.width != targetSide || bitmap.height != targetSide) {
-            Bitmap.createScaledBitmap(bitmap, targetSide, targetSide, true)
-        } else {
+        // The ASPECT RATIO is preserved. The viewer maps the grid to
+        // normalised coordinates (cellW = width / gridSize), so the cells
+        // must be measured on a frame with the same shape as the source.
+        // Resizing to a square first stretched every non-square photo, and
+        // the highlighted region no longer pointed at the region that had
+        // been altered.
+        val longSide = 256
+        val scale = longSide.toFloat() / max(bitmap.width, bitmap.height)
+        val scaledW = max(2, (bitmap.width * scale).toInt() and 0xFFFFFFFE)
+        val scaledH = max(2, (bitmap.height * scale).toInt() and 0xFFFFFFFE)
+        val scaled = if (scaledW == bitmap.width && scaledH == bitmap.height) {
             bitmap
+        } else {
+            Bitmap.createScaledBitmap(bitmap, scaledW, scaledH, true)
         }
 
-        val pixels = IntArray(targetSide * targetSide)
+        val pixels = IntArray(scaledW * scaledH)
         try {
-            scaled.getPixels(pixels, 0, targetSide, 0, 0, targetSide, targetSide)
+            scaled.getPixels(pixels, 0, scaledW, 0, 0, scaledW, scaledH)
         } finally {
             if (scaled !== bitmap) scaled.recycle()
         }
 
-        val blockSize = targetSide / gridSize
+        val blockW = scaledW / gridSize
+        val blockH = scaledH / gridSize
         val rawVariances = FloatArray(gridSize * gridSize)
 
         for (gy in 0 until gridSize) {
@@ -46,17 +63,17 @@ object ResidualHeatmapExtractor {
                 var sumSq = 0.0
                 var count = 0
 
-                val startY = gy * blockSize
-                val endY = min(startY + blockSize, targetSide - 1)
-                val startX = gx * blockSize
-                val endX = min(startX + blockSize, targetSide - 1)
+                val startY = gy * blockH
+                val endY = min(startY + blockH, scaledH - 1)
+                val startX = gx * blockW
+                val endX = min(startX + blockW, scaledW - 1)
 
                 for (y in startY + 1 until endY) {
                     for (x in startX + 1 until endX) {
-                        val idx = y * targetSide + x
+                        val idx = y * scaledW + x
                         val centerLuma = getLuma(pixels[idx])
-                        val top = getLuma(pixels[idx - targetSide])
-                        val bottom = getLuma(pixels[idx + targetSide])
+                        val top = getLuma(pixels[idx - scaledW])
+                        val bottom = getLuma(pixels[idx + scaledW])
                         val left = getLuma(pixels[idx - 1])
                         val right = getLuma(pixels[idx + 1])
 

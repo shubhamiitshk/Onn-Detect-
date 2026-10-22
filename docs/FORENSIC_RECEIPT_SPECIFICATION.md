@@ -23,9 +23,9 @@ The resulting cryptographic receipt is **verifiable offline or by third-party en
 | Attack Vector | Vulnerability in Standard APIs | Protection in ONN-DETECT Receipt |
 |---|---|---|
 | **Verdict Forgery** | Attacker edits local JSON from `SYNTHETIC` to `AUTHENTIC`. | **Defeated**: Private key resides in StrongBox/TEE; signature verification fails if a single bit is modified. |
-| **Replay Attack** | Attacker captures a valid receipt for photo A and presents it for photo B. | **Defeated**: Payload binds `media_sha256` and a server-issued fresh `challenge_nonce`. |
-| **Model Tampering** | Attacker swaps the TFLite models with dummy bypass weights. | **Defeated**: Payload includes exact SHA-256 hashes of all bundled models (`siglip`, `srm`, `lcnn`). |
-| **Emulator / Virtual Injection** | Attacker runs fake device in emulator or virtual environment. | **Defeated**: Hardware attestation certificate chain roots in **Google's Hardware Root CA**; emulators fail root chain validation. |
+| **Replay Attack** | Attacker captures a valid receipt for photo A and presents it for photo B. | **Partially defeated**: the payload binds `media_sha256`, so a receipt for photo A cannot be re-labelled as photo B. Presenting photo A's own receipt again IS still possible without a server-issued challenge or a verifier-side nonce ledger - see the `challenge_nonce` definition. |
+| **Model Tampering** | Attacker swaps the TFLite models with dummy bypass weights. | **Defeated**: Payload includes the exact SHA-256 hashes of all bundled models, read from the shipped release manifest - the same manifest `ModelIntegrityChecker` verifies the packaged bytes against. |
+| **Emulator / Virtual Injection** | Attacker runs fake device in emulator or virtual environment. | **Defeated, PROVIDED the verifier checks the chain**: the hardware attestation certificate chain roots in **Google's Hardware Root CA**; emulators fail root chain validation. `ReceiptVerifier.verify` requires a hardware tier AND a non-empty chain, so a software-signed receipt is rejected; validating the chain against Google's root remains the verifier's step. |
 
 ---
 
@@ -39,10 +39,10 @@ Before signing, the payload is serialized into a deterministic, bit-exact string
 ```
 
 ### Field Definitions
-* `challenge_nonce` (String): A fresh, non-repeating cryptographic token issued by the enterprise server (or client session timestamp nonce).
-* `confidence` (Float): Calibrated score distance from the operating threshold (`[0.0, 1.0]`).
+* `challenge_nonce` (String): A fresh, non-repeating 128-bit random value, generated per export. **Honest scope:** a client-generated nonce proves that two exports of the same assessment are distinct, and it makes a receipt self-describing. It does NOT by itself defeat replay, because nothing binds it to a server-side session. Replay protection needs EITHER a server-issued challenge that the verifier records OR a verifier-side ledger of seen nonces. The nonce is in the signed payload, so the verifier can enforce either.
+* `confidence` (Float): The distance from the decision threshold, normalised: `|score - threshold| / max(threshold, 1 - threshold)`, so `0.0` is exactly on the boundary and `1.0` is at the far end of the score range. (`ScanResult.confidence` is always zero and is NOT what is signed here.)
 * `device_security_tier` (String): `"STRONGBOX"` (discrete Titan M2/Knox chip), `"TEE"` (ARM TrustZone), or `"SOFTWARE_TEST"`.
-* `media_sha256` (String): Hexadecimal SHA-256 digest of the raw media file bytes.
+* `media_sha256` (String): Hexadecimal SHA-256 digest of the raw media file bytes, computed over the IMPORTED bytes while they still exist and persisted with the assessment. A receipt is NOT produced without it: there is no fallback, because hashing anything else (a scan id, say) would bind the receipt to nothing.
 * `model_hashes` (Map<String, String>): Sorted SHA-256 hashes of the exact TFLite neural models that produced the verdict.
 * `model_release` (String): Immutable tag of the detector release (e.g., `"onn-20261021-v7"`).
 * `overall_score` (Float): Meta-fusion calibrated output score (`[0.0, 1.0]`).

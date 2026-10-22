@@ -37,7 +37,7 @@ class ShareIntentInstrumentationTest {
     private val imageUri = Uri.parse("content://media/external/images/media/42")
     private val audioUri = Uri.parse("content://media/external/audio/media/7")
 
-    @Test fun `a single image share is resolved to the image route`() {
+    @Test fun aSingleImageShareIsResolvedToTheImageRoute() {
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = "image/png"
             putExtra(Intent.EXTRA_STREAM, imageUri)
@@ -48,7 +48,7 @@ class ShareIntentInstrumentationTest {
         assertEquals(imageUri.toString(), shared.uri)
     }
 
-    @Test fun `an audio share is resolved to the audio route`() {
+    @Test fun anAudioShareIsResolvedToTheAudioRoute() {
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = "audio/mp4"
             putExtra(Intent.EXTRA_STREAM, audioUri)
@@ -58,7 +58,7 @@ class ShareIntentInstrumentationTest {
         assertEquals(SharedMediaResolver.MODE_AUDIO, shared!!.mode)
     }
 
-    @Test fun `a multiple share is read from the clip data`() {
+    @Test fun aMultipleShareIsReadFromTheClipData() {
         val intent = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
             type = "image/png"
             clipData = android.content.ClipData.newRawUri("shared", imageUri)
@@ -68,7 +68,7 @@ class ShareIntentInstrumentationTest {
         assertEquals(imageUri.toString(), shared!!.uri)
     }
 
-    @Test fun `the hand-off is consumed so a rotation does not re-run the scan`() {
+    @Test fun theHandoffIsConsumedSoARotationDoesNotRerunTheScan() {
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = "image/png"
             putExtra(Intent.EXTRA_STREAM, imageUri)
@@ -79,12 +79,12 @@ class ShareIntentInstrumentationTest {
         assertNull("the share hand-off was not consumed", SharedMediaIntents.consume(intent))
     }
 
-    @Test fun `an unrelated intent is not a share`() {
+    @Test fun anUnrelatedIntentIsNotAShare() {
         assertNull(SharedMediaIntents.consume(Intent(Intent.ACTION_MAIN)))
         assertNull(SharedMediaIntents.consume(null))
     }
 
-    @Test fun `the app is offered as a share target for images and audio`() {
+    @Test fun theAppIsOfferedAsAShareTargetForImagesAndAudio() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         for (type in listOf("image/jpeg", "audio/mp4")) {
             val intent = Intent(Intent.ACTION_SEND).apply { this.type = type }
@@ -104,7 +104,7 @@ class ShareIntentInstrumentationTest {
         }
     }
 
-    @Test fun `the app is NOT offered as a share target for video`() {
+    @Test fun theAppIsNOTOfferedAsAShareTargetForVideo() {
         // The video-level blend is not calibrated on a video split, so the
         // app must not appear in a video share sheet and then return a
         // verdict it has not validated.

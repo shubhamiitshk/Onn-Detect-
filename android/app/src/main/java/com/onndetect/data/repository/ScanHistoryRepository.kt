@@ -50,9 +50,21 @@ class ScanHistoryRepository @Inject constructor(private val dao: ScanHistoryDao)
                 // binds itself to the content through this digest, so it has
                 // to be persisted with the assessment.
                 result.mediaSha256?.let { put("mediaSha256", it) }
-                result.mediaSha256?.let { put("mediaSha256", it) }
                 result.heatmap?.takeIf { it.isNotEmpty() }?.let { hm ->
                     put("heatmap", hm.joinToString(",") { "%.3f".format(java.util.Locale.US, it) })
+                }
+                result.documentForgeryReport?.let { dfr ->
+                    put("documentForgery", JSONObject().apply {
+                        put("isDocumentOrScreenshot", dfr.isDocumentOrScreenshot)
+                        put("forgeryScore", dfr.forgeryScore)
+                        put("isForged", dfr.isForged)
+                        put("elaPeakRatio", dfr.elaPeakRatio)
+                        put("noiseDiscontinuity", dfr.noiseDiscontinuity)
+                        put("edgeInconsistency", dfr.edgeInconsistency)
+                        put("layoutAnomaly", dfr.layoutAnomaly)
+                        put("tamperedTiles", JSONArray(dfr.tamperedTileIndices))
+                        put("indicators", JSONArray(dfr.indicators))
+                    })
                 }
             }.toString(),
         )

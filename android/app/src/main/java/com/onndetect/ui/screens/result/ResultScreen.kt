@@ -214,6 +214,12 @@ fun AssessmentDetails(
     // 4. Forensic Evidence & Metadata Container
     EvidenceMetadataCard(e = e, evidence = evidence)
 
+    // 4.25. Document & Payment Screenshot Forgery Card
+    val docForgery = remember(evidence) { evidence.optJSONObject("documentForgery") }
+    if (docForgery != null && docForgery.optBoolean("isDocumentOrScreenshot", false)) {
+        DocumentForgeryCard(docForgery = docForgery)
+    }
+
     // 4.5. Hardware Forensic Receipt Card (StrongBox / TEE)
     ForensicReceiptCard(e = e, evidence = evidence, onExportReceipt = onExportReceipt)
 
@@ -735,6 +741,12 @@ private fun ForensicReceiptCard(
 ) {
     val context = LocalContext.current
     var copied by remember { mutableStateOf(false) }
+    // The receipt is generated ONCE for the card, so the rows below report
+    // the receipt that would actually be exported - including whether it
+    // carries a device attestation chain.
+    val receipt = remember(e.id, e.evidenceJson) { runCatching { onExportReceipt() }.getOrNull() }
+    val securityTier = receipt?.securityTier ?: "unavailable"
+    val attested = receipt != null && receipt.certificateChainBase64.isNotEmpty()
 
     Box(
         modifier = Modifier
@@ -780,7 +792,7 @@ private fun ForensicReceiptCard(
             }
 
             Text(
-                text = "Cryptographically signed inside the Android Hardware Keystore enclave (StrongBox/TEE). Binds the verdict, media SHA-256 digest, and frozen model release hashes for enterprise audit compliance.",
+                text = "Cryptographically signed inside the Android Hardware Keystore enclave. Binds the verdict, the media SHA-256 digest, and the frozen model release hashes for enterprise audit compliance.",
                 style = MaterialTheme.typography.bodySmall,
                 color = TextSecondary,
                 lineHeight = 18.sp
@@ -793,7 +805,15 @@ private fun ForensicReceiptCard(
                 )
                 MetadataRow(
                     label = "Hardware Root",
-                    value = "Google Hardware Keystore Root CA"
+                    value = if (attested) {
+                        "Google Hardware Keystore Root CA (chain present)"
+                    } else {
+                        "NOT ATTESTED - no device chain"
+                    }
+                )
+                MetadataRow(
+                    label = "Security Tier",
+                    value = securityTier
                 )
                 MetadataRow(
                     label = "Media Binding",
@@ -807,9 +827,9 @@ private fun ForensicReceiptCard(
             ) {
                 OutlinedButton(
                     onClick = {
-                        val receipt = onExportReceipt()
+                        val export = receipt ?: return@OutlinedButton
                         val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("ONN-DETECT Forensic Receipt", receipt.toExportJson()))
+                        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("ONN-DETECT Forensic Receipt", export.toExportJson()))
                         copied = true
                     },
                     modifier = Modifier.weight(1f),
@@ -822,10 +842,10 @@ private fun ForensicReceiptCard(
 
                 Button(
                     onClick = {
-                        val receipt = onExportReceipt()
+                        val export = receipt ?: return@Button
                         val sendIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                             type = "application/json"
-                            putExtra(android.content.Intent.EXTRA_TEXT, receipt.toExportJson())
+                            putExtra(android.content.Intent.EXTRA_TEXT, export.toExportJson())
                             putExtra(android.content.Intent.EXTRA_SUBJECT, "ONN-DETECT Forensic Receipt (${e.id.take(8)})")
                         }
                         context.startActivity(android.content.Intent.createChooser(sendIntent, "Export Forensic Receipt"))
@@ -835,6 +855,162 @@ private fun ForensicReceiptCard(
                     colors = ButtonDefaults.buttonColors(containerColor = SurfaceElevated, contentColor = TextPrimary)
                 ) {
                     Text("Export Audit File", fontSize = 13.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DocumentForgeryCard(docForgery: JSONObject) {
+    val isForged = docForgery.optBoolean("isForged", false)
+    val score = docForgery.optDouble("forgeryScore", 0.0).toFloat()
+    val ela = docForgery.optDouble("elaPeakRatio", 1.0).toFloat()
+    val noise = docForgery.optDouble("noiseDiscontinuity", 0.0).toFloat()
+    val edge = docForgery.optDouble("edgeInconsistency", 0.0).toFloat()
+    val layoutAnomaly = docForgery.optBoolean("layoutAnomaly", false)
+    val indicatorsArray = docForgery.optJSONArray("indicators")
+    val indicators = remember(indicatorsArray) {
+        val list = mutableListOf<String>()
+        if (indicatorsArray != null) {
+            for (i in 0 until indicatorsArray.length()) {
+                list.add(indicatorsArray.getString(i))
+            }
+        }
+        list
+    }
+
+    val statusColor = if (isForged) SyntheticRed else CyberCyan
+    val statusBg = if (isForged) SyntheticRedContainer.copy(alpha = 0.3f) else CyberCyan.copy(alpha = 0.1f)
+    val statusBorder = if (isForged) SyntheticRed.copy(alpha = 0.6f) else CyberCyan.copy(alpha = 0.4f)
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(SurfaceCard)
+            .border(1.dp, BorderSubtle, RoundedCornerShape(20.dp))
+            .padding(20.dp)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(if (isForged) "⚠️" else "📄", fontSize = 16.sp)
+                    Text(
+                        text = "DOCUMENT & PAYMENT AUDIT",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = TextPrimary,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(statusBg)
+                        .border(1.dp, statusBorder, RoundedCornerShape(6.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = if (isForged) "TAMPERED" else "AUTHENTIC",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = statusColor,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            Text(
+                text = if (isForged)
+                    "Discontinuities in JPEG compression error levels and high-pass noise floor indicate copy-pasted or edited text (e.g. modified payment amount, UTR, or identity details)."
+                else
+                    "Spatial noise floor, error levels, and typography antialiasing are consistent across text blocks with no digital splicing detected.",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextSecondary,
+                lineHeight = 18.sp
+            )
+
+            // Forgery Likelihood Progress Bar
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "Forgery Likelihood",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextTertiary
+                    )
+                    Text(
+                        text = "${(score * 100).toInt()}%",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = statusColor,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                LinearProgressIndicator(
+                    progress = { score.coerceIn(0f, 1f) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp)),
+                    color = statusColor,
+                    trackColor = SurfaceElevated
+                )
+            }
+
+            // Forensic Telemetry Rows
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                MetadataRow(
+                    label = "Error Level Analysis (ELA)",
+                    value = "Peak Ratio %.2fx".format(java.util.Locale.US, ela)
+                )
+                MetadataRow(
+                    label = "Spatial Noise Uniformity",
+                    value = if (noise > 0.5f) "Outlier Variance Detected" else "Uniform Noise Floor"
+                )
+                MetadataRow(
+                    label = "Boundary Discontinuity",
+                    value = if (edge > 0.55f) "Splicing Edges Found" else "Continuous Gradients"
+                )
+                MetadataRow(
+                    label = "Viewport Geometry",
+                    value = if (layoutAnomaly) "Non-standard Aspect Ratio" else "Standard Mobile Display"
+                )
+            }
+
+            // Flagged indicators list
+            if (indicators.isNotEmpty()) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (isForged) SyntheticRedContainer.copy(alpha = 0.25f) else SurfaceElevated)
+                        .padding(12.dp)
+                ) {
+                    Text(
+                        text = "FORENSIC FINDINGS:",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isForged) SyntheticRed else CyberCyan,
+                        fontWeight = FontWeight.Bold
+                    )
+                    indicators.forEach { item ->
+                        Text(
+                            text = "• $item",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextPrimary,
+                            fontSize = 12.sp,
+                            lineHeight = 16.sp
+                        )
+                    }
                 }
             }
         }

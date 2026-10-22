@@ -128,12 +128,12 @@ fun HeatmapViewer(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = "Uniform (Natural)",
+                        text = "Uniform (no localised anomaly)",
                         style = MaterialTheme.typography.labelSmall,
                         color = TextTertiary
                     )
                     Text(
-                        text = "Discontinuity (Altered)",
+                        text = "Discontinuity (localised anomaly)",
                         style = MaterialTheme.typography.labelSmall,
                         color = TextTertiary
                     )
