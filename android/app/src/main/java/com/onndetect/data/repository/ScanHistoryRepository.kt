@@ -78,6 +78,22 @@ class ScanHistoryRepository @Inject constructor(private val dao: ScanHistoryDao)
                         put("flags", JSONArray(kyc.flags))
                     })
                 }
+                result.voiceMatchReport?.let { vmr ->
+                    put("voiceMatch", JSONObject().apply {
+                        put("hasEnrolledProfiles", vmr.hasEnrolledProfiles)
+                        put("isMatch", vmr.isMatch)
+                        vmr.matchedContactName?.let { put("matchedContactName", it) }
+                        vmr.matchedRelationship?.let { put("matchedRelationship", it) }
+                        vmr.matchedProfileId?.let { put("matchedProfileId", it) }
+                        put("maxSimilarity", vmr.maxSimilarity)
+                        put("threshold", vmr.threshold)
+                        put("confidence", vmr.confidence.name)
+                        put("flags", JSONArray(vmr.flags))
+                        val scoresObj = JSONObject()
+                        vmr.candidateScores.forEach { (k, v) -> scoresObj.put(k, v) }
+                        put("candidateScores", scoresObj)
+                    })
+                }
             }.toString(),
         )
     }

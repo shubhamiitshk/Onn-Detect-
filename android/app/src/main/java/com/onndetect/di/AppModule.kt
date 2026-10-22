@@ -53,4 +53,13 @@ object AppModule {
     @Singleton
     fun provideScanHistoryRepository(dao: ScanHistoryDao) =
         ScanHistoryRepository(dao)
+
+    @Provides
+    @Singleton
+    fun provideVoiceVaultDatabase(@ApplicationContext context: Context): com.onndetect.data.local.VoiceVaultDatabase =
+        com.onndetect.data.local.VoiceVaultDatabase.create(context)
+
+    @Provides
+    fun provideVoiceProfileDao(db: com.onndetect.data.local.VoiceVaultDatabase): com.onndetect.data.local.VoiceProfileDao =
+        db.voiceProfileDao()
 }

@@ -33,6 +33,8 @@ class ScannerViewModel @Inject constructor(
     private val audioClassifier: AudioClassifier,
     private val videoAnalyzer: VideoForensicAnalyzer,
     private val historyRepository: ScanHistoryRepository,
+    private val speakerVerifier: com.onndetect.detection.audio.SpeakerVerifier,
+    private val voiceVaultRepository: com.onndetect.data.repository.VoiceVaultRepository,
     @param:ApplicationContext private val appContext: Context,
     private val savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
@@ -139,6 +141,20 @@ class ScannerViewModel @Inject constructor(
     private suspend fun scanAudio(uri: Uri, mediaSha256: String) {
         val started = SystemClock.elapsedRealtime()
         val v = runInterruptible(Dispatchers.Default) { audioClassifier.analyze(uri) { stage -> _state.update { it.copy(stage = stage) } } }
+        val voiceMatch = runCatching {
+            val profiles = voiceVaultRepository.getAllProfilesList()
+            if (profiles.isNotEmpty()) {
+                val pcm = com.onndetect.detection.audio.AudioDecoder(appContext).decodeMono16k(uri)
+                speakerVerifier.matchAgainstVault(pcm, profiles)
+            } else {
+                com.onndetect.detection.audio.VoiceMatchReport(
+                    hasEnrolledProfiles = false,
+                    isMatch = false,
+                    confidence = com.onndetect.detection.audio.VoiceMatchConfidence.NO_PROFILES_ENROLLED,
+                    flags = listOf("No family voiceprints currently enrolled in Safe-Voice Vault")
+                )
+            }
+        }.getOrNull()
         finish(ScanResult(UUID.randomUUID().toString(), ScanMode.AUDIO_ONLY, System.currentTimeMillis(),
             v.score, v.isAiGenerated, 0f, SignalBreakdown(-1f,-1f,-1f,-1f,-1f,-1f,v.score,-1f,-1f),
             null, null, QualityInfo(0,false,null,false,false), SystemClock.elapsedRealtime() - started,
@@ -148,7 +164,8 @@ class ScannerViewModel @Inject constructor(
             decisionThreshold = v.threshold, analyzedDurationMs = v.analyzedDurationMs, totalDurationMs = v.totalDurationMs,
             mediaSha256 = mediaSha256,
             analyzedTimestampsMs = v.analyzedTimestampsMs, modelVersion = v.modelVersion,
-            preprocessingVersion = v.preprocessingVersion, calibrationVersion = v.calibrationVersion))
+            preprocessingVersion = v.preprocessingVersion, calibrationVersion = v.calibrationVersion,
+            voiceMatchReport = voiceMatch))
     }
     private suspend fun scanVideo(uri: Uri, mediaSha256: String) {
         val started = SystemClock.elapsedRealtime()
@@ -158,7 +175,7 @@ class ScannerViewModel @Inject constructor(
             com.onndetect.detection.kyc.VirtualCameraDetector().inspect(appContext, o.temporalScore)
         }.getOrNull()
         finish(ScanResult(UUID.randomUUID().toString(), ScanMode.VIDEO_ONLY, System.currentTimeMillis(), o.overallScore,
-            verdict == DetectionVerdict.SYNTHETIC, 0f, SignalBreakdown(o.semanticScore,o.srmScore,o.fftScore,o.klScore,-1f,-1f,o.audioScore,o.temporalScore,-1f),
+            verdict == DetectionVerdict.SYNTHETIC, 0f, SignalBreakdown(o.semanticScore,o.srmScore,o.fftScore,o.klScore,-1f,-1f,o.audioScore,o.temporalScore,-1f, landmarkJitter = o.landmarkJitter),
             null, null, QualityInfo(minOf(o.width,o.height),true,null,false,false), SystemClock.elapsedRealtime() - started,
             status = o.status, verdict = verdict, reason = o.reason, modelValidated = o.modelValidated,
             decisionThreshold = o.decisionThreshold, modelVersion = o.modelVersion,

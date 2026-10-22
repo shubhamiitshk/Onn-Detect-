@@ -134,6 +134,35 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = hiltView
             }
         }
 
+        // Family Safe-Voice Vault Button
+        OutlinedButton(
+            onClick = { navController.navigate("voice_vault") },
+            shape = RoundedCornerShape(14.dp),
+            colors = ButtonDefaults.outlinedButtonColors(
+                containerColor = SurfaceCard,
+                contentColor = TextPrimary
+            ),
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp,
+                Brush.horizontalGradient(listOf(BorderSubtle, BorderLight))
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("🛡️", fontSize = 16.sp)
+                Text(
+                    text = "Family Safe-Voice Vault",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        }
+
         // Privacy Guarantee Card
         PrivacyGuaranteeCard()
     }

@@ -92,6 +92,24 @@ object PipelineModule {
 
     @Provides
     @Singleton
+    fun provideBioLipLandmarkAnalyzer(): com.onndetect.detection.visual.BioLipLandmarkAnalyzer =
+        com.onndetect.detection.visual.BioLipLandmarkAnalyzer()
+
+    @Provides
+    @Singleton
+    fun provideC2PATrustStore(): com.onndetect.detection.provenance.C2PATrustStore =
+        com.onndetect.detection.provenance.C2PATrustStore()
+
+    @Provides
+    @Singleton
+    fun provideC2PAVerifier(
+        checker: com.onndetect.detection.provenance.C2PAManifestChecker,
+        trustStore: com.onndetect.detection.provenance.C2PATrustStore,
+    ): com.onndetect.detection.provenance.C2PAVerifier =
+        com.onndetect.detection.provenance.C2PAVerifier(checker, trustStore)
+
+    @Provides
+    @Singleton
     fun provideVideoForensicAnalyzer(
         @ApplicationContext context: Context,
         videoDecoder: VideoDecoder,
@@ -101,8 +119,10 @@ object PipelineModule {
         metaClassifier: XGBoostMetaClassifier,
         audioClassifier: AudioClassifier,
         vfmProbe: VfmProbeAnalyzer,
+        bioLipAnalyzer: com.onndetect.detection.visual.BioLipLandmarkAnalyzer,
     ) = VideoForensicAnalyzer(
         context, videoDecoder, srmAnalyzer, fftAnalyzer,
         klAnalyzer, metaClassifier, audioClassifier, vfmProbe,
+        bioLipAnalyzer,
     )
 }

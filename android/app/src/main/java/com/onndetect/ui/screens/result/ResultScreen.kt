@@ -226,6 +226,12 @@ fun AssessmentDetails(
         VirtualCameraShieldCard(kycInjection = kycInjection)
     }
 
+    // 4.40. Family Safe-Voice Vault Match Card
+    val voiceMatch = remember(evidence) { evidence.optJSONObject("voiceMatch") }
+    if (voiceMatch != null) {
+        VoiceVaultMatchCard(voiceMatch = voiceMatch)
+    }
+
     // 4.5. Hardware Forensic Receipt Card (StrongBox / TEE)
     ForensicReceiptCard(e = e, evidence = evidence, onExportReceipt = onExportReceipt)
 
@@ -1198,6 +1204,186 @@ private fun VirtualCameraShieldCard(kycInjection: JSONObject) {
 
                     Text(
                         text = stringResource(R.string.kyc_hardware_caveat),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextTertiary,
+                        lineHeight = 16.sp
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun VoiceVaultMatchCard(voiceMatch: JSONObject) {
+    val hasEnrolled = voiceMatch.optBoolean("hasEnrolledProfiles", false)
+    val isMatch = voiceMatch.optBoolean("isMatch", false)
+    val matchedName = voiceMatch.optString("matchedContactName", "").takeIf { it.isNotBlank() }
+    val relationship = voiceMatch.optString("matchedRelationship", "").takeIf { it.isNotBlank() }
+    val similarity = voiceMatch.optDouble("maxSimilarity", 0.0).toFloat()
+    val threshold = voiceMatch.optDouble("threshold", 0.80).toFloat()
+    val flagsArray = voiceMatch.optJSONArray("flags")
+    val flags = remember(flagsArray) {
+        val list = mutableListOf<String>()
+        if (flagsArray != null) {
+            for (i in 0 until flagsArray.length()) {
+                list.add(flagsArray.getString(i))
+            }
+        }
+        list
+    }
+
+    val statusColor = when {
+        isMatch -> CyberCyan
+        hasEnrolled -> SyntheticRed
+        else -> TextTertiary
+    }
+    val statusBg = when {
+        isMatch -> CyberCyan.copy(alpha = 0.15f)
+        hasEnrolled -> SyntheticRedContainer.copy(alpha = 0.3f)
+        else -> SurfaceElevated
+    }
+    val statusBorder = when {
+        isMatch -> CyberCyan.copy(alpha = 0.4f)
+        hasEnrolled -> SyntheticRed.copy(alpha = 0.6f)
+        else -> BorderSubtle
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(SurfaceCard)
+            .border(1.dp, BorderSubtle, RoundedCornerShape(20.dp))
+            .padding(20.dp)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(if (isMatch) "🎙️🛡️" else "🎙️", fontSize = 16.sp)
+                    Text(
+                        text = stringResource(R.string.voice_vault_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = TextPrimary,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(statusBg)
+                        .border(1.dp, statusBorder, RoundedCornerShape(6.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = when {
+                            isMatch -> stringResource(R.string.voice_vault_match_verified)
+                            hasEnrolled -> stringResource(R.string.voice_vault_mismatch)
+                            else -> stringResource(R.string.voice_vault_unregistered)
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = statusColor,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            Text(
+                text = when {
+                    isMatch -> "Acoustic cepstral dynamics match enrolled family member '${matchedName ?: "Family"}' (${relationship ?: "Contact"}). High likelihood of genuine speech."
+                    hasEnrolled -> "Acoustic voiceprint does NOT match any enrolled family member (similarity ${(similarity * 100).toInt()}% < ${(threshold * 100).toInt()}% threshold). Caution advised if caller claims to be a relative."
+                    else -> "No family voiceprints currently enrolled. Enroll family members in the Safe-Voice Vault from the home screen to automatically verify incoming voice notes."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = TextSecondary,
+                lineHeight = 18.sp
+            )
+
+            if (hasEnrolled) {
+                // Similarity Progress Bar
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "Acoustic Similarity",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = TextTertiary
+                        )
+                        Text(
+                            text = "${(similarity * 100).toInt()}%",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = statusColor,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    LinearProgressIndicator(
+                        progress = { similarity.coerceIn(0f, 1f) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(6.dp)
+                            .clip(RoundedCornerShape(3.dp)),
+                        color = statusColor,
+                        trackColor = SurfaceElevated
+                    )
+                }
+
+                // Telemetry rows
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (isMatch && matchedName != null) {
+                        MetadataRow(
+                            label = "Matched Contact",
+                            value = "$matchedName (${relationship ?: "Family"})"
+                        )
+                    }
+                    MetadataRow(
+                        label = "Verification Threshold",
+                        value = "${(threshold * 100).toInt()}% Cosine Similarity"
+                    )
+                    MetadataRow(
+                        label = "Feature Representation",
+                        value = "160-d LFCC Dynamic Statistics"
+                    )
+                }
+            }
+
+            // Flagged notices
+            if (flags.isNotEmpty()) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (!isMatch && hasEnrolled) SyntheticRedContainer.copy(alpha = 0.25f) else SurfaceElevated)
+                        .padding(12.dp)
+                ) {
+                    Text(
+                        text = "VAULT TELEMETRY:",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (!isMatch && hasEnrolled) SyntheticRed else CyberCyan,
+                        fontWeight = FontWeight.Bold
+                    )
+                    flags.forEach { item ->
+                        Text(
+                            text = "• $item",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextPrimary,
+                            fontSize = 12.sp,
+                            lineHeight = 16.sp
+                        )
+                    }
+
+                    Text(
+                        text = stringResource(R.string.voice_vault_caveat),
                         style = MaterialTheme.typography.bodySmall,
                         color = TextTertiary,
                         lineHeight = 16.sp

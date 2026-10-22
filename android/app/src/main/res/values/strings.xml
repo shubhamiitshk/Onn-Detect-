@@ -44,6 +44,12 @@
     <string name="kyc_tampering_detected">INJECTION INDICATORS PRESENT</string>
     <string name="kyc_not_assessed">NOT ASSESSED</string>
     <string name="kyc_hardware_caveat">On-device camera HAL inspection against virtual drivers, memory hooks and emulator injection. The score is a RELATIVE indicator score, not a probability, and it is not calibrated: a flagged session is a signal to REVIEW, not a basis for an automatic rejection. Finding nothing is not proof of a genuine device. Complete regulatory compliance requires server-side attestation.</string>
+    <!-- Family Safe-Voice Vault strings -->
+    <string name="voice_vault_title">FAMILY SAFE-VOICE VAULT</string>
+    <string name="voice_vault_match_verified">VERIFIED FAMILY VOICEPRINT</string>
+    <string name="voice_vault_mismatch">VOICE MISMATCH / UNENROLLED</string>
+    <string name="voice_vault_unregistered">NO ENROLLED VOICEPRINTS</string>
+    <string name="voice_vault_caveat">On-device acoustic voiceprint comparison against locally enrolled biometric templates. Matches are computed offline using 160-dimensional cepstral dynamics. Heavy audio compression, codecs, or background noise may reduce similarity.</string>
     <string name="signals_title">Evaluated signals</string>
     <string name="signal_semantic">Semantic appearance probe</string>
     <string name="signal_srm">Image residual model</string>

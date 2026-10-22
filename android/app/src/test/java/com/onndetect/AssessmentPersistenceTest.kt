@@ -68,4 +68,29 @@ class AssessmentPersistenceTest {
         assertEquals(0.85f, kycJson.getDouble("injectionScore").toFloat(), 0.001f)
         assertEquals(2, kycJson.getJSONArray("flags").length())
     }
+    @Test fun evidencePersistsVoiceMatchReport() {
+        val voiceMatch = com.onndetect.detection.audio.VoiceMatchReport(
+            hasEnrolledProfiles = true,
+            isMatch = true,
+            matchedContactName = "Mom",
+            matchedRelationship = "Mother",
+            matchedProfileId = "mom-id",
+            maxSimilarity = 0.92f,
+            threshold = 0.80f,
+            confidence = com.onndetect.detection.audio.VoiceMatchConfidence.HIGH_MATCH,
+            candidateScores = mapOf("mom-id" to 0.92f),
+            flags = listOf("High-confidence acoustic match with enrolled profile 'Mom'")
+        )
+        val entry = ScanHistoryRepository.toEntry(result().copy(voiceMatchReport = voiceMatch))
+        val json = JSONObject(entry.evidenceJson!!)
+        assertTrue(json.has("voiceMatch"))
+        val vmJson = json.getJSONObject("voiceMatch")
+        assertTrue(vmJson.getBoolean("hasEnrolledProfiles"))
+        assertTrue(vmJson.getBoolean("isMatch"))
+        assertEquals("Mom", vmJson.getString("matchedContactName"))
+        assertEquals("Mother", vmJson.getString("matchedRelationship"))
+        assertEquals(0.92f, vmJson.getDouble("maxSimilarity").toFloat(), 0.001f)
+        assertEquals("HIGH_MATCH", vmJson.getString("confidence"))
+        assertEquals(1, vmJson.getJSONArray("flags").length())
+    }
 }

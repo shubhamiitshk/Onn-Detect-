@@ -67,7 +67,7 @@ class LFCCExtractor(
     private val dctMatrix = buildDctOrtho()
 
     /** @return tensor shaped [1][T][nLfcc][1], ready for the LCNN tflite. */
-    private fun extractFlat(pcm: FloatArray, checkStop: () -> Unit = {}): FloatArray {
+    internal fun extractFlat(pcm: FloatArray, checkStop: () -> Unit = {}): FloatArray {
         checkStop()
         require(pcm.all { it.isFinite() }) { "Non-finite PCM" }
         require(pcm.size > nFft) { "signal too short for one analysis frame" }

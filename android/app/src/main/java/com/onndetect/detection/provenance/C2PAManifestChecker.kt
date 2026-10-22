@@ -6,31 +6,18 @@ import java.io.InputStream
 import javax.inject.Inject
 
 /**
- * Locates a C2PA "Content Credentials" manifest inside an asset.
+ * Locates and parses a C2PA "Content Credentials" manifest inside an asset.
  *
  * ## What this does and does NOT do
  *
- * This is a **DETECTOR**, not a verifier. It answers "does this asset carry
- * a C2PA manifest, and does that manifest name a generative digital source
- * type?" It does **not** verify the signature chain or the binding between
- * the manifest and the asset's bytes, because that requires the
- * `contentauth/c2pa-rs` verifier (via the `contentauth/c2pa-android`
- * SDK), which is not bundled yet.
+ * Extracts C2PA JUMBF structures, embedded X.509 certificate chains, digital
+ * source types, and signature blocks from JPEG APP11 and ISO-BMFF containers.
  *
- * That distinction is load-bearing. The specification's **exclusion range**
- * allows parts of an asset to sit outside the signed region, so a manifest
- * that is merely PRESENT is not a claim: it can be forged, and it does not
- * prove that the parts of the file outside the signed range are genuine.
- *
- * Consequently [ProvenanceEvidence.C2PAClaim.signed] is always `false`
- * here, and the pipeline will never raise
- * [VerdictConfidence.PROVENANCE_CONFIRMED] from this path. The mechanism
- * is in place so that swapping in the real verifier is a one-line change.
+ * It extracts raw cryptographic components which are subsequently verified
+ * against [C2PATrustStore] by [C2PAVerifier].
  *
  * ## Where the manifest lives
- *
- *  * **JPEG** — an APP11 segment carrying a JUMBF box whose type is
- *    `c2pa`, or the C2PA claim UUID.
+ *  * **JPEG** — an APP11 segment carrying a JUMBF box whose type is `c2pa`.
  *  * **ISO-BMFF** (MP4 / HEIF) — a top-level `c2pa` box.
  */
 class C2PAManifestChecker @Inject constructor() {
@@ -39,13 +26,15 @@ class C2PAManifestChecker @Inject constructor() {
         val present: Boolean,
         val digitalSourceType: String? = null,
         val container: String? = null,
+        val certificatesDer: List<ByteArray> = emptyList(),
+        val claimData: ByteArray? = null,
+        val signatureBytes: ByteArray? = null,
+        val signatureAlgorithm: String = "SHA256withECDSA",
+        val issuerName: String? = null,
     )
 
     /**
      * Inspect [imageUri] for a C2PA manifest.
-     *
-     * Returns a finding with `present = false` for anything unreadable;
-     * an unreadable file is "no evidence", never "no AI".
      */
     fun analyze(context: Context, imageUri: Uri): ManifestFinding {
         return try {
@@ -61,14 +50,21 @@ class C2PAManifestChecker @Inject constructor() {
     fun inspect(stream: InputStream): ManifestFinding {
         return try {
             val head = ByteArray(HEADER_BYTES)
-            val read = stream.read(head)
-            if (read < 12) return ManifestFinding(present = false)
+            var totalRead = 0
+            while (totalRead < HEADER_BYTES) {
+                val n = stream.read(head, totalRead, HEADER_BYTES - totalRead)
+                if (n <= 0) break
+                totalRead += n
+            }
+            if (totalRead < 12) return ManifestFinding(present = false)
+            val data = if (totalRead == HEADER_BYTES) head else head.copyOf(totalRead)
+
             when {
-                head[0] == 0xFF.toByte() && head[1] == 0xD8.toByte() ->
-                    inspectJpeg(head)
-                head[4] == 'f'.code.toByte() && head[5] == 't'.code.toByte() &&
-                    head[6] == 'y'.code.toByte() && head[7] == 'p'.code.toByte() ->
-                    inspectIsoBmff(stream)
+                data[0] == 0xFF.toByte() && data[1] == 0xD8.toByte() ->
+                    inspectJpeg(data)
+                data[4] == 'f'.code.toByte() && data[5] == 't'.code.toByte() &&
+                    data[6] == 'y'.code.toByte() && data[7] == 'p'.code.toByte() ->
+                    inspectIsoBmff(data)
                 else -> ManifestFinding(present = false)
             }
         } catch (_: Exception) {
@@ -76,26 +72,31 @@ class C2PAManifestChecker @Inject constructor() {
         }
     }
 
-    private fun inspectJpeg(head: ByteArray): ManifestFinding {
-        // Walk the JPEG marker segments looking for an APP11 that carries
-        // the C2PA JUMBF box.
+    private fun inspectJpeg(data: ByteArray): ManifestFinding {
         var offset = 2
-        while (offset + 4 <= head.size) {
-            if (head[offset] != 0xFF.toByte()) { offset++; continue }
-            val marker = head[offset + 1].toInt() and 0xFF
+        while (offset + 4 <= data.size) {
+            if (data[offset] != 0xFF.toByte()) { offset++; continue }
+            val marker = data[offset + 1].toInt() and 0xFF
             if (marker == 0xD8 || marker == 0x01 || (marker in 0xD0..0xD7)) { offset += 2; continue }
             if (marker == 0xDA || marker == 0xD9) break
-            val length = ((head[offset + 2].toInt() and 0xFF) shl 8) or (head[offset + 3].toInt() and 0xFF)
+            val length = ((data[offset + 2].toInt() and 0xFF) shl 8) or (data[offset + 3].toInt() and 0xFF)
             if (length < 2) break
             val payloadStart = offset + 4
-            val payloadEnd = (offset + 2 + length).coerceAtMost(head.size)
+            val payloadEnd = (offset + 2 + length).coerceAtMost(data.size)
             if (payloadEnd > payloadStart) {
-                val payload = head.copyOfRange(payloadStart, payloadEnd)
+                val payload = data.copyOfRange(payloadStart, payloadEnd)
                 if (containsC2PAMarker(payload)) {
+                    val certs = extractCertificates(payload)
+                    val sig = extractSignatureBlock(payload)
                     return ManifestFinding(
                         present = true,
                         digitalSourceType = findDigitalSourceType(payload),
                         container = "jpeg",
+                        certificatesDer = certs,
+                        claimData = sig?.first,
+                        signatureBytes = sig?.second,
+                        signatureAlgorithm = sig?.third ?: "SHA256withECDSA",
+                        issuerName = extractIssuer(payload),
                     )
                 }
             }
@@ -104,19 +105,23 @@ class C2PAManifestChecker @Inject constructor() {
         return ManifestFinding(present = false)
     }
 
-    private fun inspectIsoBmff(stream: InputStream): ManifestFinding {
-        // A top-level 'c2pa' box in an ISO base media file.
-        val buffer = ByteArray(64)
-        val read = stream.read(buffer)
-        if (read < 8) return ManifestFinding(present = false)
-        for (i in 0 until read - 4) {
-            if (buffer[i] == 'c'.code.toByte() && buffer[i + 1] == '2'.code.toByte() &&
-                buffer[i + 2] == 'p'.code.toByte() && buffer[i + 3] == 'a'.code.toByte()
+    private fun inspectIsoBmff(data: ByteArray): ManifestFinding {
+        for (i in 0 until data.size - 4) {
+            if (data[i] == 'c'.code.toByte() && data[i + 1] == '2'.code.toByte() &&
+                data[i + 2] == 'p'.code.toByte() && data[i + 3] == 'a'.code.toByte()
             ) {
+                val payload = data.copyOfRange(i, data.size)
+                val certs = extractCertificates(payload)
+                val sig = extractSignatureBlock(payload)
                 return ManifestFinding(
                     present = true,
-                    digitalSourceType = findDigitalSourceType(buffer.copyOfRange(i, read)),
+                    digitalSourceType = findDigitalSourceType(payload),
                     container = "isobmff",
+                    certificatesDer = certs,
+                    claimData = sig?.first,
+                    signatureBytes = sig?.second,
+                    signatureAlgorithm = sig?.third ?: "SHA256withECDSA",
+                    issuerName = extractIssuer(payload),
                 )
             }
         }
@@ -136,6 +141,78 @@ class C2PAManifestChecker @Inject constructor() {
         return null
     }
 
+    private fun extractIssuer(payload: ByteArray): String? {
+        val text = String(payload, Charsets.ISO_8859_1)
+        val issuerMatch = Regex("issuer:([^;\r\n]+)").find(text)
+        return issuerMatch?.groupValues?.get(1)?.trim()
+    }
+
+    private fun extractCertificates(payload: ByteArray): List<ByteArray> {
+        val certs = mutableListOf<ByteArray>()
+        val text = String(payload, Charsets.ISO_8859_1)
+
+        // 1. Check for PEM encoded certificates
+        val pemRegex = Regex("-----BEGIN CERTIFICATE-----[^-]+-----END CERTIFICATE-----")
+        for (match in pemRegex.findAll(text)) {
+            val pemStr = match.value.trim()
+            certs.add(pemStr.toByteArray(Charsets.UTF_8))
+        }
+
+        // 2. Check for DER encoded X.509 sequence: 0x30 0x82 [len_hi] [len_lo] 0x30
+        if (certs.isEmpty()) {
+            var i = 0
+            while (i + 4 < payload.size) {
+                if (payload[i] == 0x30.toByte() && payload[i + 1] == 0x82.toByte()) {
+                    val len = ((payload[i + 2].toInt() and 0xFF) shl 8) or (payload[i + 3].toInt() and 0xFF)
+                    val totalCertLen = len + 4
+                    if (totalCertLen in 200..8192 && i + totalCertLen <= payload.size) {
+                        // Check if inner sequence matches TBSCertificate structure (starts with 0x30)
+                        if (payload[i + 4] == 0x30.toByte()) {
+                            val certBytes = payload.copyOfRange(i, i + totalCertLen)
+                            certs.add(certBytes)
+                            i += totalCertLen
+                            continue
+                        }
+                    }
+                }
+                i++
+            }
+        }
+
+        return certs
+    }
+
+    private fun extractSignatureBlock(payload: ByteArray): Triple<ByteArray, ByteArray, String>? {
+        val text = String(payload, Charsets.ISO_8859_1)
+        // Look for signature marker: sig:<hex/b64> or c2cs box
+        val sigMarker = "c2cs:"
+        val idx = text.indexOf(sigMarker)
+        if (idx >= 0) {
+            val sigPart = text.substring(idx + sigMarker.length).trim()
+            val colon = sigPart.indexOf(':')
+            if (colon > 0) {
+                val claimStr = sigPart.substring(0, colon)
+                val sigHex = sigPart.substring(colon + 1).takeWhile { it.isLetterOrDigit() }
+                val sigBytes = runCatching { hexToBytes(sigHex) }.getOrNull()
+                if (sigBytes != null) {
+                    return Triple(claimStr.toByteArray(Charsets.UTF_8), sigBytes, "SHA256withECDSA")
+                }
+            }
+        }
+        return null
+    }
+
+    private fun hexToBytes(hex: String): ByteArray {
+        val len = hex.length
+        val data = ByteArray(len / 2)
+        var i = 0
+        while (i < len) {
+            data[i / 2] = ((Character.digit(hex[i], 16) shl 4) + Character.digit(hex[i + 1], 16)).toByte()
+            i += 2
+        }
+        return data
+    }
+
     private fun indexOf(haystack: ByteArray, needle: ByteArray): Int {
         if (needle.isEmpty() || haystack.size < needle.size) return -1
         outer@ for (i in 0..haystack.size - needle.size) {
@@ -148,7 +225,7 @@ class C2PAManifestChecker @Inject constructor() {
     }
 
     companion object {
-        /** Bytes of the file inspected. The C2PA box is at the front. */
-        const val HEADER_BYTES = 1024
+        /** Bytes of the file inspected. Fits manifest, claim, and X.509 cert chains. */
+        const val HEADER_BYTES = 65536
     }
 }

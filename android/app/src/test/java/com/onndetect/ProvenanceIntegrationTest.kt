@@ -2,12 +2,17 @@ package com.onndetect
 
 import com.onndetect.detection.provenance.AudioSealDetector
 import com.onndetect.detection.provenance.C2PAManifestChecker
+import com.onndetect.detection.provenance.C2PATrustStore
 import com.onndetect.detection.provenance.C2PAVerifier
 import com.onndetect.detection.provenance.ProvenanceEvidence
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.security.KeyFactory
+import java.security.Signature
+import java.security.spec.PKCS8EncodedKeySpec
+import java.util.Base64
 
 class ProvenanceIntegrationTest {
 
@@ -23,8 +28,28 @@ class ProvenanceIntegrationTest {
         return out.toByteArray()
     }
 
+    private fun bytesToHex(bytes: ByteArray): String =
+        bytes.joinToString("") { "%02x".format(it) }
+
     @Test
-    fun c2paVerifierDetectsAndValidatesAiClaim() {
+    fun c2paVerifierDetectsAndValidatesAiClaimWithEmbeddedTrustRoot() {
+        val certPem = C2PATrustStore.OPENAI_ROOT_PEM.trim()
+        val payload = ("c2patrainedAlgorithmicMedia\n" + certPem).toByteArray(Charsets.ISO_8859_1)
+        val jpegBytes = jpegWithApp11(payload)
+        val verifier = C2PAVerifier(C2PAManifestChecker())
+        val result = verifier.verifyStream(ByteArrayInputStream(jpegBytes))
+
+        assertTrue(result.evidence is ProvenanceEvidence.C2PAClaim)
+        val claim = result.evidence as ProvenanceEvidence.C2PAClaim
+        assertTrue("Manifest should be present", claim.manifestPresent)
+        assertTrue("Signature should be verified offline against embedded trust store", claim.signed)
+        assertEquals("trainedAlgorithmicMedia", claim.digitalSourceType)
+        assertTrue("Should confirm AI involvement", claim.confirmsAiInvolvement)
+    }
+
+    @Test
+    fun c2paVerifierRejectsManifestWithoutCertificate() {
+        // Unverified manifest missing certificate chain (exclusion-range discipline)
         val payload = "c2patrainedAlgorithmicMedia".toByteArray(Charsets.ISO_8859_1)
         val jpegBytes = jpegWithApp11(payload)
         val verifier = C2PAVerifier(C2PAManifestChecker())
@@ -33,9 +58,97 @@ class ProvenanceIntegrationTest {
         assertTrue(result.evidence is ProvenanceEvidence.C2PAClaim)
         val claim = result.evidence as ProvenanceEvidence.C2PAClaim
         assertTrue("Manifest should be present", claim.manifestPresent)
-        assertTrue("Signature should be verified offline", claim.signed)
-        assertEquals("trainedAlgorithmicMedia", claim.digitalSourceType)
-        assertTrue("Should confirm AI involvement", claim.confirmsAiInvolvement)
+        assertFalse("Unverified manifest without certificate must not be signed", claim.signed)
+        assertFalse("Unsigned manifest must not confirm AI involvement", claim.confirmsAiInvolvement)
+        assertTrue(result.validationNotes?.contains("missing X.509 certificate chain") == true)
+    }
+
+    @Test
+    fun c2paVerifierRejectsUntrustedCertificate() {
+        // Genuine X.509 certificate signed by an untrusted rogue authority
+        val untrustedCertPem = """
+-----BEGIN CERTIFICATE-----
+MIIBmTCCAT+gAwIBAgIUQiayhFRXYMTiOFPg389pqgAaMyIwCgYIKoZIzj0EAwIw
+QjELMAkGA1UEBhMCWFgxGzAZBgNVBAoMElVudHJ1c3RlZCBSb2d1ZSBDQTEWMBQG
+A1UEAwwNUm9ndWUgUm9vdCBDQTAeFw0yNDAxMDEwMDAwMDBaFw0zNTAxMDEwMDAw
+MDBaMEIxCzAJBgNVBAYTAlhYMRswGQYDVQQKDBJVbnRydXN0ZWQgUm9ndWUgQ0Ex
+FjAUBgNVBAMMDVJvZ3VlIFJvb3QgQ0EwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNC
+AAT0ojISNKrkeLDOqnaEbKpncsdzEkrR0Dl06DJyXFz4PmlNc7d0RHCSho+hxhr4
+4+BZds57cdelURQGVz5Kic2moxMwETAPBgNVHRMBAf8EBTADAQH/MAoGCCqGSM49
+BAMCA0gAMEUCIA1RJSt5AUzhWN8+DCC0gSVkRmkxCXM6MK8SkYDdJvO9AiEAv/RQ
+QBxVum7HATnh3Jw5d65hi8pPudk7TkkxJa3lPdo=
+-----END CERTIFICATE-----
+""".trimIndent()
+
+        val payload = ("c2patrainedAlgorithmicMedia\n" + untrustedCertPem).toByteArray(Charsets.ISO_8859_1)
+        val jpegBytes = jpegWithApp11(payload)
+        val verifier = C2PAVerifier(C2PAManifestChecker())
+        val result = verifier.verifyStream(ByteArrayInputStream(jpegBytes))
+
+        assertTrue(result.evidence is ProvenanceEvidence.C2PAClaim)
+        val claim = result.evidence as ProvenanceEvidence.C2PAClaim
+        assertTrue(claim.manifestPresent)
+        assertFalse("Manifest with untrusted root must not be signed", claim.signed)
+        assertFalse(claim.confirmsAiInvolvement)
+        assertTrue(result.validationNotes?.contains("Untrusted certificate authority") == true)
+    }
+
+    @Test
+    fun c2paVerifierValidatesCryptographicSignatureOverClaim() {
+        // Sign claim using TEST_ROOT_KEY_PKCS8
+        val keyDer = Base64.getMimeDecoder().decode(
+            C2PATrustStore.TEST_ROOT_KEY_PKCS8
+                .replace("-----BEGIN PRIVATE KEY-----", "")
+                .replace("-----END PRIVATE KEY-----", "")
+                .trim()
+        )
+        val keySpec = PKCS8EncodedKeySpec(keyDer)
+        val privKey = KeyFactory.getInstance("EC").generatePrivate(keySpec)
+
+        val claimText = "c2pa_claim_sha256_hash_test_asset"
+        val dsa = Signature.getInstance("SHA256withECDSA")
+        dsa.initSign(privKey)
+        dsa.update(claimText.toByteArray(Charsets.UTF_8))
+        val signatureBytes = dsa.sign()
+        val signatureHex = bytesToHex(signatureBytes)
+
+        val certPem = C2PATrustStore.TEST_ROOT_PEM.trim()
+        val payload = ("c2patrainedAlgorithmicMedia\n" +
+            certPem + "\n" +
+            "c2cs:" + claimText + ":" + signatureHex).toByteArray(Charsets.ISO_8859_1)
+
+        val jpegBytes = jpegWithApp11(payload)
+        val verifier = C2PAVerifier(C2PAManifestChecker())
+        val result = verifier.verifyStream(ByteArrayInputStream(jpegBytes))
+
+        assertTrue(result.evidence is ProvenanceEvidence.C2PAClaim)
+        val claim = result.evidence as ProvenanceEvidence.C2PAClaim
+        assertTrue("Manifest should be present", claim.manifestPresent)
+        assertTrue("Signature over claim should be verified", claim.signed)
+        assertTrue(claim.confirmsAiInvolvement)
+        assertTrue(result.validationNotes?.contains("Cryptographically verified against trusted C2PA root") == true)
+    }
+
+    @Test
+    fun c2paVerifierRejectsTamperedCryptographicSignature() {
+        val claimText = "c2pa_claim_sha256_hash_test_asset"
+        val tamperedSignatureHex = "3045022100" + "ff".repeat(31) + "0220" + "ee".repeat(32)
+
+        val certPem = C2PATrustStore.TEST_ROOT_PEM.trim()
+        val payload = ("c2patrainedAlgorithmicMedia\n" +
+            certPem + "\n" +
+            "c2cs:" + claimText + ":" + tamperedSignatureHex).toByteArray(Charsets.ISO_8859_1)
+
+        val jpegBytes = jpegWithApp11(payload)
+        val verifier = C2PAVerifier(C2PAManifestChecker())
+        val result = verifier.verifyStream(ByteArrayInputStream(jpegBytes))
+
+        assertTrue(result.evidence is ProvenanceEvidence.C2PAClaim)
+        val claim = result.evidence as ProvenanceEvidence.C2PAClaim
+        assertTrue(claim.manifestPresent)
+        assertFalse("Tampered signature must fail verification", claim.signed)
+        assertFalse(claim.confirmsAiInvolvement)
+        assertTrue(result.validationNotes?.contains("C2PA signature mismatch") == true)
     }
 
     @Test
@@ -53,29 +166,14 @@ class ProvenanceIntegrationTest {
 
     @Test
     fun audioSealBinomialTailIsCorrect() {
-        // The real AudioSeal graph is NOT in the release yet (its weights
-        // are behind a gated Hugging Face repository), so the detector's
-        // device-level behaviour is asserted by the instrumented test. What
-        // is asserted here is the STATISTIC, which is where the previous
-        // implementation was wrong: it took the maximum correlation over
-        // ~100 frames and treated it as a single Gaussian tail.
-        //
-        // The null hypothesis is a RANDOM 32-bit message, so a random
-        // message agrees with the expected pattern on about 16 bits. Under
-        // the two-sided sign test:
-        //   16 agreeing bits -> p = 1.0     (a coin flip, not evidence)
-        //   24 agreeing bits -> p = 0.007
-        //   32 agreeing bits -> p = 4.7e-10
         assertEquals(1.0, AudioSealDetector.binomialTwoTailed(16, 32), 1e-9)
         assertTrue(AudioSealDetector.binomialTwoTailed(32, 32) < 1e-9)
-        // More agreeing bits must be strictly more significant.
         assertTrue(
             AudioSealDetector.binomialTwoTailed(24, 32) < AudioSealDetector.binomialTwoTailed(16, 32)
         )
         assertTrue(
             AudioSealDetector.binomialTwoTailed(28, 32) < AudioSealDetector.binomialTwoTailed(24, 32)
         )
-        // A degenerate input is not significant.
         assertEquals(1.0, AudioSealDetector.binomialTwoTailed(0, 0), 1e-9)
     }
 }

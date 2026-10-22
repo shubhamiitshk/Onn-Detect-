@@ -75,6 +75,8 @@ data class ScanResult(
     val documentForgeryReport: com.onndetect.detection.document.DocumentForgeryReport? = null,
     /** Video-KYC (V-CIP) camera injection, virtual camera drivers, and live stream tampering report. */
     val kycInjectionReport: com.onndetect.detection.kyc.KycInjectionReport? = null,
+    /** Family Safe-Voice Vault speaker verification and identity matching report. */
+    val voiceMatchReport: com.onndetect.detection.audio.VoiceMatchReport? = null,
 ) {
     init {
         require(overallScore.isFinite() && (overallScore == -1f || overallScore in 0f..1f))
@@ -127,7 +129,9 @@ data class SignalBreakdown(
      * while the pipeline arbitrated on the fusion score, so the card
      * could contradict the headline verdict. -1 = unavailable.
      */
-    val fusionScore: Float = -1f
+    val fusionScore: Float = -1f,
+    /** BioLip perioral facial landmark acceleration jitter (slot 9); -1 = unavailable/faceless. */
+    val landmarkJitter: Float = -1f,
 )
 
 data class ProvenanceInfo(

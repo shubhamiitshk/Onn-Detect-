@@ -19,6 +19,7 @@ object Routes {
     const val SCANNER = "scanner?uri={uri}&mode={mode}"
     const val RESULT = "result/{scanId}"
     const val HISTORY = "history"
+    const val VOICE_VAULT = "voice_vault"
 
     /** The scanner route for a URI, with the URI encoded for the route. */
     fun scanner(uri: String, mode: String): String =
@@ -67,6 +68,10 @@ fun ONNNavGraph(navController: NavHostController, sharedMedia: SharedMedia? = nu
         }
 
         composable(Routes.HISTORY) { HistoryScreen(navController) }
+
+        composable(Routes.VOICE_VAULT) {
+            com.onndetect.ui.screens.enrollment.VoiceEnrollmentScreen(navController)
+        }
 
     }
 }

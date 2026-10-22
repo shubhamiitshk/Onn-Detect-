@@ -52,7 +52,8 @@ class VideoForensicAnalyzer @Inject constructor(private val context: Context,
     private val videoDecoder: VideoDecoder, private val srmAnalyzer: SRMForensicAnalyzer,
     private val fftAnalyzer: FFTSpectralAnalyzer, private val klAnalyzer: KLCooccurrenceAnalyzer,
     private val metaClassifier: XGBoostMetaClassifier, private val audioClassifier: AudioClassifier,
-    private val vfmProbe: com.onndetect.detection.visual.VfmProbeAnalyzer) {
+    private val vfmProbe: com.onndetect.detection.visual.VfmProbeAnalyzer,
+    private val bioLipAnalyzer: com.onndetect.detection.visual.BioLipLandmarkAnalyzer = com.onndetect.detection.visual.BioLipLandmarkAnalyzer()) {
     data class Outcome(val overallScore: Float, val isAiGenerated: Boolean, val confidence: Float,
         val srmScore: Float, val fftScore: Float, val klScore: Float, val flatnessScore: Float,
         val temporalScore: Float, val audioScore: Float, val framesAnalyzed: Int,
@@ -66,7 +67,9 @@ class VideoForensicAnalyzer @Inject constructor(private val context: Context,
          * Mean slot-6 (frozen tower) score across the analysed frames, or -1
          * when the probe did not run.
          */
-        val semanticScore: Float = -1f)
+        val semanticScore: Float = -1f,
+        /** BioLip perioral facial landmark temporal micro-jitter. */
+        val landmarkJitter: Float = DetectionPipeline.NEUTRAL_JITTER)
     companion object {
         /**
          * Minimum adjacent-frame cosine similarity for a frame to inherit a
@@ -195,6 +198,11 @@ class VideoForensicAnalyzer @Inject constructor(private val context: Context,
                 } else {
                     FloatArray(video.frames.size) { Float.NaN }
                 }
+                val bioLip = bioLipAnalyzer.analyzeFrames(video.frames)
+                val landmarkJitter = bioLip.landmarkJitter
+                if (bioLip.hasFace && bioLip.notes != null) {
+                    issues += bioLip.notes
+                }
                 video.frames.forEachIndexed { index, bitmap ->
                     checkProgress()
                     val srm = srmAnalyzer.analyze(bitmap, ::checkProgress)
@@ -231,7 +239,7 @@ class VideoForensicAnalyzer @Inject constructor(private val context: Context,
                                 probe ?: Float.NaN,
                                 DetectionPipeline.NEUTRAL_C2PA,
                                 DetectionPipeline.NEUTRAL_LIP_SYNC,
-                                DetectionPipeline.NEUTRAL_JITTER
+                                landmarkJitter
                             )
                             frameFusionScores += metaClassifier.predict(features)
                         }
@@ -272,13 +280,13 @@ class VideoForensicAnalyzer @Inject constructor(private val context: Context,
                         avg(flatScores), temporal, audioScore, video.frames.size, video.width, video.height,
                         video.durationMs, AnalysisStatus.SUCCESS, note, true, video.timestampsMs, audioDuration,
                         threshold, report.releaseId, report.frontendId, report.releaseId,
-                        avg(semanticScores))
+                        avg(semanticScores), landmarkJitter)
                 }
                 return Outcome(-1f, false, 0f, avg(srmScores), avg(fftScores), avg(klScores), avg(flatScores), temporal,
                     audioScore, video.frames.size, video.width, video.height, video.durationMs,
                     AnalysisStatus.INCONCLUSIVE, (if (!report.validated) report.validationReason else "Insufficient usable video frames") +
                         if (issues.isEmpty()) "" else "; " + issues.distinct().joinToString(), false, video.timestampsMs, audioDuration,
-                    avg(semanticScores))
+                    semanticScore = avg(semanticScores), landmarkJitter = landmarkJitter)
             } finally { video.frames.forEach { if (!it.isRecycled) it.recycle() } }
         } catch (e: CancellationException) { throw e }
         catch (e: Exception) { return failed(AnalysisFailurePolicy.status(e), e.message ?: "Video analysis failed") }
