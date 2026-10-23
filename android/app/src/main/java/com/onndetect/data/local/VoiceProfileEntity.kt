@@ -41,6 +41,14 @@ data class VoiceProfileEntity(
     val sampleSha256: String? = null,
 ) {
     /**
+     * Decrypts the sealed voiceprint using default crypto.
+     * Returns empty array if AAD verification fails (e.g. record tampering).
+     */
+    fun toEmbeddingArray(): FloatArray {
+        return toEmbeddingArray(VoiceVaultCrypto())
+    }
+
+    /**
      * Decrypts the sealed voiceprint using [crypto].
      * Returns empty array if AAD verification fails (e.g. record tampering).
      */
@@ -76,6 +84,36 @@ data class VoiceProfileEntity(
     }
 
     companion object {
+        /**
+         * Creates a VoiceProfileEntity from a raw embedding array (for testing and simple use cases).
+         * Uses default encryption with a generated key.
+         */
+        fun fromEmbeddingArray(
+            id: String,
+            contactName: String,
+            relationship: String,
+            enrolledAtMs: Long,
+            sampleDurationMs: Long,
+            embedding: FloatArray,
+        ): VoiceProfileEntity {
+            // Use default crypto for simplicity in tests
+            val crypto = VoiceVaultCrypto()
+            val enc = crypto.encrypt(embedding, id, contactName)
+            return VoiceProfileEntity(
+                id = id,
+                contactName = contactName,
+                relationship = relationship,
+                enrolledAtMs = enrolledAtMs,
+                sampleDurationMs = sampleDurationMs,
+                encryptedEmbedding = enc.ciphertext,
+                encryptionIv = enc.iv,
+                sampleSha256 = null,
+            )
+        }
+
+        /**
+         * Creates a VoiceProfileEntity from a raw embedding array with custom crypto.
+         */
         fun fromEmbeddingArray(
             id: String,
             contactName: String,
