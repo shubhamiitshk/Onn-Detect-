@@ -53,7 +53,7 @@ class VideoForensicAnalyzer @Inject constructor(private val context: Context,
     private val fftAnalyzer: FFTSpectralAnalyzer, private val klAnalyzer: KLCooccurrenceAnalyzer,
     private val metaClassifier: XGBoostMetaClassifier, private val audioClassifier: AudioClassifier,
     private val vfmProbe: com.onndetect.detection.visual.VfmProbeAnalyzer,
-    private val bioLipAnalyzer: com.onndetect.detection.visual.BioLipLandmarkAnalyzer = com.onndetect.detection.visual.BioLipLandmarkAnalyzer()) {
+    private val bioLipAnalyzer: com.onndetect.detection.visual.BioLipLandmarkAnalyzer) {
     data class Outcome(val overallScore: Float, val isAiGenerated: Boolean, val confidence: Float,
         val srmScore: Float, val fftScore: Float, val klScore: Float, val flatnessScore: Float,
         val temporalScore: Float, val audioScore: Float, val framesAnalyzed: Int,

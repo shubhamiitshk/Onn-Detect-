@@ -95,12 +95,7 @@ object PipelineModule {
     fun provideBioLipLandmarkAnalyzer(
         @ApplicationContext context: Context,
     ): com.onndetect.detection.visual.BioLipLandmarkAnalyzer =
-        // F5: the real 478-point MediaPipe mesh, GPU-first with the CPU
-        // fallback inside the frontend; the chrominance proxy remains only
-        // as the flagged degradation path when the asset is unavailable.
-        com.onndetect.detection.visual.BioLipLandmarkAnalyzer {
-            com.onndetect.detection.visual.MediaPipeLandmarkFrontend(context)
-        }
+        com.onndetect.detection.visual.BioLipLandmarkAnalyzer(context)
 
     @Provides
     @Singleton
