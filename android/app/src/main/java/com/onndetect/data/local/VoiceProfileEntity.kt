@@ -5,9 +5,18 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 
 /**
- * Biometric voiceprint profile stored in the local, hardware-encrypted Family Safe-Voice Vault.
- * Holds the normalized acoustic speaker embedding, sealed via Android Keystore AES-256-GCM
- * with Authenticated Additional Data (AAD) bound to the profile id and contact name.
+ * Biometric voiceprint profile stored in the Family Safe-Voice Vault.
+ *
+ * F3: the embedding is stored SEALED — AES-256-GCM under AndroidKeyStore
+ * (alias `onn_voice_vault`), with the GCM AAD bound to this row's
+ * (id, contactName). [encryptedEmbedding]/[embeddingIv] hold the sealed
+ * bytes; the legacy [embeddingCsv] plaintext column exists ONLY so
+ * pre-v2 rows can be migrated, and is NULL for every sealed row.
+ *
+ * [spoofScore] records the LCNN-MFM anti-spoof score at enrollment time
+ * (F4: enrollment is refused when the sample looks synthetic), and
+ * [embeddingVersion] tags the embedding frontend (1 = 160-dim DSP
+ * voiceprint with windowed averaging).
  */
 @Entity(tableName = "voice_vault_profiles")
 data class VoiceProfileEntity(
@@ -26,115 +35,50 @@ data class VoiceProfileEntity(
     @ColumnInfo(name = "sample_duration_ms")
     val sampleDurationMs: Long,
 
-    /**
-     * AES-256-GCM encrypted binary representation of the speaker embedding vector.
-     * Authenticated with AAD bound to "$id|$contactName".
-     */
-    @ColumnInfo(name = "encrypted_embedding")
-    val encryptedEmbedding: ByteArray,
-
-    /** 12-byte IV used for AES-GCM encryption. */
-    @ColumnInfo(name = "encryption_iv")
-    val encryptionIv: ByteArray,
+    /** LEGACY: plaintext CSV. Non-null ONLY for not-yet-migrated pre-v2 rows. */
+    @ColumnInfo(name = "embedding_csv", defaultValue = "")
+    val embeddingCsv: String? = null,
 
     @ColumnInfo(name = "sample_sha256")
     val sampleSha256: String? = null,
+
+    /** AES-256-GCM ciphertext of the embedding (128-bit tag appended). */
+    @ColumnInfo(name = "encrypted_embedding", defaultValue = "")
+    val encryptedEmbedding: ByteArray? = null,
+
+    /** 12-byte GCM IV for [encryptedEmbedding]. */
+    @ColumnInfo(name = "embedding_iv", defaultValue = "")
+    val embeddingIv: ByteArray? = null,
+
+    /** LCNN-MFM score observed at enrollment (must have been < 0.375). */
+    @ColumnInfo(name = "spoof_score")
+    val spoofScore: Float? = null,
+
+    /** Embedding frontend version tag (1 = 160-dim DSP, windowed average). */
+    @ColumnInfo(name = "embedding_version")
+    val embeddingVersion: Int? = null,
 ) {
-    /**
-     * Decrypts the sealed voiceprint using default crypto.
-     * Returns empty array if AAD verification fails (e.g. record tampering).
-     */
-    fun toEmbeddingArray(): FloatArray {
-        return toEmbeddingArray(VoiceVaultCrypto())
-    }
+    val isSealed: Boolean get() = encryptedEmbedding != null && embeddingIv != null
+    val hasLegacyPlaintext: Boolean get() = !embeddingCsv.isNullOrEmpty()
 
     /**
-     * Decrypts the sealed voiceprint using [crypto].
-     * Returns empty array if AAD verification fails (e.g. record tampering).
+     * LEGACY decoder: parses the pre-v2 plaintext CSV column. Returns an
+     * empty array for sealed rows (nothing plaintext exists to parse). The
+     * production matching path uses the repository's unsealing decoder.
      */
-    fun toEmbeddingArray(crypto: VoiceVaultCrypto = VoiceVaultCrypto()): FloatArray {
-        return crypto.decrypt(encryptedEmbedding, encryptionIv, id, contactName)
+    fun toEmbeddingArrayLegacy(): FloatArray {
+        val csv = embeddingCsv ?: return FloatArray(0)
+        if (csv.isBlank()) return FloatArray(0)
+        return runCatching {
+            csv.split(",").map { it.trim().toFloat() }.toFloatArray()
+        }.getOrDefault(FloatArray(0))
     }
 
-    override fun equals(other: Any?): Boolean {
-        if (this === other) return true
-        if (javaClass != other?.javaClass) return false
-        other as VoiceProfileEntity
-        if (id != other.id) return false
-        if (contactName != other.contactName) return false
-        if (relationship != other.relationship) return false
-        if (enrolledAtMs != other.enrolledAtMs) return false
-        if (sampleDurationMs != other.sampleDurationMs) return false
-        if (!encryptedEmbedding.contentEquals(other.encryptedEmbedding)) return false
-        if (!encryptionIv.contentEquals(other.encryptionIv)) return false
-        if (sampleSha256 != other.sampleSha256) return false
-        return true
-    }
-
-    override fun hashCode(): Int {
-        var result = id.hashCode()
-        result = 31 * result + contactName.hashCode()
-        result = 31 * result + relationship.hashCode()
-        result = 31 * result + enrolledAtMs.hashCode()
-        result = 31 * result + sampleDurationMs.hashCode()
-        result = 31 * result + encryptedEmbedding.contentHashCode()
-        result = 31 * result + encryptionIv.contentHashCode()
-        result = 31 * result + (sampleSha256?.hashCode() ?: 0)
-        return result
-    }
+    override fun equals(other: Any?) = this === other
+    override fun hashCode() = System.identityHashCode(this)
 
     companion object {
-        /**
-         * Creates a VoiceProfileEntity from a raw embedding array (for testing and simple use cases).
-         * Uses default encryption with a generated key.
-         */
-        fun fromEmbeddingArray(
-            id: String,
-            contactName: String,
-            relationship: String,
-            enrolledAtMs: Long,
-            sampleDurationMs: Long,
-            embedding: FloatArray,
-        ): VoiceProfileEntity {
-            // Use default crypto for simplicity in tests
-            val crypto = VoiceVaultCrypto()
-            val enc = crypto.encrypt(embedding, id, contactName)
-            return VoiceProfileEntity(
-                id = id,
-                contactName = contactName,
-                relationship = relationship,
-                enrolledAtMs = enrolledAtMs,
-                sampleDurationMs = sampleDurationMs,
-                encryptedEmbedding = enc.ciphertext,
-                encryptionIv = enc.iv,
-                sampleSha256 = null,
-            )
-        }
-
-        /**
-         * Creates a VoiceProfileEntity from a raw embedding array with custom crypto.
-         */
-        fun fromEmbeddingArray(
-            id: String,
-            contactName: String,
-            relationship: String,
-            enrolledAtMs: Long,
-            sampleDurationMs: Long,
-            embedding: FloatArray,
-            sampleSha256: String? = null,
-            crypto: VoiceVaultCrypto = VoiceVaultCrypto(),
-        ): VoiceProfileEntity {
-            val enc = crypto.encrypt(embedding, id, contactName)
-            return VoiceProfileEntity(
-                id = id,
-                contactName = contactName,
-                relationship = relationship,
-                enrolledAtMs = enrolledAtMs,
-                sampleDurationMs = sampleDurationMs,
-                encryptedEmbedding = enc.ciphertext,
-                encryptionIv = enc.iv,
-                sampleSha256 = sampleSha256,
-            )
-        }
+        const val EMBEDDING_DIM = 160
+        const val CURRENT_EMBEDDING_VERSION = 1
     }
 }

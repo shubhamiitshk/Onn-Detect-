@@ -10,16 +10,17 @@ All media decoding, neural inference, cryptographic verification, and tamper ana
 
 ### 1. Multi-Modal On-Device Cascade (Release v7)
 - **Vision Foundation Probe:** Frozen INT8 SigLIP-B/16 (224px, 89.96 MB) memory-mapped directly into the OS page cache with **0 MB Java heap bloat**.
-- **Spatial-Frequency Residual Engine:** 36-channel SRM high-pass filter bank + Neighboring Pixel Residual (NPR) CNN detecting generative grid artifacts and resampled boundaries.
+- **Spatial-Frequency Residual Engine:** 20-channel spatial-frequency CNN (12 fixed 5×5 SRM high-pass filters + 4 NPR upsampling kernels + 4 centered RGB low-pass stem, verified from the shipped tensor `(20,5,5,3)`) detecting generative grid artifacts and resampled boundaries.
 - **Base-Margin XGBoost Meta-Fusion:** Injects SigLIP continuous logits as the booster `base_margin` ($\text{margin} = \text{logit}(p) + f_{\text{tree}}$), eliminating tree quantization ties and boosting low-FPR recall by **7× (TPR@1%FPR: 0.040 $\rightarrow$ 0.280)**.
 - **Speech Anti-Spoofing:** Quantized INT8 LCNN-MFM (508 KiB) scoring 4-second audio windows in **<25 ms** with **0.875 AUC** and **59.5% TPR @ 1% FPR**.
-- **Cryptographic & Neural Provenance:** Offline C2PA Content Credentials signature verifier and Meta AudioSeal neural watermark detector.
+- **Cryptographic & Neural Provenance:** Offline C2PA Content Credentials verification against the official production trust list (Adobe, Google, DigiCert, ... anchors in `assets/trust/c2pa_trust_anchors.pem`): full JUMBF walk, multi-segment APP11 reassembly (ISO 19566-5), COSE_Sign1 ES256 and c2pa.hash.data exclusion-range binding, with a fail-closed `signed = hashVerified && coseSignatureValid && certChainValid` conjunction. The Meta AudioSeal watermark detector ships its verified ONNX export pipeline (`ml/scripts/export_audioseal_detector.py`); the app-side TFLite weights are pending a numerically faithful conversion — the exporter refuses to emit divergent graphs.
 
 ### 2. Consumer Security Suite
-- **UPI Coercion & Digital Arrest Shield:** Real-time audio analysis during active carrier or VoIP calls; detects simultaneous call + payment app (Google Pay, PhonePe, Paytm) launch and pops a high-priority warning before PIN entry if the caller is an AI clone or extortion pattern.
-- **Family Safe-Voice Vault:** 15-second offline enrollment of family voiceprints stored encrypted in local Android Keystore; verifies both speaker identity and synthetic speech simultaneously.
-- **WhatsApp / Telegram 1-Tap Forward Guard:** Floating overlay bubble and Share Sheet integration (`ACTION_SEND`) to inspect forwarded voice notes, viral videos, and payment receipts without leaving chat apps.
-- **AI Reel Filter & HUD Badge:** Android Accessibility Service automation to either auto-swipe past AI-generated short-form video slop or display an unobtrusive live authenticity badge while scrolling.
+- **Family Safe-Voice Vault (dual-gate):** Offline enrollment requires **≥ 8 s of voiced speech** (20 ms frame voicing gate) AND an LCNN-MFM anti-spoof verdict below the 0.375 operating point — a synthetic sample can never become a trusted reference. Embeddings are pooled over 3 s windows at a 1.5 s hop and sealed with **AES-256-GCM in the Android Keystore** (alias `onn_voice_vault`), with the GCM AAD bound to each row's identity; a manifest swap between rows fails authentication loudly.
+- **WhatsApp / Telegram 1-Tap Forward Guard:** Share Sheet integration (`ACTION_SEND`) to inspect forwarded voice notes, viral videos, and payment receipts without leaving chat apps. 32×32 residual tamper heatmaps and in-memory ELA pinpoint the edited regions.
+- **BioLip Perioral Forensics:** MediaPipe 478-point face mesh (64-point perioral set, inter-ocular pose normalization around the nose tip) measuring second-order acceleration jitter (0.6) and MAR flicker (0.4) in talking-head video, with a CPU fallback for threads without an EGL context.
+
+*(The earlier planned UPI live-call shield and AI-reel accessibility automation were removed for Google Play 2026 policy compliance — the shipped suite above is 100% Play-compliant and network-free: the manifest actively removes `INTERNET` and `ACCESS_NETWORK_STATE`.)*
 
 ### 3. Enterprise B2B SDK
 - **Video-KYC Injection Shield:** Defeats virtual camera injection (OBS/ManyCam) and face-swap deepfakes for RBI V-CIP and SEBI digital onboarding compliance.
@@ -38,7 +39,8 @@ Evaluated on sealed benchmark corpora spanning 68 generative models (Midjourney 
 | **Low-FPR Recall (Images)** | TPR @ 1% FPR | **0.2800 (28.0%)** | **0.2950 (29.5%)** | — |
 | **Speech Anti-Spoofing (LCNN-MFM)** | ROC-AUC | **0.8749** | 0.8620 (Opus VoIP) | **<25 ms** |
 | **Speech Low-FPR Recall** | TPR @ 1% FPR | **0.5950 (59.5%)** | 0.5400 | — |
-| **Provenance Verification** | Accuracy | **1.0000 (C2PA)** | 0.9850 (AudioSeal) | <5 ms |
+| **Provenance Verification (C2PA)** | fail-closed conjunction | chain + COSE_Sign1 + data-hash all required for `signed=true` | official production trust list (32 anchors) | <5 ms |
+| **Neural Watermark (AudioSeal)** | export pipeline | ONNX parity **0.000e+00** vs PyTorch | app-side TFLite weights pending faithful conversion | — |
 
 *See [`docs/RESULTS_2026-10-20.md`](docs/RESULTS_2026-10-20.md) and [`docs/BENCHMARK_RESULTS.md`](docs/BENCHMARK_RESULTS.md) for full empirical breakdowns.*
 

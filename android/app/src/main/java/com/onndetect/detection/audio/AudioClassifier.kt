@@ -21,6 +21,14 @@ class AudioClassifier(private val context: Context, private val engine: LiteRTIn
         const val TARGET_RATE = 16000
         const val TARGET_SAMPLES = 64000
         /**
+         * Calibrated file-level operating point of the speech countermeasure
+         * (threshold_at_eer in the release manifest). A clip scoring >= this is
+         * classified synthetic; enrollment requires strictly BELOW it (F4).
+         */
+        const val DEFAULT_THRESHOLD = 0.375f
+        /** 60 s @ 16 kHz: the F4 enrollment decode budget. */
+        const val MAX_DECODE_SAMPLES = 960_000
+        /**
          * Number of independent windows scored per file.
          *
          * ONE is the shipped, calibrated behaviour: the released threshold

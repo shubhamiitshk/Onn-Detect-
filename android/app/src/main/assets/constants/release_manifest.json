@@ -59,6 +59,7 @@
     "models/lcnn_audio_int8.tflite": "6963363f0e51f6338ceac34575e4c9fdeeb8ecbebe33605695721232377af508",
     "constants/lcnn_audio_threshold.json": "c486b88bfd9f21c61ebd9261c7913585445fce04d9bc3b01bb022c504cda562a",
     "models/siglip_probe_int8.tflite": "76454452bae9af17e315e78440d283ac2ea7a8551a9e05e16b9350fb40f97ea0",
+    "models/face_landmarker.task": "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff",
     "constants/semantic_probe_threshold.json": "14c78b1073ad9257f19910d75bd5793340791d5595b06599f358cf4a8259f501",
     "source_snapshot.json": "9da954d7e8d9acfc7090d33f3ede6852206183e3e28dc5d40ae34c05a775e89c",
     "evaluation_report.json": "29ec273e5b69d309ced3f90dff6151ef9a63e47429d3b42899971d3d3bb9f9d2",

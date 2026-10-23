@@ -42,13 +42,11 @@ class DetectionPipeline @Inject constructor(
     private val klAnalyzer: KLCooccurrenceAnalyzer,
     private val metaClassifier: XGBoostMetaClassifier,
     private val exifAnalyzer: com.onndetect.detection.provenance.EXIFAnalyzer,
-    private val c2paChecker: com.onndetect.detection.provenance.C2PAManifestChecker,
+    private val c2paVerifier: com.onndetect.detection.provenance.C2PAVerifier,
     private val prnuAnalyzer: com.onndetect.detection.visual.PRNUAnalyzer,
     private val vfmProbe: VfmProbeAnalyzer,
     @param:ApplicationContext private val appContext: Context,
 ) {
-    private val c2paVerifier: com.onndetect.detection.provenance.C2PAVerifier =
-        com.onndetect.detection.provenance.C2PAVerifier(c2paChecker)
     private val documentAnalyzer = com.onndetect.detection.document.DocumentForgeryAnalyzer()
     companion object {
         const val NEUTRAL_LIP_SYNC = 0.9f
@@ -158,7 +156,7 @@ class DetectionPipeline @Inject constructor(
             }
             quality = qualityInfo(bitmap, originalMinEdge).copy(isCompressed = isCompressed)
             residualHeatmap = runCatching { ResidualHeatmapExtractor.computeResidualHeatmap(bitmap, 32) }.getOrNull()
-            docReport = runCatching { documentAnalyzer.analyze(bitmap, isPng = !isCompressed) }.getOrNull()
+            docReport = runCatching { documentAnalyzer.analyze(bitmap) }.getOrNull()
             val report = ModelIntegrityGate.report(appContext, setOf(ModelIntegrityChecker.IMAGE_MODEL))
             if (!report.allOk) {
                 emit(ScanProgress("Model unavailable", 100f, result = result(AnalysisStatus.MODEL_FAILURE, report.failures.joinToString())))

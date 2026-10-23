@@ -29,4 +29,22 @@ interface VoiceProfileDao {
 
     @Query("DELETE FROM voice_vault_profiles")
     suspend fun clearAll(): Int
+
+    /** Rows still carrying pre-v2 plaintext embeddings (F3 migration input). */
+    @Query("SELECT * FROM voice_vault_profiles WHERE embedding_csv IS NOT NULL AND embedding_csv != ''")
+    suspend fun legacyPlaintextRows(): List<VoiceProfileEntity>
+
+    /** Replaces a legacy plaintext row with its sealed form and blanks the CSV. */
+    @Query(
+        "UPDATE voice_vault_profiles SET encrypted_embedding = :sealed, embedding_iv = :iv, " +
+            "spoof_score = :spoofScore, embedding_version = :version, embedding_csv = NULL " +
+            "WHERE id = :id"
+    )
+    suspend fun updateSealed(
+        id: String,
+        sealed: ByteArray,
+        iv: ByteArray,
+        spoofScore: Float?,
+        version: Int,
+    )
 }

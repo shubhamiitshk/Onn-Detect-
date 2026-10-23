@@ -92,15 +92,29 @@ object PipelineModule {
 
     @Provides
     @Singleton
-    fun provideBioLipLandmarkAnalyzer(): com.onndetect.detection.visual.BioLipLandmarkAnalyzer =
-        com.onndetect.detection.visual.BioLipLandmarkAnalyzer()
+    fun provideBioLipLandmarkAnalyzer(
+        @ApplicationContext context: Context,
+    ): com.onndetect.detection.visual.BioLipLandmarkAnalyzer =
+        // F5: the real 478-point MediaPipe mesh, GPU-first with the CPU
+        // fallback inside the frontend; the chrominance proxy remains only
+        // as the flagged degradation path when the asset is unavailable.
+        com.onndetect.detection.visual.BioLipLandmarkAnalyzer {
+            com.onndetect.detection.visual.MediaPipeLandmarkFrontend(context)
+        }
 
     @Provides
     @Singleton
-    fun provideC2PATrustStore(
-        @ApplicationContext context: Context,
-    ): com.onndetect.detection.provenance.C2PATrustStore =
-        com.onndetect.detection.provenance.C2PATrustStore(context)
+    fun provideC2PATrustStore(@ApplicationContext context: Context): com.onndetect.detection.provenance.C2PATrustStore {
+        // F1: anchors come from the OFFICIAL C2PA trust list shipped in
+        // assets/trust/c2pa_trust_anchors.pem — never from source-code
+        // constants, never synthetic roots, and no private keys anywhere.
+        // An empty/missing list fails closed: nothing verifies as signed.
+        val pem = runCatching {
+            context.assets.open(com.onndetect.detection.provenance.C2PATrustStore.TRUST_LIST_ASSET)
+                .bufferedReader().use { it.readText() }
+        }.getOrNull()
+        return com.onndetect.detection.provenance.C2PATrustStore(pem)
+    }
 
     @Provides
     @Singleton

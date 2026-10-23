@@ -43,6 +43,10 @@ class SpeakerVerifier @Inject constructor() {
         const val DEFAULT_MATCH_THRESHOLD = 0.80f
         const val HIGH_CONFIDENCE_THRESHOLD = 0.88f
         const val EMBEDDING_DIM = 160
+        /** 3 s window @ 16 kHz (F4 windowed pooling). */
+        const val WINDOW_SAMPLES = 48_000
+        /** 1.5 s hop @ 16 kHz. */
+        const val HOP_SAMPLES = 24_000
         private const val MIN_SAMPLES_FOR_VOICEPRINT = 1600 // At least 100ms at 16kHz
     }
 
@@ -163,6 +167,49 @@ class SpeakerVerifier @Inject constructor() {
     }
 
     /**
+     * F4: windowed enrollment/matching embedding. Slices the clip into 3 s
+     * windows with a 1.5 s hop, L2-normalizes each per-window voiceprint,
+     * averages them, and L2-normalizes the mean. A single 4 s crop is an
+     * outlier-prone snapshot of one prosodic moment; the pooled estimate is
+     * stable across enrollment and shared-audio conditions.
+     */
+    fun extractWindowedVoiceprint(
+        pcm: FloatArray,
+        windowSamples: Int = WINDOW_SAMPLES,
+        hopSamples: Int = HOP_SAMPLES,
+    ): FloatArray {
+        require(windowSamples >= MIN_SAMPLES_FOR_VOICEPRINT) { "window too short for a voiceprint" }
+        require(hopSamples in 1 until windowSamples) { "hop must be inside the window" }
+        if (pcm.size < windowSamples) {
+            // Degenerate to a single window: identical to the legacy path,
+            // and callers gate duration beforehand anyway.
+            return extractVoiceprint(pcm)
+        }
+        val windows = mutableListOf<FloatArray>()
+        var start = 0
+        while (start + windowSamples <= pcm.size) {
+            val window = pcm.copyOfRange(start, start + windowSamples)
+            val embedding = extractVoiceprint(window)
+            if (!embedding.all { it == 0f }) windows += embedding
+            if (start + windowSamples == pcm.size) break
+            start += hopSamples
+            if (start + windowSamples > pcm.size && windows.isEmpty()) {
+                // keep at least the final partial coverage
+                break
+            }
+        }
+        if (windows.isEmpty()) return FloatArray(EMBEDDING_DIM)
+        val mean = FloatArray(EMBEDDING_DIM)
+        for (w in windows) for (d in 0 until EMBEDDING_DIM) mean[d] += w[d]
+        for (d in 0 until EMBEDDING_DIM) mean[d] /= windows.size
+        var normSq = 0.0
+        for (v in mean) normSq += (v * v).toDouble()
+        val norm = kotlin.math.sqrt(normSq).toFloat()
+        if (norm > 1e-6f) for (d in mean.indices) mean[d] /= norm
+        return mean
+    }
+
+    /**
      * Computes the cosine similarity between two voiceprint embedding vectors.
      * Returns a float in [-1.0, 1.0].
      */
@@ -183,11 +230,15 @@ class SpeakerVerifier @Inject constructor() {
 
     /**
      * Matches an incoming audio sample against all enrolled profiles in the vault.
+     * [decoder] resolves a stored profile to its embedding — the F3 sealed
+     * path passes the repository's unsealing function; the default keeps the
+     * legacy plaintext behaviour for tests that construct entities directly.
      */
     fun matchAgainstVault(
         pcm: FloatArray,
         profiles: List<VoiceProfileEntity>,
         threshold: Float = DEFAULT_MATCH_THRESHOLD,
+        decoder: (VoiceProfileEntity) -> FloatArray? = { it.toEmbeddingArrayLegacy() },
     ): VoiceMatchReport {
         if (profiles.isEmpty()) {
             return VoiceMatchReport(
@@ -199,7 +250,7 @@ class SpeakerVerifier @Inject constructor() {
             )
         }
 
-        val incomingEmbedding = extractVoiceprint(pcm)
+        val incomingEmbedding = extractWindowedVoiceprint(pcm)
         if (incomingEmbedding.all { it == 0f }) {
             return VoiceMatchReport(
                 hasEnrolledProfiles = true,
@@ -215,8 +266,8 @@ class SpeakerVerifier @Inject constructor() {
         var maxSim = -1.0f
 
         for (profile in profiles) {
-            val enrolledVec = profile.toEmbeddingArray()
-            if (enrolledVec.isEmpty()) continue
+            val enrolledVec = decoder(profile)
+            if (enrolledVec == null || enrolledVec.isEmpty()) continue
             val sim = computeCosineSimilarity(incomingEmbedding, enrolledVec)
             scores[profile.id] = sim
             if (sim > maxSim) {

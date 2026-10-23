@@ -8,6 +8,8 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.onndetect.detection.audio.AudioClassifier
 import com.onndetect.detection.fusion.XGBoostMetaClassifier
 import com.onndetect.detection.provenance.C2PAManifestChecker
+import com.onndetect.detection.provenance.C2PATrustStore
+import com.onndetect.detection.provenance.C2PAVerifier
 import com.onndetect.detection.provenance.EXIFAnalyzer
 import com.onndetect.detection.visual.*
 import com.onndetect.domain.models.*
@@ -55,7 +57,11 @@ class PackagedInferenceTest {
                     Color.rgb((x * 2) % 256, (y * 2) % 256, (x * 13 + y * 7) % 256))
                 val pipeline = DetectionPipeline(DeviceTier.HIGH_END, SignalFusion(), SRMForensicAnalyzer(context, engine),
                     FFTSpectralAnalyzer(), KLCooccurrenceAnalyzer(context), XGBoostMetaClassifier(),
-                    EXIFAnalyzer(), C2PAManifestChecker(), PRNUAnalyzer(),
+                    EXIFAnalyzer(), C2PAVerifier(C2PAManifestChecker(), C2PATrustStore(
+                        // Load the PRODUCTION trust list the way DI does on device.
+                        runCatching {
+                            context.assets.open(C2PATrustStore.TRUST_LIST_ASSET).bufferedReader().use { it.readText() }
+                        }.getOrNull())), PRNUAnalyzer(),
                     // The slot-6 probe was added to the DetectionPipeline
                     // constructor in 34bd2f2. Omitting it left this
                     // instrumentation test with one argument too few and

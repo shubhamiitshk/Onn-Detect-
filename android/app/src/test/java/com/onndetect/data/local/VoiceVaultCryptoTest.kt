@@ -1,98 +1,117 @@
 package com.onndetect.data.local
 
-import org.junit.Assert.*
+import com.onndetect.detection.audio.VoicedDurationGate
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import javax.crypto.AEADBadTagException
 
+/**
+ * F3: the AES-256-GCM voiceprint vault. Invariants tested on the JVM with
+ * the in-memory double; the AndroidKeyStore implementation is exercised on
+ * device by the instrumentation suite.
+ */
 class VoiceVaultCryptoTest {
 
-    private val crypto = VoiceVaultCrypto()
+    private val crypto: VoiceVaultCrypto = InMemoryVoiceVaultCrypto()
 
     @Test
-    fun `encrypt and decrypt roundtrip restores exact embedding floats`() {
-        val original = FloatArray(160) { i -> (i * 0.0123f) - 0.5f }
-        val id = "profile-uuid-1234"
-        val contactName = "Alice Mother"
+    fun `seal-unseal round trip preserves the sealed bytes`() {
+        val aad = vaultAad("id-2", "Dad")
+        val blob = crypto.seal("0.100000,-0.200000,0.300000".toByteArray(), aad)
+        assertEquals(12, blob.iv.size)
+        val decoded = crypto.unseal(blob, aad)
+        assertEquals("0.100000,-0.200000,0.300000", decoded.toString(Charsets.US_ASCII))
+    }
 
-        val enc = crypto.encrypt(original, id, contactName)
-        assertNotNull(enc.ciphertext)
-        assertNotNull(enc.iv)
-        assertEquals(12, enc.iv.size)
-        assertTrue(enc.ciphertext.size >= original.size * 4 + 16) // Plaintext bytes + GCM tag
-
-        val decrypted = crypto.decrypt(enc.ciphertext, enc.iv, id, contactName)
-        assertEquals(original.size, decrypted.size)
-        for (i in original.indices) {
-            assertEquals(original[i], decrypted[i], 1e-6f)
+    @Test
+    fun `a swapped AAD fails authentication instead of decrypting`() {
+        // The transplant attack: ciphertext sealed for Mom's row is replayed
+        // against Dad's row identity. GCM must reject it loudly.
+        val momBlob = crypto.seal("0.5,0.5,0.5".toByteArray(), vaultAad("mom-row", "Mom"))
+        var threw = false
+        try {
+            crypto.unseal(momBlob, vaultAad("dad-row", "Dad"))
+        } catch (expected: AEADBadTagException) {
+            threw = true
         }
+        assertTrue("AAD swap must throw AEADBadTagException", threw)
     }
 
     @Test
-    fun `decrypt fails closed when contactName AAD is altered`() {
-        val original = FloatArray(160) { 0.42f }
-        val id = "profile-uuid-1234"
-        val contactName = "Alice Mother"
-
-        val enc = crypto.encrypt(original, id, contactName)
-
-        // Attempt decryption with tampered contact name
-        val tamperedDecrypted = crypto.decrypt(enc.ciphertext, enc.iv, id, "Attacker Imposter")
-        assertEquals(0, tamperedDecrypted.size)
-    }
-
-    @Test
-    fun `decrypt fails closed when id AAD is altered`() {
-        val original = FloatArray(160) { 0.42f }
-        val id = "profile-uuid-1234"
-        val contactName = "Alice Mother"
-
-        val enc = crypto.encrypt(original, id, contactName)
-
-        // Attempt decryption with altered ID
-        val tamperedDecrypted = crypto.decrypt(enc.ciphertext, enc.iv, "profile-uuid-9999", contactName)
-        assertEquals(0, tamperedDecrypted.size)
-    }
-
-    @Test
-    fun `decrypt fails closed when ciphertext bytes are corrupted`() {
-        val original = FloatArray(160) { 0.42f }
-        val id = "profile-uuid-1234"
-        val contactName = "Alice Mother"
-
-        val enc = crypto.encrypt(original, id, contactName)
-        val corruptedCiphertext = enc.ciphertext.copyOf()
-        corruptedCiphertext[0] = (corruptedCiphertext[0].toInt() xor 0xFF).toByte()
-
-        val tamperedDecrypted = crypto.decrypt(corruptedCiphertext, enc.iv, id, contactName)
-        assertEquals(0, tamperedDecrypted.size)
-    }
-
-    @Test
-    fun `VoiceProfileEntity seals embedding into AES-GCM ciphertext`() {
-        val original = floatArrayOf(0.123f, -0.456f, 0.789f)
-        val entity = VoiceProfileEntity.fromEmbeddingArray(
-            id = "test-id-1",
-            contactName = "Mom",
-            relationship = "Mother",
-            enrolledAtMs = 12345678L,
-            sampleDurationMs = 8500L,
-            embedding = original,
-            crypto = crypto,
+    fun `a tampered ciphertext fails authentication`() {
+        val aad = vaultAad("id-3", "Sister")
+        val blob = crypto.seal("0.123456".toByteArray(), aad)
+        val tampered = SealedBlob(
+            blob.iv,
+            blob.ciphertext.clone().also { it[it.size / 2] = (it[it.size / 2].toInt() xor 0x40).toByte() }
         )
-
-        // Verify entity fields are encrypted binary
-        assertTrue(entity.encryptedEmbedding.isNotEmpty())
-        assertEquals(12, entity.encryptionIv.size)
-
-        // Verify accurate recovery via toEmbeddingArray
-        val recovered = entity.toEmbeddingArray(crypto)
-        assertEquals(original.size, recovered.size)
-        for (i in original.indices) {
-            assertEquals(original[i], recovered[i], 1e-6f)
+        var threw = false
+        try {
+            crypto.unseal(tampered, aad)
+        } catch (expected: AEADBadTagException) {
+            threw = true
         }
+        assertTrue("ciphertext edit must throw AEADBadTagException", threw)
+    }
 
-        // Verify record tampering detection
-        val tamperedEntity = entity.copy(contactName = "Dad")
-        val tamperedRecovered = tamperedEntity.toEmbeddingArray(crypto)
-        assertEquals(0, tamperedRecovered.size)
+    @Test
+    fun `every seal produces a fresh IV`() {
+        val aad = vaultAad("id-4", "Brother")
+        val a = crypto.seal("same".toByteArray(), aad)
+        val b = crypto.seal("same".toByteArray(), aad)
+        assertFalse("IVs must not repeat", a.iv.contentEquals(b.iv))
+        assertFalse("identical plaintexts must not leak equality", a.ciphertext.contentEquals(b.ciphertext))
+    }
+
+    @Test
+    fun `vaultAad binds id and contact name deterministically`() {
+        // Byte arrays: content equality, never identity.
+        assertTrue(vaultAad("x", "Mom").contentEquals(vaultAad("x", "Mom")))
+        assertFalse(vaultAad("x", "Mom").contentEquals(vaultAad("x", "Dad")))
+        assertFalse(vaultAad("x", "Mom").contentEquals(vaultAad("y", "Mom")))
+        assertTrue(vaultAad("x", "Mom").toString(Charsets.UTF_8).startsWith("onn_voice_vault|v1|"))
+    }
+
+    // ── F4: the voiced-duration enrollment gate ──────────────────────────
+
+    @Test
+    fun `voiced gate counts only energetic low-ZCR frames`() {
+        // 10 s of a 220 Hz voiced tone at amplitude 0.3: all frames voiced.
+        val pcm = FloatArray(160_000) { i ->
+            (0.3 * kotlin.math.sin(2.0 * Math.PI * 220.0 * i / 16_000.0)).toFloat()
+        }
+        val ms = VoicedDurationGate.voicedMs(pcm)
+        assertTrue("expected near-10s voiced, got ${ms}ms", ms in 9_000L..10_000L)
+        assertTrue(VoicedDurationGate.passes(pcm))
+    }
+
+    @Test
+    fun `a short voiced clip fails the 8 second requirement`() {
+        val pcm = FloatArray(32_000) { i -> // 2 s
+            (0.3 * kotlin.math.sin(2.0 * Math.PI * 220.0 * i / 16_000.0)).toFloat()
+        }
+        val ms = VoicedDurationGate.voicedMs(pcm)
+        assertTrue("expected at most 2s voiced, got ${ms}ms", ms <= 2_000L)
+        assertFalse("2 s of speech must not enroll", VoicedDurationGate.passes(pcm))
+    }
+
+    @Test
+    fun `silence is never voiced`() {
+        val pcm = FloatArray(160_000)
+        assertEquals(0L, VoicedDurationGate.voicedMs(pcm))
+        assertFalse(VoicedDurationGate.passes(pcm))
+    }
+
+    @Test
+    fun `loud noise with high ZCR is not voiced speech`() {
+        // White-ish noise at high amplitude: energetic but not glottal.
+        val rnd = java.util.Random(7)
+        val pcm = FloatArray(160_000) { (rnd.nextFloat() * 2 - 1) * 0.5f }
+        val ms = VoicedDurationGate.voicedMs(pcm)
+        // A few frames may straddle the ZCR edge, but the bulk must be rejected.
+        assertTrue("high-ZCR noise must not count as voiced (got ${ms}ms)", ms < 1_500L)
     }
 }

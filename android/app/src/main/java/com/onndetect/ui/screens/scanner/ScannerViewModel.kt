@@ -145,7 +145,13 @@ class ScannerViewModel @Inject constructor(
             val profiles = voiceVaultRepository.getAllProfilesList()
             if (profiles.isNotEmpty()) {
                 val pcm = com.onndetect.detection.audio.AudioDecoder(appContext).decodeMono16k(uri)
-                speakerVerifier.matchAgainstVault(pcm, profiles)
+                // F3: enrolled embeddings are sealed; the matching path decodes
+                // them through the repository (AndroidKeyStore AES-GCM), and a
+                // row that fails authentication is skipped loudly, never
+                // silently treated as a non-match.
+                speakerVerifier.matchAgainstVault(pcm, profiles, decoder = { p ->
+                    runCatching { voiceVaultRepository.unsealedEmbedding(p) }.getOrNull()
+                })
             } else {
                 com.onndetect.detection.audio.VoiceMatchReport(
                     hasEnrolledProfiles = false,

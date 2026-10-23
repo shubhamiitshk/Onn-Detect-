@@ -33,10 +33,11 @@ import kotlin.math.roundToInt
  * on the REAL published model, and when that model is not present in the
  * release it reports **no evidence at all** rather than guessing.
  *
- * Staging the real weights requires access to the gated
- * `facebook/audioseal-wm-16k` repository on the Hugging Face hub.
- * `ml/scripts/export_audioseal_detector.py` performs the export once that
- * access exists.
+ * Staging the real weights no longer requires the gated Hugging Face
+ * repository: Meta serves the same published checkpoint ungated at
+ * `dl.fbaipublicfiles.com/audioseal/6edcf62f/detector.pth` (16-bit message
+ * head). `ml/scripts/export_audioseal_detector.py` performs the export
+ * (ONNX parity gate + INT8 TFLite) from that checkpoint.
  *
  * ## The absence invariant
  *
@@ -146,13 +147,14 @@ class AudioSealDetector @Inject constructor(
         const val SAMPLE_RATE = 16000
 
         /**
-         * AudioSeal encodes 32 message bits. Requiring at least half of
-         * them to agree keeps a random 50/50 message from registering.
+         * The published detector carries a 16-bit message head. Requiring
+         * at least half of them to agree keeps a random 50/50 message from
+         * registering.
          */
-        const val MIN_AGREEING_BITS = 16
+        const val MIN_AGREEING_BITS = 8
 
-        /** Bits in the AudioSeal message. */
-        const val MESSAGE_BITS = 32
+        /** Bits in the AudioSeal message of the published detector. */
+        const val MESSAGE_BITS = 16
 
         /**
          * Two-tailed binomial p-value for "at least [successes] of [trials]

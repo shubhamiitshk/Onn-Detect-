@@ -54,7 +54,7 @@ android {
     }
     
     androidResources {
-        noCompress += "tflite"
+        noCompress += listOf("tflite", "task")
     }
 }
 
@@ -89,12 +89,20 @@ dependencies {
     // Standalone, bundled CPU runtime: no Play-services download required.
     implementation("com.google.ai.edge.litert:litert:1.4.2")
 
+    // MediaPipe FaceLandmarker (F5): 478-point face mesh for real perioral
+    // landmarks; ~3.8 MB float16 .task asset bundled, GPU with CPU fallback.
+    implementation("com.google.mediapipe:tasks-vision:0.10.35")
+
     // EXIF
     implementation("androidx.exifinterface:exifinterface:1.4.2")
 
     // Testing
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20260814")
+    // Test-only X.509 fixture generation for the C2PA suite (runtime keys,
+    // never shipped). Production code has no BC dependency.
+    testImplementation("org.bouncycastle:bcprov-jdk18on:1.80")
+    testImplementation("org.bouncycastle:bcpkix-jdk18on:1.80")
     androidTestImplementation("androidx.room:room-testing:$roomVersion")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")

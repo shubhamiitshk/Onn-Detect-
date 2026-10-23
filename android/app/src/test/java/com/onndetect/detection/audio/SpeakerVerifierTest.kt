@@ -64,16 +64,31 @@ class SpeakerVerifierTest {
         assertTrue("Distinct pitches should have similarity well below 0.80", sim < 0.70f)
     }
 
+    /** Test helper: a legacy-shape (pre-v2 CSV) entity from an embedding. */
+    private fun legacyEntity(
+        id: String,
+        contactName: String,
+        relationship: String,
+        sampleDurationMs: Long,
+        embedding: FloatArray,
+    ): VoiceProfileEntity = VoiceProfileEntity(
+        id = id,
+        contactName = contactName,
+        relationship = relationship,
+        enrolledAtMs = System.currentTimeMillis(),
+        sampleDurationMs = sampleDurationMs,
+        embeddingCsv = embedding.joinToString(",") { "%.6f".format(java.util.Locale.US, it) },
+    )
+
     @Test
     fun `matchAgainstVault succeeds when incoming speech matches enrolled family profile`() {
         val momAudio = generateModulatedVoice(260.0, 1.2)
         val momEmbedding = verifier.extractVoiceprint(momAudio)
 
-        val momProfile = VoiceProfileEntity.fromEmbeddingArray(
+        val momProfile = legacyEntity(
             id = "mom-uuid",
             contactName = "Mom",
             relationship = "Mother",
-            enrolledAtMs = System.currentTimeMillis(),
             sampleDurationMs = 1200L,
             embedding = momEmbedding,
         )
@@ -99,11 +114,10 @@ class SpeakerVerifierTest {
         val dadAudio = generateModulatedVoice(120.0, 1.0)
         val dadEmbedding = verifier.extractVoiceprint(dadAudio)
 
-        val dadProfile = VoiceProfileEntity.fromEmbeddingArray(
+        val dadProfile = legacyEntity(
             id = "dad-uuid",
             contactName = "Dad",
             relationship = "Father",
-            enrolledAtMs = System.currentTimeMillis(),
             sampleDurationMs = 1000L,
             embedding = dadEmbedding,
         )
@@ -131,21 +145,42 @@ class SpeakerVerifierTest {
     }
 
     @Test
-    fun `VoiceProfileEntity converts to and from embedding float array accurately`() {
+    fun `VoiceProfileEntity round-trips a legacy CSV embedding accurately`() {
         val originalVec = floatArrayOf(0.123456f, -0.654321f, 0.987654f, 0.0f)
-        val entity = VoiceProfileEntity.fromEmbeddingArray(
+        val entity = legacyEntity(
             id = "test-id",
             contactName = "Alice",
             relationship = "Sister",
-            enrolledAtMs = 1000L,
             sampleDurationMs = 5000L,
             embedding = originalVec,
         )
 
-        val recovered = entity.toEmbeddingArray()
+        val recovered = entity.toEmbeddingArrayLegacy()
         assertEquals(originalVec.size, recovered.size)
         for (i in originalVec.indices) {
             assertEquals(originalVec[i], recovered[i], 1e-5f)
         }
+    }
+
+    @Test
+    fun `windowed voiceprint averages 3s windows with a 1500ms hop`() {
+        // A PURE steady tone (no modulation): every 0.5 s analysis slice of
+        // every window sees the same signal, so the pooled estimate, either
+        // half, and any single window must all agree.
+        val pcm = FloatArray(144_000) { i -> // 9 s @ 16 kHz
+            (0.3 * kotlin.math.sin(2.0 * Math.PI * 210.0 * i / 16_000.0)).toFloat()
+        }
+        assertTrue(pcm.size >= 144_000) // ~9 s
+        val pooled = verifier.extractWindowedVoiceprint(pcm)
+        assertTrue("pooled embedding must be non-degenerate", pooled.any { it != 0f })
+        var normSq = 0.0
+        for (v in pooled) normSq += (v * v).toDouble()
+        assertTrue("pooled embedding must be L2-normalized", kotlin.math.sqrt(normSq) in 0.999..1.001)
+
+        val firstHalf = verifier.extractVoiceprint(pcm.copyOfRange(0, 48_000))
+        val secondHalf = verifier.extractVoiceprint(pcm.copyOfRange(48_000, pcm.size))
+        val simFirst = verifier.computeCosineSimilarity(pooled, firstHalf)
+        val simSecond = verifier.computeCosineSimilarity(pooled, secondHalf)
+        assertTrue("pooled must correlate with both halves (got $simFirst / $simSecond)", simFirst > 0.90f && simSecond > 0.90f)
     }
 }

@@ -26,7 +26,9 @@ class AudioDecoder(private val context: Context) {
 
     fun decodeWindow(uri: Uri, targetRate: Int = 16000, targetSamples: Int = 64000,
         requestedStartMs: Long? = null, checkStop: () -> Unit = {}): DecodedAudio {
-        require(targetRate in 8000..48000 && targetSamples in 1..480000)
+        // F4 raised the ceiling to 60 s @ 16 kHz for enrollment; the 20 s
+        // wall-clock deadline below still bounds every decode.
+        require(targetRate in 8000..48000 && targetSamples in 1..AudioClassifier.MAX_DECODE_SAMPLES)
         val deadline = SystemClock.elapsedRealtime() + 20_000
         fun check() {
             if (Thread.currentThread().isInterrupted) throw java.util.concurrent.CancellationException("Audio decode cancelled")

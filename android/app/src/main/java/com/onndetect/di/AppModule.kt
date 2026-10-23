@@ -56,6 +56,11 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun provideVoiceVaultCrypto(): com.onndetect.data.local.VoiceVaultCrypto =
+        com.onndetect.data.local.AndroidKeyStoreVoiceVaultCrypto()
+
+    @Provides
+    @Singleton
     fun provideVoiceVaultDatabase(@ApplicationContext context: Context): com.onndetect.data.local.VoiceVaultDatabase =
         com.onndetect.data.local.VoiceVaultDatabase.create(context)
 

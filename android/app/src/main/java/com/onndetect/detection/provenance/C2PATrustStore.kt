@@ -1,7 +1,5 @@
 package com.onndetect.detection.provenance
 
-import android.content.Context
-import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.ByteArrayInputStream
 import java.security.Signature
 import java.security.cert.CertPathValidator
@@ -10,34 +8,49 @@ import java.security.cert.PKIXParameters
 import java.security.cert.TrustAnchor
 import java.security.cert.X509Certificate
 import java.util.Date
-import javax.inject.Inject
-import javax.inject.Singleton
 
 /**
- * Embedded offline trust store for verifying C2PA "Content Credentials" signature chains.
+ * Offline trust store for verifying C2PA "Content Credentials" signer chains.
  *
- * Invariants:
- * 1. Zero Network Access: Never attempts online CRL/OCSP fetches. Revocation checking is strictly disabled.
- * 2. Root Anchor Validation: Every verified manifest must trace back to a trusted Root CA
- *    (e.g., C2PA, Adobe, Microsoft, OpenAI, Truepic, Google SynthID).
- * 3. Pure JVM Testability: Can run on both Android ART and standard OpenJDK without Android Keystore dependencies.
+ * Hard rules enforced since the F1 fix (architecture audit, commit 66fce33):
+ *
+ *  1. NO private keys in the source tree. A trust store that also ships a
+ *     signing key lets anyone forge "verified" provenance, which is the
+ *     opposite of what a trust store is for. Test fixtures generate their
+ *     own ephemeral keys at RUNTIME; nothing is embedded.
+ *  2. NO synthetic or self-generated roots. Anchors are loaded exclusively
+ *     from [TRUST_LIST_ASSET] (`assets/trust/c2pa_trust_anchors.pem`), which
+ *     carries the official production C2PA trust list (Adobe, Google,
+ *     DigiCert, Irdeto, Huawei, SSL.com, ... as published by the C2PA
+ *     conformance program).
+ *  3. FAIL CLOSED. With an empty or unparsable trust list, [verifyChain]
+ *     returns false for everything: a manifest that cannot be anchored is
+ *     reported as unverified, never as signed.
+ *  4. Zero network. No CRL/OCSP: certificate validity is checked against the
+ *     current device clock only.
+ *
+ * The store stays pure-JVM (String in, no Android imports) so the whole
+ * C2PA verification path is unit-testable on the desktop.
  */
-@Singleton
-class C2PATrustStore @Inject constructor(
-    @param:ApplicationContext private val context: Context? = null,
-) {
+class C2PATrustStore(trustListPem: String? = null) {
 
     private val certFactory = CertificateFactory.getInstance("X.509")
     private val trustAnchors = mutableSetOf<TrustAnchor>()
     private val trustedCertificates = mutableListOf<X509Certificate>()
 
     init {
-        loadEmbeddedRoots()
+        trustListPem?.let(::loadPemAnchors)
     }
 
-    /**
-     * Adds an X.509 certificate as a trusted root anchor.
-     */
+    /** Parses every `-----BEGIN CERTIFICATE-----` block in [pem] into a trust anchor. */
+    fun loadPemAnchors(pem: String) {
+        val matcher = PEM_CERT_REGEX.findAll(pem)
+        for (match in matcher) {
+            parseCertificate(match.value.toByteArray(Charsets.UTF_8))?.let(::addTrustAnchor)
+        }
+    }
+
+    /** Registers an X.509 certificate as a trusted root anchor. */
     fun addTrustAnchor(certificate: X509Certificate) {
         synchronized(this) {
             trustAnchors.add(TrustAnchor(certificate, null))
@@ -45,18 +58,14 @@ class C2PATrustStore @Inject constructor(
         }
     }
 
-    /**
-     * Parses an X.509 certificate from PEM or DER bytes.
-     */
+    /** Parses an X.509 certificate from PEM or DER bytes; null when unparsable. */
     fun parseCertificate(bytes: ByteArray): X509Certificate? {
         return runCatching {
             certFactory.generateCertificate(ByteArrayInputStream(bytes)) as? X509Certificate
         }.getOrNull()
     }
 
-    /**
-     * Parses a list/chain of X.509 certificates from PEM or DER bytes.
-     */
+    /** Parses a chain of X.509 certificates from PEM or concatenated DER bytes. */
     fun parseCertificateChain(bytes: ByteArray): List<X509Certificate> {
         return runCatching {
             certFactory.generateCertificates(ByteArrayInputStream(bytes))
@@ -64,28 +73,24 @@ class C2PATrustStore @Inject constructor(
         }.getOrDefault(emptyList())
     }
 
+    /** True when no anchor is loaded. Everything verifies as untrusted. */
+    fun isEmpty(): Boolean = synchronized(this) { trustAnchors.isEmpty() }
+
+    /** Number of loaded anchors (diagnostics and the asset sanity test). */
+    fun size(): Int = synchronized(this) { trustAnchors.size }
+
     /**
-     * Verifies that the given [leaf] certificate chains back to an embedded trusted root anchor.
-     * Optionally takes [intermediates].
+     * Verifies that [leaf] chains back to a loaded production anchor, offline.
+     * An empty store returns false immediately (fail closed).
      */
     fun verifyChain(leaf: X509Certificate, intermediates: List<X509Certificate> = emptyList()): Boolean {
         synchronized(this) {
             if (trustAnchors.isEmpty()) return false
 
-            // Direct match with a trusted anchor
+            // A certificate that IS an anchor is trusted directly.
             if (isDirectlyTrusted(leaf)) return true
 
-            // Direct signature check against trusted anchors
-            for (anchor in trustedCertificates) {
-                try {
-                    leaf.verify(anchor.publicKey)
-                    return true
-                } catch (_: Exception) {
-                    // Try next anchor
-                }
-            }
-
-            // Check if intermediate leads to anchor and signs leaf
+            // The leaf is signed by an intermediate that itself chains to an anchor.
             for (inter in intermediates) {
                 var interValid = isDirectlyTrusted(inter)
                 if (!interValid) {
@@ -105,16 +110,15 @@ class C2PATrustStore @Inject constructor(
                 }
             }
 
-            // Fallback to standard PKIX CertPathValidator
+            // Standard PKIX path validation, revocation strictly disabled.
             return try {
                 val fullChain = listOf(leaf) + intermediates
                 val certPath = certFactory.generateCertPath(fullChain)
                 val params = PKIXParameters(trustAnchors).apply {
-                    isRevocationEnabled = false // Strictly offline
-                    date = Date() // Evaluates current offline validity
+                    isRevocationEnabled = false // strictly offline
+                    date = Date()
                 }
-                val validator = CertPathValidator.getInstance("PKIX")
-                validator.validate(certPath, params)
+                CertPathValidator.getInstance("PKIX").validate(certPath, params)
                 true
             } catch (_: Exception) {
                 false
@@ -122,9 +126,7 @@ class C2PATrustStore @Inject constructor(
         }
     }
 
-    /**
-     * Verifies a digital signature given a leaf certificate, data payload, and signature bytes.
-     */
+    /** Verifies a raw signature over [data] with the given certificate's public key. */
     fun verifySignature(
         leaf: X509Certificate,
         algorithm: String,
@@ -141,9 +143,7 @@ class C2PATrustStore @Inject constructor(
         }
     }
 
-    /**
-     * Returns true if the certificate itself is registered as a trusted anchor.
-     */
+    /** True when the certificate itself is registered as an anchor. */
     fun isDirectlyTrusted(certificate: X509Certificate): Boolean {
         return trustedCertificates.any { trusted ->
             trusted.subjectX500Principal == certificate.subjectX500Principal &&
@@ -151,111 +151,11 @@ class C2PATrustStore @Inject constructor(
         }
     }
 
-    /**
-     * Returns true if the issuer DN matches known C2PA trust roots.
-     */
-    fun isRecognizedC2PAIssuer(issuerDn: String): Boolean {
-        val recognized = listOf(
-            "C2PA",
-            "Content Authenticity",
-            "Adobe",
-            "Truepic",
-            "Microsoft",
-            "OpenAI",
-            "Google",
-            "DigiCert",
-            "Leica",
-            "Sony",
-            "Nikon",
-        )
-        return recognized.any { issuerDn.contains(it, ignoreCase = true) }
-    }
-
-    private fun loadEmbeddedRoots() {
-        var loadedCount = 0
-        try {
-            val stream = context?.assets?.open("trust/c2pa_trust_anchors.pem")
-                ?: C2PATrustStore::class.java.classLoader?.getResourceAsStream("assets/trust/c2pa_trust_anchors.pem")
-                ?: C2PATrustStore::class.java.classLoader?.getResourceAsStream("trust/c2pa_trust_anchors.pem")
-            stream?.use { s ->
-                val certs = parseCertificateChain(s.readBytes())
-                for (cert in certs) {
-                    addTrustAnchor(cert)
-                    loadedCount++
-                }
-            }
-        } catch (_: Exception) {}
-
-        if (loadedCount == 0) {
-            val embeddedRootPems = listOf(
-                ADOBE_CAI_ROOT_PEM,
-                TRUEPIC_ROOT_PEM,
-                C2PA_GENERAL_ROOT_PEM,
-                OPENAI_ROOT_PEM,
-            )
-            for (pem in embeddedRootPems) {
-                parseCertificate(pem.trimIndent().toByteArray(Charsets.UTF_8))?.let { cert ->
-                    addTrustAnchor(cert)
-                }
-            }
-        }
-    }
-
     companion object {
-        const val ADOBE_CAI_ROOT_PEM = """
------BEGIN CERTIFICATE-----
-MIIBkjCCATmgAwIBAgIUYA8DPRbpe6U1OsfoZDY0FALUuhcwCgYIKoZIzj0EAwIw
-PzELMAkGA1UEBhMCVVMxDjAMBgNVBAoMBUFkb2JlMSAwHgYDVQQDDBdBZG9iZSBD
-QUkgVHJ1c3QgUm9vdCBDQTAeFw0yNDAxMDEwMDAwMDBaFw0zNTAxMDEwMDAwMDBa
-MD8xCzAJBgNVBAYTAlVTMQ4wDAYDVQQKDAVBZG9iZTEgMB4GA1UEAwwXQWRvYmUg
-Q0FJIFRydXN0IFJvb3QgQ0EwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAR6OE0t
-BacleU0G4pW11LM7P0HcsgTyfsOo0p4WsIqL7LiHvgojQgRMLS0MaqUm1eRDUp4t
-r9W5HubXjJEYH0LCoxMwETAPBgNVHRMBAf8EBTADAQH/MAoGCCqGSM49BAMCA0cA
-MEQCIEOkZUq5wmDsLajqAt7rSZdvnlmQMr98NZhgYLoQbJxXAiACG05rsNsLFWJ0
-5r2afBYhxw7bIDWL5O/zuMcGegRBbQ==
------END CERTIFICATE-----
-"""
+        /** Asset path of the production trust list inside the APK. */
+        const val TRUST_LIST_ASSET = "trust/c2pa_trust_anchors.pem"
 
-        const val TRUEPIC_ROOT_PEM = """
------BEGIN CERTIFICATE-----
-MIIBmDCCAT2gAwIBAgIUJyAd8D7kk03ri+eS5x/SXpRmWG8wCgYIKoZIzj0EAwIw
-QTELMAkGA1UEBhMCVVMxEDAOBgNVBAoMB1RydWVwaWMxIDAeBgNVBAMMF1RydWVw
-aWMgQzJQQSBUcnVzdCBSb290MB4XDTI0MDEwMTAwMDAwMFoXDTM1MDEwMTAwMDAw
-MFowQTELMAkGA1UEBhMCVVMxEDAOBgNVBAoMB1RydWVwaWMxIDAeBgNVBAMMF1Ry
-dWVwaWMgQzJQQSBUcnVzdCBSb290MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE
-+uqubdWaiFb/nQF530ZU95eOUaZWy/vlFw412jEbZLsBU9GzN771gu0lTSH8n10F
-8Qb8xT2uiHiJAOJY5upSEaMTMBEwDwYDVR0TAQH/BAUwAwEB/zAKBggqhkjOPQQD
-AgNJADBGAiEAiIjHDUZBFBH8eVi6lrpRZBsU9mAJYsy+QUtDCwD+FVMCIQC9xMg0
-HpoSa29zvb47fjsq+CEJiDP2VM2sp/sGh6b/5g==
------END CERTIFICATE-----
-"""
-
-        const val C2PA_GENERAL_ROOT_PEM = """
------BEGIN CERTIFICATE-----
-MIIBkjCCATegAwIBAgIUZn7AwE8eJIOZX2cpGD0ew/ncC0UwCgYIKoZIzj0EAwIw
-PjELMAkGA1UEBhMCVVMxDTALBgNVBAoMBEMyUEExIDAeBgNVBAMMF0MyUEEgT2Zm
-bGluZSBUcnVzdCBSb290MB4XDTI0MDEwMTAwMDAwMFoXDTM1MDEwMTAwMDAwMFow
-PjELMAkGA1UEBhMCVVMxDTALBgNVBAoMBEMyUEExIDAeBgNVBAMMF0MyUEEgT2Zm
-bGluZSBUcnVzdCBSb290MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEacyxLXtZ
-K9nd6Ld53er/ZRW5N915JikDKXDgMtMNZa5BJ5COrN98EPHIf8zSXAPyxTRt70nH
-sY2TaBc1j0zeUqMTMBEwDwYDVR0TAQH/BAUwAwEB/zAKBggqhkjOPQQDAgNJADBG
-AiEA6WId6HalZlqz9i6cCq2R4gXPTDAgsCM5yi1qWPdOCg0CIQD25XbbTlqLAcCp
-LkZzfL8Ngaw+MWqR+OHOHzFMbY61Eg==
------END CERTIFICATE-----
-"""
-
-        const val OPENAI_ROOT_PEM = """
------BEGIN CERTIFICATE-----
-MIIBkzCCATmgAwIBAgIUSv+XrpzSaOgy4tRABlJ7PvfbbUowCgYIKoZIzj0EAwIw
-PzELMAkGA1UEBhMCVVMxDzANBgNVBAoMBk9wZW5BSTEfMB0GA1UEAwwWT3BlbkFJ
-IENvbnRlbnQgUm9vdCBDQTAeFw0yNDAxMDEwMDAwMDBaFw0zNTAxMDEwMDAwMDBa
-MD8xCzAJBgNVBAYTAlVTMQ8wDQYDVQQKDAZPcGVuQUkxHzAdBgNVBAMMFk9wZW5B
-SSBDb250ZW50IFJvb3QgQ0EwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAARDt/Z5
-lCK8QkGSRS4OVkmejGv5ZgL79AJWm7+1KKZG0L3LMcZQoAtkKgBrIO0TQJTMvHFC
-V3zbkTnAG94a0+/qoxMwETAPBgNVHRMBAf8EBTADAQH/MAoGCCqGSM49BAMCA0gA
-MEUCIQDVNf5rxFukc5eQnm6GyDsUH1Md4wMF+ZmMrS8yRNg1JwIgHKfLAQR0m8ma
-rLg6ccqT1IeAA9RZ5kTx+KtZOqK+l54=
------END CERTIFICATE-----
-"""
+        private val PEM_CERT_REGEX =
+            Regex("-----BEGIN CERTIFICATE-----[\\s\\S]*?-----END CERTIFICATE-----")
     }
 }

@@ -4,225 +4,230 @@ import com.onndetect.detection.provenance.AudioSealDetector
 import com.onndetect.detection.provenance.C2PAManifestChecker
 import com.onndetect.detection.provenance.C2PATrustStore
 import com.onndetect.detection.provenance.C2PAVerifier
-import com.onndetect.detection.provenance.Cbor
+import com.onndetect.detection.provenance.C2paTestFixtures
 import com.onndetect.detection.provenance.ProvenanceEvidence
-import org.junit.Assert.*
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.ByteArrayInputStream
-import java.io.ByteArrayOutputStream
-import java.security.KeyFactory
-import java.security.Signature
-import java.security.spec.PKCS8EncodedKeySpec
-import java.util.Base64
 
+/**
+ * End-to-end C2PA verification over REAL spec-shaped fixtures, against the
+ * F2 fail-closed rule:
+ *
+ *   signed = hashVerified && coseSignatureValid && certChainValid
+ *
+ * Keys are generated at runtime; the trust list is the runtime CA's PEM
+ * (mirroring how DI loads the production list from assets).
+ */
 class ProvenanceIntegrationTest {
 
-    private fun jpegWithApp11(payload: ByteArray): ByteArray {
-        val out = ByteArrayOutputStream()
-        out.write(byteArrayOf(0xFF.toByte(), 0xD8.toByte())) // SOI
-        out.write(byteArrayOf(0xFF.toByte(), 0xEB.toByte())) // APP11
-        val length = payload.size + 2
-        out.write((length shr 8) and 0xFF)
-        out.write(length and 0xFF)
-        out.write(payload)
-        out.write(byteArrayOf(0xFF.toByte(), 0xD9.toByte())) // EOI
-        return out.toByteArray()
+    /** A converged layout: the data-hash inside the store matches THIS file. */
+    private class SignedJpeg(val layout: C2paTestFixtures.JpegLayout, val ca: C2paTestFixtures.TestCa)
+
+    /**
+     * Builds a JPEG whose manifest store is fully consistent: the
+     * c2pa.hash.data exclusion range and digest match the final file layout.
+     * The store/segment layout is rebuilt until it converges (the JSON inside
+     * the store carries byte offsets that depend on the store's own size).
+     */
+    private fun buildSignedJpeg(
+        maxSegPayload: Int = 24,
+        prefixPadBytes: Int = 2048,
+        signer: (C2paTestFixtures.TestCa) -> C2paTestFixtures.TestCa = { it },
+    ): SignedJpeg {
+        val ca = C2paTestFixtures.newCa()
+        val signingCa = signer(ca)
+        var prev: C2paTestFixtures.JpegLayout? = null
+        var stable: C2paTestFixtures.JpegLayout? = null
+
+        for (pass in 0 until 8) {
+            val exclusions = prev?.let { listOf(it.manifestStart to it.manifestEnd) }
+                ?: listOf(0L to 4096L) // first pass guess; converges below
+            val nonManifest = prev?.nonManifestBytes()
+                ?: ByteArray(0) // placeholder; converges below
+            val digest = C2paTestFixtures.sha256(nonManifest)
+            val json = C2paTestFixtures.dataHashJson(exclusions, digest)
+
+            val claim = C2paTestFixtures.buildClaim()
+            val cose = C2paTestFixtures.buildCoseSign1(claim, signingCa)
+            val store = C2paTestFixtures.buildStore(
+                claim, cose, listOf(ca.certificate.encoded),
+                extraBoxes = listOf("jumd" to ("c2pa.hash.data" + json).toByteArray(Charsets.UTF_8)),
+            )
+            val layout = C2paTestFixtures.jpegWithApp11(
+                store, maxSegPayload = maxSegPayload, prefixPadBytes = prefixPadBytes
+            )
+            if (prev != null && prev.bytes.size == layout.bytes.size &&
+                prev.manifestStart == layout.manifestStart && prev.manifestEnd == layout.manifestEnd
+            ) {
+                stable = layout
+                break
+            }
+            prev = layout
+        }
+        assertNotNull("fixture layout did not converge", stable)
+        return SignedJpeg(stable!!, ca)
     }
 
-    private fun bytesToHex(bytes: ByteArray): String =
-        bytes.joinToString("") { "%02x".format(it) }
+    private fun verifierFor(ca: C2paTestFixtures.TestCa): C2PAVerifier =
+        C2PAVerifier(C2PAManifestChecker(), C2PATrustStore(ca.pem()))
 
     @Test
-    fun c2paVerifierRejectsManifestWithTrustedCertMissingSignature() {
-        // Manifest carries a valid trusted OpenAI root certificate but no signature block.
-        // Fail-closed conjunction requires: signed = hashVerified && coseSignatureValid && certChainValid.
-        val certPem = C2PATrustStore.OPENAI_ROOT_PEM.trim()
-        val payload = ("c2patrainedAlgorithmicMedia\n" + certPem).toByteArray(Charsets.ISO_8859_1)
-        val jpegBytes = jpegWithApp11(payload)
-        val verifier = C2PAVerifier(C2PAManifestChecker())
-        val result = verifier.verifyStream(ByteArrayInputStream(jpegBytes))
+    fun verifiesChainCoseSignatureAndDataHashTogether() {
+        val fixture = buildSignedJpeg()
+        val result = verifierFor(fixture.ca).verifyStream(ByteArrayInputStream(fixture.layout.bytes))
 
         assertTrue(result.evidence is ProvenanceEvidence.C2PAClaim)
         val claim = result.evidence as ProvenanceEvidence.C2PAClaim
-        assertTrue("Manifest should be present", claim.manifestPresent)
-        assertFalse("Manifest with valid cert but missing signature must NOT be signed (fail-closed)", claim.signed)
-        assertFalse("Unsigned manifest must not confirm AI involvement", claim.confirmsAiInvolvement)
-        assertTrue(result.validationNotes?.contains("lacks cryptographic claim signature") == true)
-    }
-
-    @Test
-    fun c2paVerifierRejectsManifestWithoutCertificate() {
-        // Unverified manifest missing certificate chain (exclusion-range discipline)
-        val payload = "c2patrainedAlgorithmicMedia".toByteArray(Charsets.ISO_8859_1)
-        val jpegBytes = jpegWithApp11(payload)
-        val verifier = C2PAVerifier(C2PAManifestChecker())
-        val result = verifier.verifyStream(ByteArrayInputStream(jpegBytes))
-
-        assertTrue(result.evidence is ProvenanceEvidence.C2PAClaim)
-        val claim = result.evidence as ProvenanceEvidence.C2PAClaim
-        assertTrue("Manifest should be present", claim.manifestPresent)
-        assertFalse("Unverified manifest without certificate must not be signed", claim.signed)
-        assertFalse("Unsigned manifest must not confirm AI involvement", claim.confirmsAiInvolvement)
-        assertTrue(result.validationNotes?.contains("missing X.509 certificate chain") == true)
-    }
-
-    @Test
-    fun c2paVerifierRejectsUntrustedCertificate() {
-        // Genuine X.509 certificate signed by an untrusted rogue authority
-        val untrustedCertPem = """
------BEGIN CERTIFICATE-----
-MIIBmTCCAT+gAwIBAgIUQiayhFRXYMTiOFPg389pqgAaMyIwCgYIKoZIzj0EAwIw
-QjELMAkGA1UEBhMCWFgxGzAZBgNVBAoMElVudHJ1c3RlZCBSb2d1ZSBDQTEWMBQG
-A1UEAwwNUm9ndWUgUm9vdCBDQTAeFw0yNDAxMDEwMDAwMDBaFw0zNTAxMDEwMDAw
-MDBaMEIxCzAJBgNVBAYTAlhYMRswGQYDVQQKDBJVbnRydXN0ZWQgUm9ndWUgQ0Ex
-FjAUBgNVBAMMDVJvZ3VlIFJvb3QgQ0EwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNC
-AAT0ojISNKrkeLDOqnaEbKpncsdzEkrR0Dl06DJyXFz4PmlNc7d0RHCSho+hxhr4
-4+BZds57cdelURQGVz5Kic2moxMwETAPBgNVHRMBAf8EBTADAQH/MAoGCCqGSM49
-BAMCA0gAMEUCIA1RJSt5AUzhWN8+DCC0gSVkRmkxCXM6MK8SkYDdJvO9AiEAv/RQ
-QBxVum7HATnh3Jw5d65hi8pPudk7TkkxJa3lPdo=
------END CERTIFICATE-----
-""".trimIndent()
-
-        val payload = ("c2patrainedAlgorithmicMedia\n" + untrustedCertPem).toByteArray(Charsets.ISO_8859_1)
-        val jpegBytes = jpegWithApp11(payload)
-        val verifier = C2PAVerifier(C2PAManifestChecker())
-        val result = verifier.verifyStream(ByteArrayInputStream(jpegBytes))
-
-        assertTrue(result.evidence is ProvenanceEvidence.C2PAClaim)
-        val claim = result.evidence as ProvenanceEvidence.C2PAClaim
-        assertTrue(claim.manifestPresent)
-        assertFalse("Manifest with untrusted root must not be signed", claim.signed)
-        assertFalse(claim.confirmsAiInvolvement)
-        assertTrue(result.validationNotes?.contains("Untrusted certificate authority") == true)
-    }
-
-    @Test
-    fun c2paVerifierValidatesCryptographicSignatureOverClaim() {
-        val trustStore = C2PATrustStore()
-        val testCert = trustStore.parseCertificate(TEST_ROOT_PEM.trim().toByteArray(Charsets.UTF_8))!!
-        trustStore.addTrustAnchor(testCert)
-
-        // Sign claim using TEST_ROOT_KEY_PKCS8
-        val keyDer = Base64.getMimeDecoder().decode(
-            TEST_ROOT_KEY_PKCS8
-                .replace("-----BEGIN PRIVATE KEY-----", "")
-                .replace("-----END PRIVATE KEY-----", "")
-                .trim()
+        assertTrue("manifest should be present", claim.manifestPresent)
+        assertTrue(
+            "signed requires chain + COSE + data-hash (fail-closed conjunction)",
+            claim.signed,
         )
-        val keySpec = PKCS8EncodedKeySpec(keyDer)
-        val privKey = KeyFactory.getInstance("EC").generatePrivate(keySpec)
-
-        val claimText = "c2pa_claim_sha256_hash_test_asset"
-        val dsa = Signature.getInstance("SHA256withECDSA")
-        dsa.initSign(privKey)
-        dsa.update(claimText.toByteArray(Charsets.UTF_8))
-        val signatureBytes = dsa.sign()
-        val signatureHex = bytesToHex(signatureBytes)
-
-        val certPem = TEST_ROOT_PEM.trim()
-        val payload = ("c2patrainedAlgorithmicMedia\n" +
-            certPem + "\n" +
-            "c2cs:" + claimText + ":" + signatureHex).toByteArray(Charsets.ISO_8859_1)
-
-        val jpegBytes = jpegWithApp11(payload)
-        val verifier = C2PAVerifier(C2PAManifestChecker(), trustStore)
-        val result = verifier.verifyStream(ByteArrayInputStream(jpegBytes))
-
-        assertTrue(result.evidence is ProvenanceEvidence.C2PAClaim)
-        val claim = result.evidence as ProvenanceEvidence.C2PAClaim
-        assertTrue("Manifest should be present", claim.manifestPresent)
-        assertTrue("Signature over claim should be verified", claim.signed)
         assertEquals("trainedAlgorithmicMedia", claim.digitalSourceType)
-        assertTrue(claim.confirmsAiInvolvement)
-        assertTrue(result.validationNotes?.contains("Cryptographically verified against trusted C2PA root") == true)
+        assertTrue("a signed AI-source manifest confirms AI involvement", claim.confirmsAiInvolvement)
+        assertTrue(claim.ingredientCount >= 1)
+        assertNotNull(result.issuer)
+        assertTrue(
+            "notes must name the conjunction",
+            result.validationNotes?.contains("fail-closed conjunction") == true,
+        )
     }
 
     @Test
-    fun c2paVerifierRejectsTamperedCryptographicSignature() {
-        val trustStore = C2PATrustStore()
-        val testCert = trustStore.parseCertificate(TEST_ROOT_PEM.trim().toByteArray(Charsets.UTF_8))!!
-        trustStore.addTrustAnchor(testCert)
-
-        val claimText = "c2pa_claim_sha256_hash_test_asset"
-        val tamperedSignatureHex = "3045022100" + "ff".repeat(31) + "0220" + "ee".repeat(32)
-
-        val certPem = TEST_ROOT_PEM.trim()
-        val payload = ("c2patrainedAlgorithmicMedia\n" +
-            certPem + "\n" +
-            "c2cs:" + claimText + ":" + tamperedSignatureHex).toByteArray(Charsets.ISO_8859_1)
-
-        val jpegBytes = jpegWithApp11(payload)
-        val verifier = C2PAVerifier(C2PAManifestChecker(), trustStore)
-        val result = verifier.verifyStream(ByteArrayInputStream(jpegBytes))
+    fun aChainAloneIsExplicitlyUnverified() {
+        // F2 core: a valid chain, no COSE signature, no data-hash. The
+        // pre-audit code called this "verified"; it must be UNVERIFIED.
+        val ca = C2paTestFixtures.newCa()
+        val claim = C2paTestFixtures.buildClaim()
+        // Empty COSE box content -> parse() returns null -> "no COSE found".
+        val store = C2paTestFixtures.buildStore(
+            claim, ByteArray(0), listOf(ca.certificate.encoded),
+        )
+        val layout = C2paTestFixtures.jpegWithApp11(store)
+        val result = verifierFor(ca).verifyStream(ByteArrayInputStream(layout.bytes))
 
         assertTrue(result.evidence is ProvenanceEvidence.C2PAClaim)
+        val c2pa = result.evidence as ProvenanceEvidence.C2PAClaim
+        assertTrue(c2pa.manifestPresent)
+        assertFalse("chain-only must NOT be signed", c2pa.signed)
+        assertFalse(c2pa.confirmsAiInvolvement)
+        assertTrue(
+            "chain-only must be reported as an explicit unverified state",
+            result.validationNotes?.contains("stays UNVERIFIED") == true,
+        )
+        assertTrue(result.validationNotes?.contains("No COSE_Sign1") == true)
+        assertTrue(result.validationNotes?.contains("no data-hash binding") == true)
+    }
+
+    @Test
+    fun aTransplantedManifestFailsTheDataHashBinding() {
+        // The hard-binding attack: take a fully signed file and edit ONE byte
+        // inside the covered (non-excluded) region. The chain and the COSE
+        // signature still verify — only the data-hash exposes the edit.
+        val fixture = buildSignedJpeg()
+        val tampered = fixture.layout.bytes.copyOfMutable()
+        // A padding byte near the end of the filler, before the APP11 group.
+        val editAt = (fixture.layout.manifestStart - 16).toInt()
+        tampered[editAt] = (tampered[editAt].toInt() xor 0x5A).toByte()
+        val result = verifierFor(fixture.ca).verifyStream(ByteArrayInputStream(tampered))
+
         val claim = result.evidence as ProvenanceEvidence.C2PAClaim
         assertTrue(claim.manifestPresent)
-        assertFalse("Tampered signature must fail verification", claim.signed)
+        assertFalse("a transplanted/edited asset must not verify", claim.signed)
         assertFalse(claim.confirmsAiInvolvement)
-        assertTrue(result.validationNotes?.contains("C2PA signature mismatch") == true)
+        assertTrue(
+            "the failure must be attributed to the data-hash binding",
+            result.validationNotes?.contains("Data-hash binding failed") == true,
+        )
     }
 
     @Test
-    fun c2paVerifierIgnoresPlainJpeg() {
+    fun aSignatureByAnotherKeyFailsTheCoseVerification() {
+        // Chain is genuine, but the signature was made by a DIFFERENT key:
+        // the x5chain claims the trusted CA's certificate while a rogue
+        // key actually signed. Only the COSE check catches this.
+        val fixture = buildSignedJpeg(signer = { legitCa ->
+            C2paTestFixtures.TestCa(
+                C2paTestFixtures.newCa("Rogue Key").keyPair,
+                legitCa.certificate, // x5chain still claims the trusted cert
+            )
+        })
+        val result = verifierFor(fixture.ca).verifyStream(ByteArrayInputStream(fixture.layout.bytes))
+
+        val claim = result.evidence as ProvenanceEvidence.C2PAClaim
+        assertFalse("a forged signature must not verify", claim.signed)
+        assertTrue(
+            "the failure must be attributed to the COSE signature",
+            result.validationNotes?.contains("COSE_Sign1 signature invalid") == true,
+        )
+    }
+
+    @Test
+    fun anUntrustedRootFailsTheChain() {
+        // Signed by a rogue CA end to end: its own cert in the x5chain.
+        val fixture = buildSignedJpeg(signer = { C2paTestFixtures.newCa("Rogue Authority") })
+        // The verifier trusts the FIRST CA only (fixture.ca); the signer is rogue.
+        val result = verifierFor(fixture.ca).verifyStream(ByteArrayInputStream(fixture.layout.bytes))
+
+        val claim = result.evidence as ProvenanceEvidence.C2PAClaim
+        assertTrue(claim.manifestPresent)
+        assertFalse("a rogue root must not verify", claim.signed)
+        assertTrue(
+            "the failure must be attributed to the untrusted chain",
+            result.validationNotes?.contains("does not chain to a production C2PA trust anchor") == true,
+        )
+    }
+
+    @Test
+    fun anEmptyTrustStoreFailsClosed() {
+        val fixture = buildSignedJpeg()
+        // Default store: no anchors loaded (the DI path on a device with a
+        // missing asset, or any empty list) — nothing may verify as signed.
+        val verifier = C2PAVerifier(C2PAManifestChecker())
+        val result = verifier.verifyStream(ByteArrayInputStream(fixture.layout.bytes))
+
+        val claim = result.evidence as ProvenanceEvidence.C2PAClaim
+        assertTrue(claim.manifestPresent)
+        assertFalse("empty trust list must fail closed", claim.signed)
+        assertTrue(
+            result.validationNotes?.contains("trust list not loaded") == true,
+        )
+    }
+
+    @Test
+    fun theProductionAssetTrustListParsesIntoAnchors() {
+        // The shipped asset list is the OFFICIAL C2PA trust list; parsing it
+        // must yield a non-empty anchor set (Adobe, Google, DigiCert, ...).
+        val pem = java.io.File(
+            /* src/test/resources mirror of assets */
+            "src/main/assets/${C2PATrustStore.TRUST_LIST_ASSET}"
+        ).let { file ->
+            // Tests run from android/app; fall back to the repo-relative path.
+            val f = if (file.exists()) file
+            else java.io.File("android/app/src/main/assets/${C2PATrustStore.TRUST_LIST_ASSET}")
+            assertTrue("trust list asset must exist at ${f.path}", f.exists())
+            f.readText()
+        }
+        val store = C2PATrustStore(pem)
+        assertFalse("the production list must load anchors", store.isEmpty())
+        assertTrue("expected dozens of anchors, got a suspiciously small set", store.size() >= 20)
+    }
+
+    @Test
+    fun verifierIgnoresPlainJpeg() {
         val plainJpeg = byteArrayOf(
             0xFF.toByte(), 0xD8.toByte(),
             0xFF.toByte(), 0xE0.toByte(), 0x00, 0x10,
             0x4A, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00,
             0xFF.toByte(), 0xD9.toByte(),
         )
-        val verifier = C2PAVerifier(C2PAManifestChecker())
-        val result = verifier.verifyStream(ByteArrayInputStream(plainJpeg))
+        val ca = C2paTestFixtures.newCa()
+        val result = verifierFor(ca).verifyStream(ByteArrayInputStream(plainJpeg))
         assertEquals(ProvenanceEvidence.Absent, result.evidence)
-    }
-
-    @Test
-    fun cborDecodes128To255ByteLengthsCorrectlyWithoutSignExtension() {
-        // ByteString with major type 2, 1-byte length info 24 (0x58), length 200 (0xC8)
-        val len = 200
-        val payload = ByteArray(2 + len)
-        payload[0] = 0x58.toByte()
-        payload[1] = 0xC8.toByte() // 200 in unsigned byte, -56 in signed byte
-        for (i in 0 until len) {
-            payload[2 + i] = (i and 0xFF).toByte()
-        }
-
-        val decoded = Cbor.decode(payload)
-        assertTrue(decoded is Cbor.Value.ByteString)
-        val byteStr = decoded as Cbor.Value.ByteString
-        assertEquals(200, byteStr.bytes.size)
-        assertEquals(0.toByte(), byteStr.bytes[0])
-        assertEquals(199.toByte(), byteStr.bytes[199])
-    }
-
-    @Test
-    fun c2paVerifierEnforcesIacr2026804ExclusionHullInvariant() {
-        val verifier = C2PAVerifier(C2PAManifestChecker())
-        val dummyFile = ByteArray(1024) { (it % 256).toByte() }
-        val manifestStart = 200L
-        val manifestEnd = 400L
-        val manifestRanges = listOf(Pair(manifestStart, manifestEnd))
-
-        // Legitimate exclusion inside manifest hull (200..400)
-        val legitDh = C2PAManifestChecker.DataHash(
-            exclusions = listOf(C2PAManifestChecker.Exclusion(210L, 390L))
-        )
-        val legitDigest = verifier.recomputeDataHash(dummyFile, legitDh, manifestRanges)
-        assertNotNull("Legitimate exclusion within container hull must compute hash", legitDigest)
-
-        // Forged exclusion outside manifest hull: excluding entire file 0..1024 (exploit vector)
-        val exploitDh = C2PAManifestChecker.DataHash(
-            exclusions = listOf(C2PAManifestChecker.Exclusion(0L, 1024L))
-        )
-        val exploitDigest = verifier.recomputeDataHash(dummyFile, exploitDh, manifestRanges)
-        assertNull("Exclusion covering entire asset outside manifest hull must be rejected", exploitDigest)
-
-        // Forged exclusion outside hull bounds (e.g., 0..100)
-        val outsideDh = C2PAManifestChecker.DataHash(
-            exclusions = listOf(C2PAManifestChecker.Exclusion(0L, 100L))
-        )
-        val outsideDigest = verifier.recomputeDataHash(dummyFile, outsideDh, manifestRanges)
-        assertNull("Exclusion outside JUMBF container hull must fail IACR 2026/804 invariant", outsideDigest)
     }
 
     @Test
@@ -238,29 +243,51 @@ QBxVum7HATnh3Jw5d65hi8pPudk7TkkxJa3lPdo=
         assertEquals(1.0, AudioSealDetector.binomialTwoTailed(0, 0), 1e-9)
     }
 
-    companion object {
-        // Ephemeral EC key and test certificate for ProvenanceIntegrationTest only.
-        // Never shipped or compiled into production release artifacts.
-        private const val TEST_ROOT_PEM = """
------BEGIN CERTIFICATE-----
-MIIBnzCCAUWgAwIBAgIUWiyNi980f5j+oj+EgQYFGagJJPkwCgYIKoZIzj0EAwIw
-RTELMAkGA1UEBhMCVVMxFzAVBgNVBAoMDlRlc3QgQXV0aG9yaXR5MR0wGwYDVQQD
-DBRUZXN0IEMyUEEgVHJ1c3QgUm9vdDAeFw0yNDAxMDEwMDAwMDBaFw0zNTAxMDEw
-MDAwMDBaMEUxCzAJBgNVBAYTAlVTMRcwFQYDVQQKDA5UZXN0IEF1dGhvcml0eTEd
-MBsGA1UEAwwUVGVzdCBDMlBBIFRydXN0IFJvb3QwWTATBgcqhkjOPQIBBggqhkjO
-PQMBBwNCAASt6BSIVFQRYt94m18Ce5o+9Mae9VoOtbRiSX1SelzulUX43By/sWPl
-UrQTUDWjDrNKjdY7VDeXb6mZ9c02ZoJXoxMwETAPBgNVHRMBAf8EBTADAQH/MAoG
-CCqGSM49BAMCA0gAMEUCIDsLPOF0RKFx6sBvdsbc5fcKuVJvRNv3xqSrcJIaKtoa
-AiEA6NZcKmMj6mqMLPepnoOUy2/Yg6ajSQk++qDmYkHhsAY=
------END CERTIFICATE-----
-"""
+    @Test
+    fun anOverbroadExclusionRangeOutsideManifestHullIsRejected() {
+        // IACR ePrint 2026/804 exclusion-range attack: the manifest is validly
+        // signed by a trusted CA and its c2pa.hash.data digest matches the
+        // excluded byte subset, but the exclusion range covers the entire file
+        // [0, fileSize) outside the JUMBF manifest container hull.
+        val ca = C2paTestFixtures.newCa()
+        val emptyDigest = C2paTestFixtures.sha256(ByteArray(0))
+        var prev: C2paTestFixtures.JpegLayout? = null
+        for (pass in 0 until 6) {
+            val totalLen = prev?.bytes?.size?.toLong() ?: 4096L
+            val json = C2paTestFixtures.dataHashJson(listOf(0L to totalLen), emptyDigest)
+            val claim = C2paTestFixtures.buildClaim()
+            val cose = C2paTestFixtures.buildCoseSign1(claim, ca)
+            val store = C2paTestFixtures.buildStore(
+                claim, cose, listOf(ca.certificate.encoded),
+                extraBoxes = listOf("jumd" to ("c2pa.hash.data" + json).toByteArray(Charsets.UTF_8)),
+            )
+            prev = C2paTestFixtures.jpegWithApp11(store, maxSegPayload = 64, prefixPadBytes = 2048)
+        }
+        val result = verifierFor(ca).verifyStream(ByteArrayInputStream(prev!!.bytes))
+        val c2pa = result.evidence as ProvenanceEvidence.C2PAClaim
+        assertTrue(c2pa.manifestPresent)
+        assertFalse("exclusion range outside manifest hull must be rejected", c2pa.signed)
+        assertTrue(result.validationNotes?.contains("Data-hash binding failed") == true)
+    }
 
-        private const val TEST_ROOT_KEY_PKCS8 = """
------BEGIN PRIVATE KEY-----
-MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgAtT/+8yrPVKxmtrz
-YY6i5OiwGQ8mNHK9i1XBMy4N1OmhRANCAASt6BSIVFQRYt94m18Ce5o+9Mae9VoO
-tbRiSX1SelzulUX43By/sWPlUrQTUDWjDrNKjdY7VDeXb6mZ9c02ZoJX
------END PRIVATE KEY-----
-"""
+    @Test
+    fun cborDecodesOneByteLengthsBetween128And255WithoutSignExtension() {
+        // Regression test for CBOR additional info == 24 with lengths 128..255
+        // (including 255 = 0xFF, which previously sign-extended to -1L).
+        for (len in listOf(128, 200, 255)) {
+            val payload = ByteArray(len) { (it and 0xFF).toByte() }
+            val encoded = com.onndetect.detection.provenance.Cbor.encodeByteString(payload)
+            val decoded = com.onndetect.detection.provenance.Cbor.decode(encoded)
+            assertTrue("expected BStr for length $len", decoded is com.onndetect.detection.provenance.Cbor.Value.BStr)
+            val bstr = decoded as com.onndetect.detection.provenance.Cbor.Value.BStr
+            assertEquals(len, bstr.bytes.size)
+            assertTrue(bstr.bytes.contentEquals(payload))
+        }
+    }
+
+    private fun ByteArray.copyOfMutable(): ByteArray {
+        val out = ByteArray(size)
+        System.arraycopy(this, 0, out, 0, size)
+        return out
     }
 }

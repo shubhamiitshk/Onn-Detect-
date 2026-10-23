@@ -1,0 +1,86 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 2,
+    "identityHash": "68ecee0245eb9e0f785c26fd03f9876f",
+    "entities": [
+      {
+        "tableName": "voice_vault_profiles",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `contact_name` TEXT NOT NULL, `relationship` TEXT NOT NULL, `enrolled_at_ms` INTEGER NOT NULL, `sample_duration_ms` INTEGER NOT NULL, `embedding_csv` TEXT DEFAULT '', `sample_sha256` TEXT, `encrypted_embedding` BLOB, `embedding_iv` BLOB, `spoof_score` REAL, `embedding_version` INTEGER, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "contactName",
+            "columnName": "contact_name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "relationship",
+            "columnName": "relationship",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "enrolledAtMs",
+            "columnName": "enrolled_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sampleDurationMs",
+            "columnName": "sample_duration_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "embeddingCsv",
+            "columnName": "embedding_csv",
+            "affinity": "TEXT",
+            "defaultValue": "''"
+          },
+          {
+            "fieldPath": "sampleSha256",
+            "columnName": "sample_sha256",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "encryptedEmbedding",
+            "columnName": "encrypted_embedding",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "embeddingIv",
+            "columnName": "embedding_iv",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "spoofScore",
+            "columnName": "spoof_score",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "embeddingVersion",
+            "columnName": "embedding_version",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '68ecee0245eb9e0f785c26fd03f9876f')"
+    ]
+  }
+}
