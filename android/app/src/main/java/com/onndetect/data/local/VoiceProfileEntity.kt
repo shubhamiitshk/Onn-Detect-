@@ -5,8 +5,9 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 
 /**
- * Biometric voiceprint profile stored in the local, encrypted Family Safe-Voice Vault.
- * Holds the normalized acoustic speaker embedding for matching forwarded voice notes.
+ * Biometric voiceprint profile stored in the local, hardware-encrypted Family Safe-Voice Vault.
+ * Holds the normalized acoustic speaker embedding, sealed via Android Keystore AES-256-GCM
+ * with Authenticated Additional Data (AAD) bound to the profile id and contact name.
  */
 @Entity(tableName = "voice_vault_profiles")
 data class VoiceProfileEntity(
@@ -25,22 +26,53 @@ data class VoiceProfileEntity(
     @ColumnInfo(name = "sample_duration_ms")
     val sampleDurationMs: Long,
 
-    /** Comma-separated normalized acoustic speaker embedding vector. */
-    @ColumnInfo(name = "embedding_csv")
-    val embeddingCsv: String,
+    /**
+     * AES-256-GCM encrypted binary representation of the speaker embedding vector.
+     * Authenticated with AAD bound to "$id|$contactName".
+     */
+    @ColumnInfo(name = "encrypted_embedding")
+    val encryptedEmbedding: ByteArray,
+
+    /** 12-byte IV used for AES-GCM encryption. */
+    @ColumnInfo(name = "encryption_iv")
+    val encryptionIv: ByteArray,
 
     @ColumnInfo(name = "sample_sha256")
     val sampleSha256: String? = null,
 ) {
-    fun toEmbeddingArray(): FloatArray {
-        if (embeddingCsv.isBlank()) return FloatArray(0)
-        return try {
-            embeddingCsv.split(",")
-                .map { it.trim().toFloat() }
-                .toFloatArray()
-        } catch (_: Exception) {
-            FloatArray(0)
-        }
+    /**
+     * Decrypts the sealed voiceprint using [crypto].
+     * Returns empty array if AAD verification fails (e.g. record tampering).
+     */
+    fun toEmbeddingArray(crypto: VoiceVaultCrypto = VoiceVaultCrypto()): FloatArray {
+        return crypto.decrypt(encryptedEmbedding, encryptionIv, id, contactName)
+    }
+
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (javaClass != other?.javaClass) return false
+        other as VoiceProfileEntity
+        if (id != other.id) return false
+        if (contactName != other.contactName) return false
+        if (relationship != other.relationship) return false
+        if (enrolledAtMs != other.enrolledAtMs) return false
+        if (sampleDurationMs != other.sampleDurationMs) return false
+        if (!encryptedEmbedding.contentEquals(other.encryptedEmbedding)) return false
+        if (!encryptionIv.contentEquals(other.encryptionIv)) return false
+        if (sampleSha256 != other.sampleSha256) return false
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var result = id.hashCode()
+        result = 31 * result + contactName.hashCode()
+        result = 31 * result + relationship.hashCode()
+        result = 31 * result + enrolledAtMs.hashCode()
+        result = 31 * result + sampleDurationMs.hashCode()
+        result = 31 * result + encryptedEmbedding.contentHashCode()
+        result = 31 * result + encryptionIv.contentHashCode()
+        result = 31 * result + (sampleSha256?.hashCode() ?: 0)
+        return result
     }
 
     companion object {
@@ -52,15 +84,17 @@ data class VoiceProfileEntity(
             sampleDurationMs: Long,
             embedding: FloatArray,
             sampleSha256: String? = null,
+            crypto: VoiceVaultCrypto = VoiceVaultCrypto(),
         ): VoiceProfileEntity {
-            val csv = embedding.joinToString(",") { "%.6f".format(java.util.Locale.US, it) }
+            val enc = crypto.encrypt(embedding, id, contactName)
             return VoiceProfileEntity(
                 id = id,
                 contactName = contactName,
                 relationship = relationship,
                 enrolledAtMs = enrolledAtMs,
                 sampleDurationMs = sampleDurationMs,
-                embeddingCsv = csv,
+                encryptedEmbedding = enc.ciphertext,
+                encryptionIv = enc.iv,
                 sampleSha256 = sampleSha256,
             )
         }

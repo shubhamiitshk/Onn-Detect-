@@ -97,8 +97,10 @@ object PipelineModule {
 
     @Provides
     @Singleton
-    fun provideC2PATrustStore(): com.onndetect.detection.provenance.C2PATrustStore =
-        com.onndetect.detection.provenance.C2PATrustStore()
+    fun provideC2PATrustStore(
+        @ApplicationContext context: Context,
+    ): com.onndetect.detection.provenance.C2PATrustStore =
+        com.onndetect.detection.provenance.C2PATrustStore(context)
 
     @Provides
     @Singleton

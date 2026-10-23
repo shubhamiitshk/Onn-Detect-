@@ -16,7 +16,9 @@ import javax.inject.Singleton
  *    trusted unless signed and validated against a root trust list.
  * 3. Root Anchor Discipline: Certificates must chain to an embedded root
  *    in [C2PATrustStore]. Untrusted self-signed certificates are rejected.
- * 4. Categorical Evidence: Verified AI claims raise confidence to
+ * 4. Fail-Closed Conjunction: A manifest is signed ONLY if hashVerified && coseSignatureValid && certChainValid.
+ *    A certificate chain alone without a cryptographic signature over the claim is unverified.
+ * 5. Categorical Evidence: Verified AI claims raise confidence to
  *    [VerdictConfidence.PROVENANCE_CONFIRMED]. Absence of C2PA never lowers
  *    statistical scores.
  */
@@ -66,7 +68,6 @@ class C2PAVerifier @Inject constructor(
 
             val chainValid = trustStore.verifyChain(leaf, intermediates)
             if (chainValid) {
-                // If explicit claim data and signature bytes are present, verify cryptographic signature
                 val sigBytes = finding.signatureBytes
                 val claimData = finding.claimData
                 if (sigBytes != null && claimData != null) {
@@ -84,10 +85,10 @@ class C2PAVerifier @Inject constructor(
                         notes.append("C2PA signature mismatch: claim data tampered or corrupted. ")
                     }
                 } else {
-                    // Validated certificate chain anchored to embedded C2PA trust store
-                    isVerifiedSignature = true
+                    // Fail-closed conjunction: A valid cert chain alone WITHOUT a valid signature over the claim is unverified
+                    isVerifiedSignature = false
                     issuer = leaf.subjectX500Principal.name
-                    notes.append("Verified trusted C2PA certificate chain ($issuer). ")
+                    notes.append("C2PA certificate chain valid ($issuer) but manifest lacks cryptographic claim signature (unverified). ")
                 }
             } else {
                 notes.append("Untrusted certificate authority: signer does not chain to an embedded C2PA trust anchor. ")

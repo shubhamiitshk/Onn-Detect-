@@ -2,6 +2,7 @@ package com.onndetect.data.repository
 
 import com.onndetect.data.local.VoiceProfileDao
 import com.onndetect.data.local.VoiceProfileEntity
+import com.onndetect.data.local.VoiceVaultCrypto
 import kotlinx.coroutines.flow.Flow
 import java.util.UUID
 import javax.inject.Inject
@@ -10,6 +11,7 @@ import javax.inject.Singleton
 @Singleton
 class VoiceVaultRepository @Inject constructor(
     private val dao: VoiceProfileDao,
+    private val crypto: VoiceVaultCrypto = VoiceVaultCrypto(),
 ) {
     fun getAllProfiles(): Flow<List<VoiceProfileEntity>> = dao.getAll()
 
@@ -33,6 +35,7 @@ class VoiceVaultRepository @Inject constructor(
             sampleDurationMs = sampleDurationMs,
             embedding = embedding,
             sampleSha256 = sampleSha256,
+            crypto = crypto,
         )
         dao.insert(entity)
         return entity

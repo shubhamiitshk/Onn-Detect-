@@ -32,7 +32,9 @@ class ProvenanceIntegrationTest {
         bytes.joinToString("") { "%02x".format(it) }
 
     @Test
-    fun c2paVerifierDetectsAndValidatesAiClaimWithEmbeddedTrustRoot() {
+    fun c2paVerifierRejectsManifestWithTrustedCertMissingSignature() {
+        // Manifest carries a valid trusted OpenAI root certificate but no signature block.
+        // Fail-closed conjunction requires: signed = hashVerified && coseSignatureValid && certChainValid.
         val certPem = C2PATrustStore.OPENAI_ROOT_PEM.trim()
         val payload = ("c2patrainedAlgorithmicMedia\n" + certPem).toByteArray(Charsets.ISO_8859_1)
         val jpegBytes = jpegWithApp11(payload)
@@ -42,9 +44,9 @@ class ProvenanceIntegrationTest {
         assertTrue(result.evidence is ProvenanceEvidence.C2PAClaim)
         val claim = result.evidence as ProvenanceEvidence.C2PAClaim
         assertTrue("Manifest should be present", claim.manifestPresent)
-        assertTrue("Signature should be verified offline against embedded trust store", claim.signed)
-        assertEquals("trainedAlgorithmicMedia", claim.digitalSourceType)
-        assertTrue("Should confirm AI involvement", claim.confirmsAiInvolvement)
+        assertFalse("Manifest with valid cert but missing signature must NOT be signed (fail-closed)", claim.signed)
+        assertFalse("Unsigned manifest must not confirm AI involvement", claim.confirmsAiInvolvement)
+        assertTrue(result.validationNotes?.contains("lacks cryptographic claim signature") == true)
     }
 
     @Test
@@ -95,9 +97,13 @@ QBxVum7HATnh3Jw5d65hi8pPudk7TkkxJa3lPdo=
 
     @Test
     fun c2paVerifierValidatesCryptographicSignatureOverClaim() {
+        val trustStore = C2PATrustStore()
+        val testCert = trustStore.parseCertificate(TEST_ROOT_PEM.trim().toByteArray(Charsets.UTF_8))!!
+        trustStore.addTrustAnchor(testCert)
+
         // Sign claim using TEST_ROOT_KEY_PKCS8
         val keyDer = Base64.getMimeDecoder().decode(
-            C2PATrustStore.TEST_ROOT_KEY_PKCS8
+            TEST_ROOT_KEY_PKCS8
                 .replace("-----BEGIN PRIVATE KEY-----", "")
                 .replace("-----END PRIVATE KEY-----", "")
                 .trim()
@@ -112,35 +118,40 @@ QBxVum7HATnh3Jw5d65hi8pPudk7TkkxJa3lPdo=
         val signatureBytes = dsa.sign()
         val signatureHex = bytesToHex(signatureBytes)
 
-        val certPem = C2PATrustStore.TEST_ROOT_PEM.trim()
+        val certPem = TEST_ROOT_PEM.trim()
         val payload = ("c2patrainedAlgorithmicMedia\n" +
             certPem + "\n" +
             "c2cs:" + claimText + ":" + signatureHex).toByteArray(Charsets.ISO_8859_1)
 
         val jpegBytes = jpegWithApp11(payload)
-        val verifier = C2PAVerifier(C2PAManifestChecker())
+        val verifier = C2PAVerifier(C2PAManifestChecker(), trustStore)
         val result = verifier.verifyStream(ByteArrayInputStream(jpegBytes))
 
         assertTrue(result.evidence is ProvenanceEvidence.C2PAClaim)
         val claim = result.evidence as ProvenanceEvidence.C2PAClaim
         assertTrue("Manifest should be present", claim.manifestPresent)
         assertTrue("Signature over claim should be verified", claim.signed)
+        assertEquals("trainedAlgorithmicMedia", claim.digitalSourceType)
         assertTrue(claim.confirmsAiInvolvement)
         assertTrue(result.validationNotes?.contains("Cryptographically verified against trusted C2PA root") == true)
     }
 
     @Test
     fun c2paVerifierRejectsTamperedCryptographicSignature() {
+        val trustStore = C2PATrustStore()
+        val testCert = trustStore.parseCertificate(TEST_ROOT_PEM.trim().toByteArray(Charsets.UTF_8))!!
+        trustStore.addTrustAnchor(testCert)
+
         val claimText = "c2pa_claim_sha256_hash_test_asset"
         val tamperedSignatureHex = "3045022100" + "ff".repeat(31) + "0220" + "ee".repeat(32)
 
-        val certPem = C2PATrustStore.TEST_ROOT_PEM.trim()
+        val certPem = TEST_ROOT_PEM.trim()
         val payload = ("c2patrainedAlgorithmicMedia\n" +
             certPem + "\n" +
             "c2cs:" + claimText + ":" + tamperedSignatureHex).toByteArray(Charsets.ISO_8859_1)
 
         val jpegBytes = jpegWithApp11(payload)
-        val verifier = C2PAVerifier(C2PAManifestChecker())
+        val verifier = C2PAVerifier(C2PAManifestChecker(), trustStore)
         val result = verifier.verifyStream(ByteArrayInputStream(jpegBytes))
 
         assertTrue(result.evidence is ProvenanceEvidence.C2PAClaim)
@@ -175,5 +186,31 @@ QBxVum7HATnh3Jw5d65hi8pPudk7TkkxJa3lPdo=
             AudioSealDetector.binomialTwoTailed(28, 32) < AudioSealDetector.binomialTwoTailed(24, 32)
         )
         assertEquals(1.0, AudioSealDetector.binomialTwoTailed(0, 0), 1e-9)
+    }
+
+    companion object {
+        // Ephemeral EC key and test certificate for ProvenanceIntegrationTest only.
+        // Never shipped or compiled into production release artifacts.
+        private const val TEST_ROOT_PEM = """
+-----BEGIN CERTIFICATE-----
+MIIBnzCCAUWgAwIBAgIUWiyNi980f5j+oj+EgQYFGagJJPkwCgYIKoZIzj0EAwIw
+RTELMAkGA1UEBhMCVVMxFzAVBgNVBAoMDlRlc3QgQXV0aG9yaXR5MR0wGwYDVQQD
+DBRUZXN0IEMyUEEgVHJ1c3QgUm9vdDAeFw0yNDAxMDEwMDAwMDBaFw0zNTAxMDEw
+MDAwMDBaMEUxCzAJBgNVBAYTAlVTMRcwFQYDVQQKDA5UZXN0IEF1dGhvcml0eTEd
+MBsGA1UEAwwUVGVzdCBDMlBBIFRydXN0IFJvb3QwWTATBgcqhkjOPQIBBggqhkjO
+PQMBBwNCAASt6BSIVFQRYt94m18Ce5o+9Mae9VoOtbRiSX1SelzulUX43By/sWPl
+UrQTUDWjDrNKjdY7VDeXb6mZ9c02ZoJXoxMwETAPBgNVHRMBAf8EBTADAQH/MAoG
+CCqGSM49BAMCA0gAMEUCIDsLPOF0RKFx6sBvdsbc5fcKuVJvRNv3xqSrcJIaKtoa
+AiEA6NZcKmMj6mqMLPepnoOUy2/Yg6ajSQk++qDmYkHhsAY=
+-----END CERTIFICATE-----
+"""
+
+        private const val TEST_ROOT_KEY_PKCS8 = """
+-----BEGIN PRIVATE KEY-----
+MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgAtT/+8yrPVKxmtrz
+YY6i5OiwGQ8mNHK9i1XBMy4N1OmhRANCAASt6BSIVFQRYt94m18Ce5o+9Mae9VoO
+tbRiSX1SelzulUX43By/sWPlUrQTUDWjDrNKjdY7VDeXb6mZ9c02ZoJX
+-----END PRIVATE KEY-----
+"""
     }
 }

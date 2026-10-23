@@ -1,5 +1,7 @@
 package com.onndetect.detection.provenance
 
+import android.content.Context
+import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.ByteArrayInputStream
 import java.security.Signature
 import java.security.cert.CertPathValidator
@@ -21,7 +23,9 @@ import javax.inject.Singleton
  * 3. Pure JVM Testability: Can run on both Android ART and standard OpenJDK without Android Keystore dependencies.
  */
 @Singleton
-class C2PATrustStore @Inject constructor() {
+class C2PATrustStore @Inject constructor(
+    @param:ApplicationContext private val context: Context? = null,
+) {
 
     private val certFactory = CertificateFactory.getInstance("X.509")
     private val trustAnchors = mutableSetOf<TrustAnchor>()
@@ -160,22 +164,39 @@ class C2PATrustStore @Inject constructor() {
             "OpenAI",
             "Google",
             "DigiCert",
+            "Leica",
+            "Sony",
+            "Nikon",
         )
         return recognized.any { issuerDn.contains(it, ignoreCase = true) }
     }
 
     private fun loadEmbeddedRoots() {
-        val embeddedRootPems = listOf(
-            ADOBE_CAI_ROOT_PEM,
-            TRUEPIC_ROOT_PEM,
-            C2PA_GENERAL_ROOT_PEM,
-            OPENAI_ROOT_PEM,
-            TEST_ROOT_PEM,
-        )
+        var loadedCount = 0
+        try {
+            val stream = context?.assets?.open("trust/c2pa_trust_anchors.pem")
+                ?: C2PATrustStore::class.java.classLoader?.getResourceAsStream("assets/trust/c2pa_trust_anchors.pem")
+                ?: C2PATrustStore::class.java.classLoader?.getResourceAsStream("trust/c2pa_trust_anchors.pem")
+            stream?.use { s ->
+                val certs = parseCertificateChain(s.readBytes())
+                for (cert in certs) {
+                    addTrustAnchor(cert)
+                    loadedCount++
+                }
+            }
+        } catch (_: Exception) {}
 
-        for (pem in embeddedRootPems) {
-            parseCertificate(pem.trimIndent().toByteArray(Charsets.UTF_8))?.let { cert ->
-                addTrustAnchor(cert)
+        if (loadedCount == 0) {
+            val embeddedRootPems = listOf(
+                ADOBE_CAI_ROOT_PEM,
+                TRUEPIC_ROOT_PEM,
+                C2PA_GENERAL_ROOT_PEM,
+                OPENAI_ROOT_PEM,
+            )
+            for (pem in embeddedRootPems) {
+                parseCertificate(pem.trimIndent().toByteArray(Charsets.UTF_8))?.let { cert ->
+                    addTrustAnchor(cert)
+                }
             }
         }
     }
@@ -235,28 +256,6 @@ V3zbkTnAG94a0+/qoxMwETAPBgNVHRMBAf8EBTADAQH/MAoGCCqGSM49BAMCA0gA
 MEUCIQDVNf5rxFukc5eQnm6GyDsUH1Md4wMF+ZmMrS8yRNg1JwIgHKfLAQR0m8ma
 rLg6ccqT1IeAA9RZ5kTx+KtZOqK+l54=
 -----END CERTIFICATE-----
-"""
-
-        const val TEST_ROOT_PEM = """
------BEGIN CERTIFICATE-----
-MIIBnzCCAUWgAwIBAgIUWiyNi980f5j+oj+EgQYFGagJJPkwCgYIKoZIzj0EAwIw
-RTELMAkGA1UEBhMCVVMxFzAVBgNVBAoMDlRlc3QgQXV0aG9yaXR5MR0wGwYDVQQD
-DBRUZXN0IEMyUEEgVHJ1c3QgUm9vdDAeFw0yNDAxMDEwMDAwMDBaFw0zNTAxMDEw
-MDAwMDBaMEUxCzAJBgNVBAYTAlVTMRcwFQYDVQQKDA5UZXN0IEF1dGhvcml0eTEd
-MBsGA1UEAwwUVGVzdCBDMlBBIFRydXN0IFJvb3QwWTATBgcqhkjOPQIBBggqhkjO
-PQMBBwNCAASt6BSIVFQRYt94m18Ce5o+9Mae9VoOtbRiSX1SelzulUX43By/sWPl
-UrQTUDWjDrNKjdY7VDeXb6mZ9c02ZoJXoxMwETAPBgNVHRMBAf8EBTADAQH/MAoG
-CCqGSM49BAMCA0gAMEUCIDsLPOF0RKFx6sBvdsbc5fcKuVJvRNv3xqSrcJIaKtoa
-AiEA6NZcKmMj6mqMLPepnoOUy2/Yg6ajSQk++qDmYkHhsAY=
------END CERTIFICATE-----
-"""
-
-        const val TEST_ROOT_KEY_PKCS8 = """
------BEGIN PRIVATE KEY-----
-MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgAtT/+8yrPVKxmtrz
-YY6i5OiwGQ8mNHK9i1XBMy4N1OmhRANCAASt6BSIVFQRYt94m18Ce5o+9Mae9VoO
-tbRiSX1SelzulUX43By/sWPlUrQTUDWjDrNKjdY7VDeXb6mZ9c02ZoJX
------END PRIVATE KEY-----
 """
     }
 }
