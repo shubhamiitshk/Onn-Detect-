@@ -87,6 +87,53 @@ class AgreeingBitCounter(torch.nn.Module):
         return agreeing.to(torch.float32)
 
 
+def _strip_weight_norm(module: torch.nn.Module) -> torch.nn.Module:
+    """Fuses all WeightNorm / Parametrization hooks into plain weights before export."""
+    for child in module.modules():
+        try:
+            torch.nn.utils.remove_weight_norm(child)
+        except ValueError:
+            pass
+        if hasattr(torch.nn.utils, "parametrize") and torch.nn.utils.parametrize.is_parametrized(child):
+            for tensor_name in list(child.parametrizations.keys()):
+                torch.nn.utils.parametrize.remove_parametrizations(child, tensor_name, leave_parametrized=True)
+    return module
+
+
+def _tflite_bytes(model: torch.nn.Module, onnx_path: str, workdir: str, calib: np.ndarray, window: int) -> bytes:
+    """Primary path: ai-edge-torch direct PyTorch -> LiteRT lowering.
+    Fallback path: onnx2tf with weight_norm already fused."""
+    try:
+        import ai_edge_torch
+        sample = (torch.from_numpy(calib[:1]).to(torch.float32),)
+        edge_model = ai_edge_torch.convert(model.eval(), sample)
+        out_file = Path(workdir) / "audioseal_ai_edge.tflite"
+        edge_model.export(str(out_file))
+        return out_file.read_bytes()
+    except (ImportError, Exception):
+        pass
+
+    import glob
+    import onnx2tf
+    tf_dir = str(Path(workdir) / "tf_saved_model")
+    try:
+        onnx2tf.convert(
+            input_onnx_file_path=onnx_path,
+            output_folder_path=tf_dir,
+            non_verbose=True,
+            keep_ncw_or_nchw_or_ncdhw_input_names=["audio"],
+            disable_group_convolution=True,
+            output_dynamic_range_quantized_tflite=True,
+        )
+        candidates = sorted(glob.glob(str(Path(tf_dir) / "*float32.tflite"))) + \
+                     sorted(glob.glob(str(Path(tf_dir) / "*dynamic_range_quantize*.tflite")))
+        if candidates:
+            return Path(candidates[0]).read_bytes()
+    except Exception:
+        pass
+    raise RuntimeError("No TFLite candidate emitted")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", required=True)
@@ -98,6 +145,7 @@ def main() -> None:
 
     detector = load_detector()
     detector.eval()
+    detector = _strip_weight_norm(detector)
     total = sum(p.numel() for p in detector.parameters())
     print(f"AudioSeal detector: {total:,} parameters ({total * 4 / 1e6:.2f} MB fp32)")
 
@@ -137,20 +185,10 @@ def main() -> None:
 
     # --- TFLite ---
     tflite_path = output_dir / "audioseal_detector.tflite"
-    converter = None
     try:
-        import tensorflow as tf
-
-        converter = tf.lite.TFLiteConverter.from_onnx_model(str(onnx_path))
-        converter.optimizations = [tf.lite.Optimize.DEFAULT]
-        converter.representative_dataset = lambda: (
-            [batch[index:index + 1].astype(np.float32)] for index in range(len(batch))
-        )
-        converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
-        converter.inference_input_type = tf.int8
-        converter.inference_output_type = tf.int8
-        tflite_path.write_bytes(converter.convert())
-        print(f"TFLite INT8: {tflite_path.stat().st_size / 1e6:.2f} MB")
+        tflite_data = _tflite_bytes(detector, str(onnx_path), str(output_dir), batch, window)
+        tflite_path.write_bytes(tflite_data)
+        print(f"TFLite: {tflite_path.stat().st_size / 1e6:.2f} MB")
     except Exception as exc:  # pragma: no cover - toolchain dependent
         print(f"TFLite conversion failed: {type(exc).__name__}: {exc}")
 

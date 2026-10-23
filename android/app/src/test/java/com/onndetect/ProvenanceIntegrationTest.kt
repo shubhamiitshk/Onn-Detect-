@@ -4,6 +4,7 @@ import com.onndetect.detection.provenance.AudioSealDetector
 import com.onndetect.detection.provenance.C2PAManifestChecker
 import com.onndetect.detection.provenance.C2PATrustStore
 import com.onndetect.detection.provenance.C2PAVerifier
+import com.onndetect.detection.provenance.Cbor
 import com.onndetect.detection.provenance.ProvenanceEvidence
 import org.junit.Assert.*
 import org.junit.Test
@@ -173,6 +174,55 @@ QBxVum7HATnh3Jw5d65hi8pPudk7TkkxJa3lPdo=
         val verifier = C2PAVerifier(C2PAManifestChecker())
         val result = verifier.verifyStream(ByteArrayInputStream(plainJpeg))
         assertEquals(ProvenanceEvidence.Absent, result.evidence)
+    }
+
+    @Test
+    fun cborDecodes128To255ByteLengthsCorrectlyWithoutSignExtension() {
+        // ByteString with major type 2, 1-byte length info 24 (0x58), length 200 (0xC8)
+        val len = 200
+        val payload = ByteArray(2 + len)
+        payload[0] = 0x58.toByte()
+        payload[1] = 0xC8.toByte() // 200 in unsigned byte, -56 in signed byte
+        for (i in 0 until len) {
+            payload[2 + i] = (i and 0xFF).toByte()
+        }
+
+        val decoded = Cbor.decode(payload)
+        assertTrue(decoded is Cbor.Value.ByteString)
+        val byteStr = decoded as Cbor.Value.ByteString
+        assertEquals(200, byteStr.bytes.size)
+        assertEquals(0.toByte(), byteStr.bytes[0])
+        assertEquals(199.toByte(), byteStr.bytes[199])
+    }
+
+    @Test
+    fun c2paVerifierEnforcesIacr2026804ExclusionHullInvariant() {
+        val verifier = C2PAVerifier(C2PAManifestChecker())
+        val dummyFile = ByteArray(1024) { (it % 256).toByte() }
+        val manifestStart = 200L
+        val manifestEnd = 400L
+        val manifestRanges = listOf(Pair(manifestStart, manifestEnd))
+
+        // Legitimate exclusion inside manifest hull (200..400)
+        val legitDh = C2PAManifestChecker.DataHash(
+            exclusions = listOf(C2PAManifestChecker.Exclusion(210L, 390L))
+        )
+        val legitDigest = verifier.recomputeDataHash(dummyFile, legitDh, manifestRanges)
+        assertNotNull("Legitimate exclusion within container hull must compute hash", legitDigest)
+
+        // Forged exclusion outside manifest hull: excluding entire file 0..1024 (exploit vector)
+        val exploitDh = C2PAManifestChecker.DataHash(
+            exclusions = listOf(C2PAManifestChecker.Exclusion(0L, 1024L))
+        )
+        val exploitDigest = verifier.recomputeDataHash(dummyFile, exploitDh, manifestRanges)
+        assertNull("Exclusion covering entire asset outside manifest hull must be rejected", exploitDigest)
+
+        // Forged exclusion outside hull bounds (e.g., 0..100)
+        val outsideDh = C2PAManifestChecker.DataHash(
+            exclusions = listOf(C2PAManifestChecker.Exclusion(0L, 100L))
+        )
+        val outsideDigest = verifier.recomputeDataHash(dummyFile, outsideDh, manifestRanges)
+        assertNull("Exclusion outside JUMBF container hull must fail IACR 2026/804 invariant", outsideDigest)
     }
 
     @Test

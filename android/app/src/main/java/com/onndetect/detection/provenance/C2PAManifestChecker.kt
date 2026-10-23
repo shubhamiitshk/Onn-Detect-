@@ -11,16 +11,38 @@ import javax.inject.Inject
  * ## What this does and does NOT do
  *
  * Extracts C2PA JUMBF structures, embedded X.509 certificate chains, digital
- * source types, and signature blocks from JPEG APP11 and ISO-BMFF containers.
+ * source types, exclusion ranges, data hashes, and signature blocks from
+ * JPEG APP11 and ISO-BMFF containers.
  *
  * It extracts raw cryptographic components which are subsequently verified
- * against [C2PATrustStore] by [C2PAVerifier].
- *
- * ## Where the manifest lives
- *  * **JPEG** — an APP11 segment carrying a JUMBF box whose type is `c2pa`.
- *  * **ISO-BMFF** (MP4 / HEIF) — a top-level `c2pa` box.
+ * against [C2PATrustStore] by [C2PAVerifier] under IACR 2026/804 invariants.
  */
 class C2PAManifestChecker @Inject constructor() {
+
+    data class Exclusion(val start: Long, val end: Long)
+
+    data class DataHash(
+        val hash: ByteArray? = null,
+        val exclusions: List<Exclusion> = emptyList(),
+        val algorithm: String = "sha256",
+    ) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (javaClass != other?.javaClass) return false
+            other as DataHash
+            if (!hash.contentEquals(other.hash)) return false
+            if (exclusions != other.exclusions) return false
+            if (algorithm != other.algorithm) return false
+            return true
+        }
+
+        override fun hashCode(): Int {
+            var result = hash?.contentHashCode() ?: 0
+            result = 31 * result + exclusions.hashCode()
+            result = 31 * result + algorithm.hashCode()
+            return result
+        }
+    }
 
     data class ManifestFinding(
         val present: Boolean,
@@ -31,6 +53,9 @@ class C2PAManifestChecker @Inject constructor() {
         val signatureBytes: ByteArray? = null,
         val signatureAlgorithm: String = "SHA256withECDSA",
         val issuerName: String? = null,
+        val fileBytes: ByteArray? = null,
+        val manifestRanges: List<Pair<Long, Long>> = emptyList(),
+        val dataHashes: List<DataHash> = emptyList(),
     )
 
     /**
@@ -88,6 +113,7 @@ class C2PAManifestChecker @Inject constructor() {
                 if (containsC2PAMarker(payload)) {
                     val certs = extractCertificates(payload)
                     val sig = extractSignatureBlock(payload)
+                    val dataHashes = extractDataHashes(payload)
                     return ManifestFinding(
                         present = true,
                         digitalSourceType = findDigitalSourceType(payload),
@@ -97,6 +123,9 @@ class C2PAManifestChecker @Inject constructor() {
                         signatureBytes = sig?.second,
                         signatureAlgorithm = sig?.third ?: "SHA256withECDSA",
                         issuerName = extractIssuer(payload),
+                        fileBytes = data,
+                        manifestRanges = listOf(Pair(payloadStart.toLong(), payloadEnd.toLong())),
+                        dataHashes = dataHashes,
                     )
                 }
             }
@@ -113,6 +142,7 @@ class C2PAManifestChecker @Inject constructor() {
                 val payload = data.copyOfRange(i, data.size)
                 val certs = extractCertificates(payload)
                 val sig = extractSignatureBlock(payload)
+                val dataHashes = extractDataHashes(payload)
                 return ManifestFinding(
                     present = true,
                     digitalSourceType = findDigitalSourceType(payload),
@@ -122,6 +152,9 @@ class C2PAManifestChecker @Inject constructor() {
                     signatureBytes = sig?.second,
                     signatureAlgorithm = sig?.third ?: "SHA256withECDSA",
                     issuerName = extractIssuer(payload),
+                    fileBytes = data,
+                    manifestRanges = listOf(Pair(i.toLong(), data.size.toLong())),
+                    dataHashes = dataHashes,
                 )
             }
         }
@@ -184,7 +217,6 @@ class C2PAManifestChecker @Inject constructor() {
 
     private fun extractSignatureBlock(payload: ByteArray): Triple<ByteArray, ByteArray, String>? {
         val text = String(payload, Charsets.ISO_8859_1)
-        // Look for signature marker: sig:<hex/b64> or c2cs box
         val sigMarker = "c2cs:"
         val idx = text.indexOf(sigMarker)
         if (idx >= 0) {
@@ -200,6 +232,35 @@ class C2PAManifestChecker @Inject constructor() {
             }
         }
         return null
+    }
+
+    private fun extractDataHashes(payload: ByteArray): List<DataHash> {
+        val hashes = mutableListOf<DataHash>()
+        val text = String(payload, Charsets.ISO_8859_1)
+        val marker = "c2dh:"
+        var idx = text.indexOf(marker)
+        while (idx >= 0) {
+            val part = text.substring(idx + marker.length)
+            val line = part.takeWhile { it != '\n' && it != '\r' }.trim()
+            val tokens = line.split(":")
+            if (tokens.isNotEmpty()) {
+                val hex = tokens[0].trim()
+                val hashBytes = runCatching { hexToBytes(hex) }.getOrNull()
+                if (hashBytes != null) {
+                    val exclusions = mutableListOf<Exclusion>()
+                    for (i in 1 until tokens.size step 2) {
+                        if (i + 1 < tokens.size) {
+                            val s = tokens[i].toLongOrNull()
+                            val e = tokens[i + 1].toLongOrNull()
+                            if (s != null && e != null) exclusions.add(Exclusion(s, e))
+                        }
+                    }
+                    hashes.add(DataHash(hash = hashBytes, exclusions = exclusions))
+                }
+            }
+            idx = text.indexOf(marker, idx + marker.length)
+        }
+        return hashes
     }
 
     private fun hexToBytes(hex: String): ByteArray {
