@@ -32,6 +32,7 @@ import kotlin.math.sqrt
 @Composable
 fun HeatmapViewer(
     heatmap: FloatArray?,
+    imageAspectRatio: Float = 1f,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -78,7 +79,7 @@ fun HeatmapViewer(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .aspectRatio(1f)
+                    .aspectRatio(imageAspectRatio.coerceIn(0.4f, 2.5f))
                     .clip(RoundedCornerShape(8.dp))
                     .border(1.dp, BorderSubtle, RoundedCornerShape(8.dp)),
                 contentAlignment = Alignment.Center

@@ -46,7 +46,7 @@ class DocumentForgeryAnalyzer {
     /**
      * Analyzes an Android [Bitmap] for digital splicing, fake payment templates, and document forgery.
      */
-    fun analyze(bitmap: Bitmap): DocumentForgeryReport {
+    fun analyze(bitmap: Bitmap, isPng: Boolean = false): DocumentForgeryReport {
         if (bitmap.isRecycled || bitmap.width < 32 || bitmap.height < 32) {
             return DocumentForgeryReport(
                 isDocumentOrScreenshot = false,
@@ -96,6 +96,7 @@ class DocumentForgeryAnalyzer {
             elaPeakRatio = elaPeakRatio,
             originalWidth = width,
             originalHeight = height,
+            isPng = isPng,
         )
     }
 
@@ -109,6 +110,7 @@ class DocumentForgeryAnalyzer {
         elaPeakRatio: Float = 1.0f,
         originalWidth: Int = width,
         originalHeight: Int = height,
+        isPng: Boolean = false,
     ): DocumentForgeryReport {
         require(gray.size == width * height) { "Grayscale array size mismatch" }
         if (width < 16 || height < 16) {
@@ -160,7 +162,15 @@ class DocumentForgeryAnalyzer {
         val edgeTerm = edgeInconsistency.coerceIn(0f, 1f)
         val layoutTerm = if (layoutAnomaly) 0.5f else 0.0f
 
-        var rawScore = (0.35f * elaTerm) + (0.35f * noiseTerm) + (0.20f * edgeTerm) + (0.10f * layoutTerm)
+        // Lossless PNGs exhibit uniform JPEG recompression error; gate ELA down
+        // and rely primarily on noise-floor discontinuity, boundary gradients, and layout geometry.
+        val (elaWeight, noiseWeight, edgeWeight, layoutWeight) = if (isPng) {
+            listOf(0.05f, 0.50f, 0.30f, if (layoutAnomaly) 0.15f else 0.0f)
+        } else {
+            listOf(0.35f, 0.35f, 0.20f, if (layoutAnomaly) 0.10f else 0.0f)
+        }
+
+        var rawScore = (elaWeight * elaTerm) + (noiseWeight * noiseTerm) + (edgeWeight * edgeTerm) + layoutWeight
 
         // If not a document or screenshot, suppress document-specific false alarms
         if (!isDoc && rawScore < 0.80f) {

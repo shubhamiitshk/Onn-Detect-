@@ -158,7 +158,7 @@ class DetectionPipeline @Inject constructor(
             }
             quality = qualityInfo(bitmap, originalMinEdge).copy(isCompressed = isCompressed)
             residualHeatmap = runCatching { ResidualHeatmapExtractor.computeResidualHeatmap(bitmap, 32) }.getOrNull()
-            docReport = runCatching { documentAnalyzer.analyze(bitmap) }.getOrNull()
+            docReport = runCatching { documentAnalyzer.analyze(bitmap, isPng = !isCompressed) }.getOrNull()
             val report = ModelIntegrityGate.report(appContext, setOf(ModelIntegrityChecker.IMAGE_MODEL))
             if (!report.allOk) {
                 emit(ScanProgress("Model unavailable", 100f, result = result(AnalysisStatus.MODEL_FAILURE, report.failures.joinToString())))

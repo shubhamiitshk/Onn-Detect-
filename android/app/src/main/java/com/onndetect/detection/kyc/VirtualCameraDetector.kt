@@ -112,6 +112,7 @@ class VirtualCameraDetector {
             CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_FULL -> "FULL"
             CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_LIMITED -> "LIMITED"
             CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_LEGACY -> "LEGACY"
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_EXTERNAL else -99 -> "EXTERNAL"
             else -> "UNKNOWN"
         }
 
@@ -136,6 +137,11 @@ class VirtualCameraDetector {
             virtualCameraDetected = true
             flags.add("Missing physical front-facing camera sensor in CameraManager HAL")
         } else {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && hardwareLevel == CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_EXTERNAL) {
+                injectionScore += 0.85f
+                virtualCameraDetected = true
+                flags.add("External USB or virtual camera stream detected (INFO_SUPPORTED_HARDWARE_LEVEL_EXTERNAL)")
+            }
             // Virtual camera drivers on Android typically report LEGACY level and lack physical sensor bounds
             if (hardwareLevel == CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL_LEGACY) {
                 injectionScore += 0.40f
@@ -184,7 +190,25 @@ class VirtualCameraDetector {
                 // ClassLoader error or security restriction
             }
         }
-        return false
+        return checkProcMaps()
+    }
+
+    private fun checkProcMaps(): Boolean {
+        return try {
+            val mapsFile = java.io.File("/proc/self/maps")
+            if (mapsFile.exists() && mapsFile.canRead()) {
+                mapsFile.useLines { lines ->
+                    lines.any { line ->
+                        val lower = line.lowercase()
+                        lower.contains("libvirtualcam") || lower.contains("xposed") || lower.contains("frida")
+                    }
+                }
+            } else {
+                false
+            }
+        } catch (_: Exception) {
+            false
+        }
     }
 
     fun checkEmulator(
