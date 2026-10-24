@@ -17,7 +17,7 @@
         "passed": true
       },
       "calibration": {
-        "model_hash": "d74a657c454e00f2181f4a3d98fa981ca63daf51d23e978da19c60c59e9b37c1",
+        "model_hash": "7bc1a8b3365de9213c957ad584ae98c28783dad6b515a6d11dd4957812adc026",
         "frontend_id": "rgb-exif-srgb-whitealpha-pow2cap1024-bilinear-square-v2-size128-float32",
         "threshold": 0.53125,
         "auc": 0.6033000000000001,
