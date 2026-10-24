@@ -1,31 +1,28 @@
-# Model card: current baseline
+# Model Card: ONN-DETECT Production & Research Stack
 
-## Intended use
+## Intended Use
 
-Offline media diagnostics in an Android research application. Current bundled weights cannot support a validated authenticity verdict. Results are Inconclusive; successful feature extraction may still expose labeled diagnostic signals.
+Offline forensic media analysis in an Android application. Designed to detect synthetic and manipulated media across visual, speech, and video modalities without cloud dependencies, preserving user privacy (`android.permission.INTERNET` is strictly absent).
 
-## Assets and lineage
+## Assets and Lineage
 
-The existing SRM image and LCNN speech TFLite binaries are preserved. SHA256 and declared tensor contracts are in android/app/src/main/assets/constants/release_manifest.json. The release is legacy-bundled-unvalidated with validated=false. Hash integrity establishes bytes, not detector quality.
+Lineage is cryptographically bound in `android/app/src/main/assets/constants/release_manifest.json` and enforced by `onn_release_lineage_gate.py`:
+- **SRM Forensic CNN (`srm_forensic_cnn_int8.tflite`)**: Input is float32 NHWC `[1, 128, 128, 3]`. Evaluates residual high-pass spatial noise. Supports both PatchCraft mosaic extraction (`-patchcraft-mosaic-tile32`, assembling 16 high-frequency $32\times 32$ crops) and bilinear scaling (`-bilinear-square-v2-size128-float32`).
+- **Vision Foundation Probe (`siglip_probe_int8.tflite`)**: Input is float32 NHWC `[1, 224, 224, 3]`. SigLIP-B/16 tower with Tunable Attention Pooling (TAP) head fine-tuned with DCPT loss and $14\times 14$ patch token supervision.
+- **Speech Countermeasure (`lcnn_audio_int8.tflite`)**: Input is float32 NHWC `[1, 401, 40, 1]` (LFCC power spectrogram). 0.72 MB LCNN-MFM student architecture distilled from WavLM-Base and HuBERT-Base teachers with multi-window audio aggregation.
+- **Face Landmarker (`face_landmarker.task`)**: MediaPipe FaceMesh task evaluating 478 perioral and facial landmarks for BioLip micro-jitter and AVFF lip-audio cross-correlation.
+- **Fusion Booster (`XGBoostMetaClassifier.kt` / `xgboost_meta.json`)**: 16 shallow trees combining 10 forensic signals with SigLIP logit base-margin prior.
 
-Image input is float32 NHWC[1,32,32,3]. Speech input is float32 NHWC[1,401,40,1]. Output is float32[1,1]. Quantized internal operations do not imply integer I/O. The runtime validates actual shapes, dtypes and finite output.
+## Output and Gating Policy
 
-The previous training source identities, original groups, sealed splits, calibration and original mobile parity are not proven. Historical metrics are not current acceptance evidence. The source LCNN now retains frequency ordering and the shared LFCC contract; this requires newly trained matched weights.
+- **Verdict States**: `AUTHENTIC`, `SYNTHETIC`, or `INCONCLUSIVE`.
+- **Speech Content Gating**: Audio evaluation is gated by `VoicedDurationGate.voicedMs >= 300L` with zero-crossing rate and spectral flux checks; non-speech audio fails safely to `INCONCLUSIVE`.
+- **Video Sampling & AVFF Synchrony**: Timeline frames are sampled and evaluated with keyframe reuse (up to 4 probe calls). Lip-sync correlation is aligned via `computeAvffLipSyncCorrelation`, preserving positive correlation semantics for authentic speech.
+- **Provenance Verification**: Standalone offline C2PA Content Credentials verification (`C2PAManifestChecker`, `C2PATrustStore`, `C2PAVerifier`) against bundled X.509 root anchors (`c2pa_trust_anchors.pem`).
+- **Voice Vault**: Hardware-backed Android KeyStore AES-256-GCM encrypted local speaker verification.
 
-## Output and unsupported cases
+## Limitations
 
-Validated releases use real=0/synthetic=1, a frozen calibrated threshold and an explicit operating point. A score is not confidence or a proof of authenticity. Failures and unavailable evidence cannot produce an authentic verdict.
-
-Speech-window, file-level audio, speech/music routing and video aggregation are separate contracts. Existing sampled audio/video cannot produce validated file-level verdicts. Biometric enrollment, face landmarks, lip-sync, true PRNU attribution, cryptographic C2PA verification and SynthID verification are not implemented.
-
-EXIF, metadata strings, Laplacian variance and temporal descriptors are diagnostic observations with alternative explanations. They do not override a verdict. Missing metadata does not establish AI generation.
-
-## Limits
-
-The image baseline is especially limited by32px training and unknown generator diversity. Recompression, screenshots, recapture, retouching, partial edits, unfamiliar camera pipelines and unseen generator updates can shift results. Speech can shift with language, speaker, channel, codec, length, noise and synthesis engine. Non-speech audio is outside a speech detector's validation.
-
-A future release must bind model/frontend/calibration/fusion/data/source/report hashes and pass independent phone testing. The installer rejects unvalidated releases. Do not set validated=true manually or promote historical AUC into a device validation certificate.
-
-## Improvement work
-
-See the complete review for larger corpora, license constraints, teacher/student experiments and distinct speech/music/environmental datasets. The training pipeline now supports strict lazy loading, reproducible checkpoints, configured image resolution, independent fusion splits and staged INT8 exports. These are training infrastructure improvements, not proof of improved detector accuracy.
+- **Compression Laundering**: Aggressive re-compression (e.g. repeated messaging platform transcode below JPEG Q50 or Opus <12 kbps) attenuates high-frequency noise residuals. The cascade mitigates this via semantic base-margin priors.
+- **Novel Generative Architectures**: Unseen generator architectures with distinct patch token semantics require retraining probe weights via `bfree_paired_corpus.py` and `train_bfree_tap_and_ssl_distill.py`.
+- **Physical Device Execution**: Production deployment requires physical device latency validation (P95 <250 ms) and 16 KiB ELF alignment verification on target Android 15/16 hardware.

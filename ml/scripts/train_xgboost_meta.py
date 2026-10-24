@@ -482,8 +482,8 @@ def main():
         "--allow-source-fpr-violation",
         action="store_true",
         help=(
-            "Ship a fusion whose per-source real-image FPR exceeds the 5% "
-            "bound. The bound is correct - a detector that flags 44% of "
+            "Ship a fusion whose per-source real-image FPR exceeds the 5%% "
+            "bound. The bound is correct - a detector that flags 44%% of "
             "LAION images has learned the acquisition source, not synthesis - "
             "but it is UNREACHABLE on the current corpus, because every fake "
             "comes from one generator and every real from another. The "

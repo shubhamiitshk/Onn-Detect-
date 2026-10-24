@@ -23,6 +23,7 @@ from data.bfree_paired_corpus import (
 from train_bfree_tap_and_ssl_distill import (
     fit_multiwindow_audio_aggregator,
     compute_avff_lip_audio_sync_score,
+    compute_avff_lip_audio_sync_correlation,
     DualSSLToLCNNDistiller,
     _TORCH_AVAILABLE,
 )
@@ -97,6 +98,13 @@ class TestBFreeTapAndDistill(unittest.TestCase):
         # Synchronized speech has low anomaly; desynchronized has high anomaly
         self.assertLess(score_sync, 0.20)
         self.assertGreater(score_desync, 0.60)
+
+        # Slot 8 polarity test: correlation is inverted (authentic speech has high correlation)
+        corr_sync = compute_avff_lip_audio_sync_correlation(mar_sync, aud_sync)
+        corr_desync = compute_avff_lip_audio_sync_correlation(mar_sync, aud_desync)
+        self.assertGreater(corr_sync, 0.80)
+        self.assertLess(corr_desync, 0.40)
+        self.assertAlmostEqual(corr_sync, 1.0 - score_sync, places=5)
 
     def test_dual_ssl_distiller_numpy_and_torch(self):
         distiller = DualSSLToLCNNDistiller(alpha=0.5, temperature=2.0)

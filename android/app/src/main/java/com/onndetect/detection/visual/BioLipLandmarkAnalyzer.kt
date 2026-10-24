@@ -120,12 +120,14 @@ class BioLipLandmarkAnalyzer(private val context: Context) {
         }
 
         val jitterScore = PerioralLandmarkAnalyzer.computeJitterScore(landmarks)
+        val marSeries = PerioralLandmarkAnalyzer.extractMarSeries(landmarks)
         val hasFace = landmarks.any { it != null && it.isNotEmpty() }
 
         return BioLipResult(
             landmarkJitter = jitterScore,
             hasFace = hasFace,
-            notes = if (hasFace) "BioLip analysis complete" else "No face detected in frames"
+            notes = if (hasFace) "BioLip analysis complete" else "No face detected in frames",
+            marSeries = marSeries
         )
     }
 }
@@ -136,9 +138,11 @@ class BioLipLandmarkAnalyzer(private val context: Context) {
  * @param landmarkJitter Normalized jitter score in [0, 1], or NaN if unavailable
  * @param hasFace Whether a face was detected in the frames
  * @param notes Diagnostic notes about the analysis
+ * @param marSeries Per-frame Mouth Aspect Ratio sequence for AVFF synchrony correlation
  */
 data class BioLipResult(
     val landmarkJitter: Float,
     val hasFace: Boolean,
-    val notes: String?
+    val notes: String?,
+    val marSeries: FloatArray = FloatArray(0)
 )

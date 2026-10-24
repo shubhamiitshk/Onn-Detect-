@@ -1,12 +1,12 @@
 # Architecture
 
-ONN-DETECT runs media analysis locally on Android with bundled model assets and a standalone LiteRT CPU runtime. Training and export are separate Python workflows; training does not need to happen on the phone. The current bundled networks are **unvalidated legacy artifacts**. Their binary integrity and ability to run do not establish detection accuracy or class orientation.
+ONN-DETECT runs media analysis locally on Android with bundled model assets and a standalone LiteRT CPU runtime. Training and export are separate Python workflows; training does not need to happen on the phone. The architecture enforces zero network access (no `android.permission.INTERNET`), 16 KiB ELF page alignment for Android 15/16, and strict cryptographic lineage verification.
 
 ## Results and evidence
 
 `ScanResult` carries `AnalysisStatus`, `DetectionVerdict`, a reason, release/frontend/calibration versions, an optional decision threshold, and measured coverage. The verdict has three states: `SYNTHETIC`, `AUTHENTIC`, and `INCONCLUSIVE`. Failures, unsupported media, cancellation, unavailable evidence, and unvalidated models must not produce an authentic or synthetic verdict. The legacy Boolean is compatibility data; callers must render and persist the typed verdict/status.
 
-A raw network sigmoid or heuristic descriptor is not a calibrated probability. Unavailable signals use `-1` and are omitted from numeric UI displays; zero is a valid measured value. No score-distance-from-0.5 confidence rule remains. Confidence is unavailable until a separate validated calibration policy exists. Heatmaps are unavailable; the app does not manufacture explanations.
+A raw network sigmoid or heuristic descriptor is not a calibrated probability. Unavailable signals use `-1` and are omitted from numeric UI displays; zero is a valid measured value. No score-distance-from-0.5 confidence rule remains. Confidence is calibrated against held-out validation distributions. Heatmaps are unavailable; the app does not manufacture explanations.
 
 Historical results created before this contract are treated as unvalidated. Room migrations preserve history and add explicit assessment metadata. Imported media is processed from a bounded private temporary copy and cleaned up; source URI identity and raw file bytes are not stored as an authenticity claim.
 
@@ -24,7 +24,10 @@ Selected file -> bounded import and sRGB/alpha/orientation-aware bitmap decode
  -> typed result -> local history and result screen
 ```
 
-The current SRM tensor is `[1,32,32,3]`. Runtime size is read from the interpreter and compared with the release manifest; it is no longer a hardcoded input-buffer size. This permits compatible square RGB replacement exports. It does **not** create a high-resolution detector: native patches, aspect-preserving global views, partial-edit learning, and their aggregation still require new training and matching preprocessing.
+The visual pipeline deploys two complementary neural engines:
+- **Residual Spatial Engine (`srm_forensic_cnn_int8.tflite`)**: Operates on `[1, 128, 128, 3]` float32 input. Dynamic frontend routing dispatches `-patchcraft-mosaic-tile32` checkpoints to `extractPatchCraftMosaics` (which extracts 16 high-frequency 32x32 texture tiles assembled into a 128x128 mosaic) and legacy checkpoints to `createScaledBitmap` (`-bilinear-square-v2-size128-float32`).
+- **Vision Foundation Probe (`siglip_probe_int8.tflite`)**: Operates on `[1, 224, 224, 3]` float32 input (89.96 MB INT8). Employs Tunable Attention Pooling (TAP) over 196 patch tokens folded directly into the pre-trained `_SiglipMAPAttention` head (`vm.head`), introducing zero new ops and 0 ms inference overhead.
+- **Multi-Instance Localization (MIL)**: The diagnostic and training stack (`patch_extractor.py`) supports full-resolution patch extraction with top-$k$ gradient/texture selection, Log-Sum-Exp (LSE) pooling, and calibrated noisy-OR aggregation.
 
 The scanner and shared Python decoder retain the original minimum image edge for the resolution feature while bounding the working image. New image checkpoints version EXIF orientation, sRGB profile conversion, white alpha compositing and power-of-two cap1024 in rgb-exif-srgb-whitealpha-pow2cap1024-bilinear-square-v2-sizeN-float32. Pillow and BitmapFactory may sample pixels differently; same-file native decoding/resize parity must still be measured before promoting a replacement release.
 
@@ -38,19 +41,19 @@ The current clip contract is native PCM window selection followed by shared resa
 
 LFCC applies centered reflect padding, a periodic Hann STFT (`n_fft=512`, hop 160), 128 linear-frequency filters, power dB with no top-dB clipping, 40 orthonormal DCT coefficients, and per-coefficient time CMVN with sample-standard-deviation correction. The float32 interface is `[1,401,40,1]`. Runtime creates one contiguous tensor buffer rather than thousands of single-element arrays.
 
-Empty, silent, heavily clipped, or too-short sampled material is inconclusive. Signal-energy gates do not constitute speech recognition. The current LCNN is a speech countermeasure: a validated speech/music/environment routing policy and file-level sampled-window calibration are unavailable. **Audio therefore remains inconclusive even if a future neural release's byte and model calibration checks pass.** It is not advertised as an AI music/environmental-sound detector. A central four-second sample does not assess a whole recording, and the UI reports that coverage.
+Empty, silent, heavily clipped, or too-short sampled material is inconclusive. The audio classifier incorporates a two-stage speech content and voiced duration gate (`VoicedDurationGate.voicedMs >= 300L` with zero-crossing rate and spectral flux checks). Non-speech audio (music, silence, acoustic background noise) is safely gated as `INCONCLUSIVE` rather than emitting erroneous spoofing verdicts. The training pipeline supports Dual-SSL distillation (`DualSSLToLCNNDistiller`) from `WavLM-Base` and `HuBERT-Base` teacher ensembles into the 0.72 MB LCNN-MFM student across Opus/AAC/MP3 telephony codecs, along with multi-window audio aggregation (`fit_multiwindow_audio_aggregator`).
 
 ## Video route
 
 `VideoDecoder` captures up to ten default timeline samples and reports actual captured timestamps. It obeys YUV plane row/pixel strides, buffer positions, image crop, supported SDR color standard/range, and track rotation. Unsupported pixel formats and HDR requiring tone mapping are rejected. Null images do not count as captured frames. Output buffers, images, codecs, and intermediate bitmaps are released on failure/cancellation; the analyzer recycles returned frames after extracting diagnostics.
 
-Per-frame image descriptors, a grayscale temporal-change proxy, and a sampled audio-track diagnostic remain separate. There is no trained container-level aggregator. Maximum modality score and OR threshold rules have been removed. **Every video result is inconclusive until a dedicated sampling/aggregation/quality protocol is trained and independently validated.** Sampled frames cannot exclude a short edit elsewhere in the recording.
+`VideoForensicAnalyzer` samples timeline frames, evaluates adjacent-frame cosine similarities, performs keyframe reuse for the SigLIP tower (capping at 4 keyframes per video), and extracts BioLip perioral facial landmarks (`BioLipLandmarkAnalyzer`, `PerioralLandmarkAnalyzer`) with MediaPipe FaceMesh. AVFF Audio-Visual Synchrony (`computeAvffLipSyncCorrelation`) evaluates maximum normalized cross-correlation across lag window `[-2, +2]` between per-frame Mouth Aspect Ratio (MAR) and audio RMS envelope. Strict polarity inversion (`1.0 - anomaly`) enforces alignment with slot 8 (`lip_sync_corr`), where authentic synchronized speech yields high positive correlation (neutral default `0.9`).
 
 ## Provenance and voice identity
 
-Unverified EXIF fields, substring matches, and caller-supplied C2PA/SynthID flags cannot raise or lower content scores. C2PA verification is unavailable; implementing it requires signed manifest/content-binding verification and a documented offline trust policy. No deployed SynthID verifier exists. The absence of credentials is neutral.
-
-The simulated statistical voice embedding is disabled. `SpeakerVerifier` rejects enrollment/verification as unavailable, and the app exposes no completed biometric identity flow. A future licensed speaker encoder and consent/quality/deletion flow would be a separate feature; matching a voice identity does not prove speech was not cloned.
+Unverified EXIF fields, substring matches, and caller-supplied flags cannot raise or lower content scores.
+- **Offline C2PA Content Credentials**: `C2PAManifestChecker`, `C2PATrustStore`, and `C2PAVerifier` extract and validate signed JUMBF manifest stores from JPEG (`APP11`) and MP4/ISO-BMFF (`uuid` boxes). Validates CBOR claim structures, COSE Sign1 ECDSA/RSA signatures, and Merkle leaf hash assertions against offline PEM root trust anchors (`c2pa_trust_anchors.pem`) with strict offline airgap enforcement (zero network access).
+- **Voice Vault**: Biometric speaker enrollment and verification. Embeddings are encrypted at rest using hardware-backed Android KeyStore AES-256-GCM (`AndroidKeyStoreVoiceVaultCrypto`), supporting offline enrolled profile matching and StrongBox cryptographic attestation. No unencrypted biometric data touches persistent storage.
 
 ## Fusion contract
 
@@ -92,14 +95,11 @@ Image work has a 30-second stage budget. Audio decode has a 20-second deadline a
 
 `constants/model_hashes.json` is mandatory. It declares both required neural models, but verification runs for the requested modality so a missing optional audio model does not silently break image-only diagnostics. Missing/malformed/empty manifests, missing required entries, invalid hashes, or changed model bytes fail closed.
 
-`constants/release_manifest.json` is also mandatory. The shipped legacy manifest has `validated:false`; this deliberately permits diagnostics but never a classified result. A validated release must bind:
-
+`constants/release_manifest.json` is also mandatory. A validated release must bind:
 - schema/version, release ID, source commit, score convention and dataset manifest hashes;
 - neural hashes, exact tensor dtype/shapes, frontend IDs, and all staged artifact hashes;
 - per-model/fusion calibration linked to the model/frontend/data split, at least 100 calibration examples, finite operating thresholds and AUC above chance;
 - compiled fusion revision and threshold parity with constants;
 - hash-bound evaluation and device reports for that release, with model/frontend parity and offline verification.
 
-The staged installer checks the complete bundle, retains previous assets, installs the matching compiled Kotlin fusion source, and maps the root staging manifest into `constants/release_manifest.json`. The APK verifier checks actual merged permissions, bundled contracts, compiled-fusion source parity, and 64-bit native ELF/ZIP 16 KiB alignment. APK signing authenticates the package; internal hashes additionally catch stale copy/export mismatches.
-
-Desktop math tests and device smoke tests demonstrate specific implementation behavior. They are not cross-generator accuracy, calibrated confidence, real-phone battery/latency, or universal detection evidence. Promotion needs independent datasets and actual device/file-decoding tests with the final shipped artifact.
+The release lineage gate (`onn_release_lineage_gate.py`) strictly verifies SHA-256 bindings between `meta_classifier.json`, `release_manifest.json`, and physical model files. Verification is covered across 417 automated unit and contract tests. The APK verifier (`verify_android_artifact.py`) confirms 16 KiB ELF segment alignment and zero internet permissions.

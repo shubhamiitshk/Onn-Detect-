@@ -2,7 +2,6 @@ package com.onndetect.detection.visual
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.PointF
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.util.Log
@@ -11,6 +10,11 @@ import kotlinx.coroutines.withContext
 import java.lang.reflect.Field
 import java.lang.reflect.Method
 import java.util.concurrent.Executors
+
+/** Lightweight 2D point avoiding Android framework stub dependencies during JVM tests. */
+internal data class Point2D(val x: Float, val y: Float) {
+    fun distanceTo(other: Point2D): Float = kotlin.math.hypot(x - other.x, y - other.y)
+}
 
 /**
  * Computes pose-normalized biomechanical lip acceleration jitter (BioLip, arXiv:2604.16808)
@@ -85,12 +89,12 @@ object PerioralLandmarkAnalyzer {
                     } else {
                         val cosA = dx / eyeDist
                         val sinA = -dy / eyeDist
-                        fun norm(idx: Int): PointF {
+                        fun norm(idx: Int): Point2D {
                             val p = pts[idx]
                             val rx = ((getLandmarkX(p) - getLandmarkX(nose)) * cosA - (getLandmarkY(p) - getLandmarkY(nose)) * sinA).toFloat()
                             val ry = ((getLandmarkX(p) - getLandmarkX(nose)) * sinA + (getLandmarkY(p) - getLandmarkY(nose)) * cosA).toFloat()
                             val eyeDistF = eyeDist.toFloat()
-                            return PointF(rx / eyeDistF, ry / eyeDistF)
+                            return Point2D(rx / eyeDistF, ry / eyeDistF)
                         }
                         val lipPts = Array(LIP_INDICES.size) { i -> norm(LIP_INDICES[i]) }
                         val u = norm(UPPER_INNER_LIP); val l = norm(LOWER_INNER_LIP)
@@ -129,6 +133,138 @@ object PerioralLandmarkAnalyzer {
         val meanMarJerk = (marJerkSum / triplets).toFloat()
         val raw = ACCEL_WEIGHT * meanAccel + MAR_WEIGHT * meanMarJerk
         return (raw / NORMALIZATION_SCALE).coerceIn(0f, 1f)
+    }
+
+    /**
+     * Extracts normalized per-frame Mouth Aspect Ratio (MAR) values from frame landmarks.
+     * Returns an empty FloatArray if fewer than [MIN_CONSECUTIVE_FRAMES] frames have valid faces.
+     */
+    fun extractMarSeries(
+        frameLandmarks: List<List<Any>?>,
+        minEyeDistPx: Float = 12f
+    ): FloatArray {
+        val series = mutableListOf<Float>()
+        for (pts in frameLandmarks) {
+            if (pts == null || pts.size <= 415) continue
+            try {
+                val le = pts[LEFT_EYE_OUTER]
+                val re = pts[RIGHT_EYE_OUTER]
+                val nose = pts[NOSE_TIP]
+                val dx = (getLandmarkX(re) - getLandmarkX(le))
+                val dy = (getLandmarkY(re) - getLandmarkY(le))
+                val eyeDist = kotlin.math.hypot(dx, dy)
+                if (!eyeDist.isFinite() || eyeDist < minEyeDistPx) continue
+                val cosA = dx / eyeDist
+                val sinA = -dy / eyeDist
+                fun norm(idx: Int): Point2D {
+                    val p = pts[idx]
+                    val rx = ((getLandmarkX(p) - getLandmarkX(nose)) * cosA - (getLandmarkY(p) - getLandmarkY(nose)) * sinA).toFloat()
+                    val ry = ((getLandmarkX(p) - getLandmarkX(nose)) * sinA + (getLandmarkY(p) - getLandmarkY(nose)) * cosA).toFloat()
+                    val eyeDistF = eyeDist.toFloat()
+                    return Point2D(rx / eyeDistF, ry / eyeDistF)
+                }
+                val u = norm(UPPER_INNER_LIP); val l = norm(LOWER_INNER_LIP)
+                val lm = norm(LEFT_MOUTH_CORNER); val rm = norm(RIGHT_MOUTH_CORNER)
+                val mar = kotlin.math.hypot((u.x - l.x).toDouble(), (u.y - l.y).toDouble()) /
+                    (kotlin.math.hypot((lm.x - rm.x).toDouble(), (lm.y - rm.y).toDouble()) + 1e-6)
+                series.add(mar.toFloat())
+            } catch (_: Exception) {
+                // skip frame with invalid landmarks
+            }
+        }
+        return series.toFloatArray()
+    }
+
+    /**
+     * Computes the maximum cross-correlation in `[0, 1]` between per-frame MAR and frame-synchronous
+     * audio RMS envelope across lag window `[-2, +2]` frames.
+     *
+     * Semantic Contract for Fusion Slot 8 (`lip_sync_corr`):
+     * - Authentic synchronized speech: correlation is positive (typically ~0.7 to 1.0; neutral default is 0.9f).
+     * - Desynchronized deepfake / reenactment: correlation is near 0.0 or negative.
+     * - Returns Float.NaN when fewer than 6 frames are available or signals have negligible variance.
+     */
+    fun computeAvffLipSyncCorrelation(
+        marSeries: FloatArray,
+        audioRmsEnvelope: FloatArray
+    ): Float {
+        val n = minOf(marSeries.size, audioRmsEnvelope.size)
+        if (n < 6) return Float.NaN
+
+        val mSub = DoubleArray(n) { marSeries[it].toDouble() }
+        val aSub = DoubleArray(n) { audioRmsEnvelope[it].toDouble() }
+
+        var mSum = 0.0
+        var aSum = 0.0
+        for (i in 0 until n) {
+            mSum += mSub[i]
+            aSum += aSub[i]
+        }
+        val mMean = mSum / n
+        val aMean = aSum / n
+
+        var mVar = 0.0
+        var aVar = 0.0
+        for (i in 0 until n) {
+            mSub[i] -= mMean
+            aSub[i] -= aMean
+            mVar += mSub[i] * mSub[i]
+            aVar += aSub[i] * aSub[i]
+        }
+        val mStd = kotlin.math.sqrt(mVar / n)
+        val aStd = kotlin.math.sqrt(aVar / n)
+        if (mStd < 1e-6 || aStd < 1e-6) return Float.NaN
+
+        for (i in 0 until n) {
+            mSub[i] /= mStd
+            aSub[i] /= aStd
+        }
+
+        var bestCorr = -1.0
+        for (lag in intArrayOf(-2, -1, 0, 1, 2)) {
+            var sum = 0.0
+            val count: Int
+            when {
+                lag < 0 -> {
+                    count = n + lag
+                    for (i in 0 until count) {
+                        sum += mSub[i] * aSub[i - lag]
+                    }
+                }
+                lag > 0 -> {
+                    count = n - lag
+                    for (i in 0 until count) {
+                        sum += mSub[i + lag] * aSub[i]
+                    }
+                }
+                else -> {
+                    count = n
+                    for (i in 0 until count) {
+                        sum += mSub[i] * aSub[i]
+                    }
+                }
+            }
+            if (count > 0) {
+                val c = sum / count
+                if (c > bestCorr) bestCorr = c
+            }
+        }
+        return kotlin.math.max(0.0, kotlin.math.min(1.0, bestCorr)).toFloat()
+    }
+
+    /**
+     * Returns the AVFF lip-sync anomaly score in `[0, 1]`.
+     * Anomaly is `1.0f - correlation`.
+     *
+     * WARNING: Slot 8 in XGBoostMetaClassifier expects CORRELATION (authentic = high),
+     * NOT anomaly score. Never inject anomaly score directly into slot 8.
+     */
+    fun computeAvffLipSyncAnomaly(
+        marSeries: FloatArray,
+        audioRmsEnvelope: FloatArray
+    ): Float {
+        val corr = computeAvffLipSyncCorrelation(marSeries, audioRmsEnvelope)
+        return if (corr.isNaN()) Float.NaN else (1.0f - corr).coerceIn(0f, 1f)
     }
 
     private fun getLandmarkX(landmark: Any): Double {
@@ -297,8 +433,4 @@ class LipSyncDetector(private val context: Context) : AutoCloseable {
         }
         executor.shutdown()
     }
-}
-
-private fun PointF.distanceTo(other: PointF): Float {
-    return kotlin.math.hypot(x - other.x, y - other.y)
 }

@@ -617,6 +617,24 @@ def compute_avff_lip_audio_sync_score(
     return float(np.clip(anomaly, 0.0, 1.0))
 
 
+def compute_avff_lip_audio_sync_correlation(
+    mar_series: np.ndarray,
+    audio_rms_envelope: np.ndarray,
+) -> float:
+    """AVFF cross-correlation in `[0, 1]` for fusion slot 8 (`lip_sync_corr`).
+
+    WARNING - POLARITY CONTRACT:
+    Slot 8 in XGBoostMetaClassifier.kt and feature_extractor.py is `lip_sync_corr`
+    where authentic speech exhibits high positive correlation (default NEUTRAL_LIP_SYNC = 0.9).
+    Never pass anomaly score (where fake is ~1.0) into slot 8 without inverting it
+    (`correlation = 1.0 - anomaly`).
+    """
+    anomaly = compute_avff_lip_audio_sync_score(mar_series, audio_rms_envelope)
+    if np.isnan(anomaly):
+        return float("nan")
+    return float(np.clip(1.0 - anomaly, 0.0, 1.0))
+
+
 # ============================================================================
 # Built-In Verification Suite
 # ============================================================================

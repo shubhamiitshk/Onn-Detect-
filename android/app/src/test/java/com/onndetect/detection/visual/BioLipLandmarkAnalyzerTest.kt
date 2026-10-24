@@ -167,4 +167,36 @@ class BioLipLandmarkAnalyzerTest {
         }
         return landmarks
     }
+
+    @Test
+    fun `extractMarSeries returns valid per-frame MAR values`() {
+        val frames = (0..5).map { createValidLandmarks() }
+        val marSeries = PerioralLandmarkAnalyzer.extractMarSeries(frames)
+        assertEquals(6, marSeries.size)
+        for (mar in marSeries) {
+            assertTrue("MAR should be finite and positive", mar.isFinite() && mar > 0f)
+        }
+    }
+
+    @Test
+    fun `computeAvffLipSyncCorrelation correctly differentiates sync from desync and preserves polarity`() {
+        val n = 40
+        val marSync = FloatArray(n) { (0.3 + 0.15 * kotlin.math.sin(it * 0.3)).toFloat() }
+        val audSync = FloatArray(n) { (0.5 + 0.25 * kotlin.math.sin(it * 0.3 + 0.05)).toFloat() }
+        val audDesync = FloatArray(n) { (0.5 + 0.25 * kotlin.math.cos(it * 1.7)).toFloat() }
+
+        val corrSync = PerioralLandmarkAnalyzer.computeAvffLipSyncCorrelation(marSync, audSync)
+        val corrDesync = PerioralLandmarkAnalyzer.computeAvffLipSyncCorrelation(marSync, audDesync)
+
+        assertTrue("Synchronized talking head should yield high correlation (was $corrSync)", corrSync > 0.80f)
+        assertTrue("Desynchronized talking head should yield low correlation (was $corrDesync)", corrDesync < 0.40f)
+
+        // Polarity contract: anomaly is 1.0 - correlation
+        val anomalySync = PerioralLandmarkAnalyzer.computeAvffLipSyncAnomaly(marSync, audSync)
+        val anomalyDesync = PerioralLandmarkAnalyzer.computeAvffLipSyncAnomaly(marSync, audDesync)
+        assertEquals(1.0f - corrSync, anomalySync, 1e-5f)
+        assertEquals(1.0f - corrDesync, anomalyDesync, 1e-5f)
+        assertTrue("Synchronized speech should yield low anomaly", anomalySync < 0.20f)
+        assertTrue("Desynchronized speech should yield high anomaly", anomalyDesync > 0.60f)
+    }
 }

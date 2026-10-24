@@ -59,7 +59,7 @@ cd android
 .\gradlew.bat testDebugUnitTest assembleRelease
 cd ..
 ```
-*All 222 Kotlin unit tests pass; the release APK is generated at `android/app/build/outputs/apk/release/app-release.apk` (110.93 MB, signed, zero internet permissions).*
+*All 224 Kotlin unit tests pass; the release APK is generated at `android/app/build/outputs/apk/release/app-release.apk` (signed, zero internet permissions).*
 
 ### 2. Consistency & Integrity Gating
 ```powershell
