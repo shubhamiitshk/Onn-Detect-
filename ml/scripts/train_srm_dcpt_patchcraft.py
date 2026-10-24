@@ -156,7 +156,7 @@ def extract_patchcraft_mosaic(
         canvas[dst_y : dst_y + tile_size, dst_x : dst_x + tile_size] = rgb_u8[
             sy : sy + tile_size, sx : sx + tile_size
         ]
-    return Image.fromarray(canvas, mode="RGB")
+    return Image.fromarray(canvas)
 
 
 def extract_single_high_texture_crop(img: Image.Image, patch_size: int = 128, stride: int = 64) -> Image.Image:
@@ -709,7 +709,7 @@ def _run_self_test() -> None:
     random.seed(42)
     np.random.seed(42)
     rng = np.random.RandomState(42)
-    sample_rgb = Image.fromarray(rng.randint(0, 256, size=(384, 512, 3), dtype=np.uint8), mode="RGB")
+    sample_rgb = Image.fromarray(rng.randint(0, 256, size=(384, 512, 3), dtype=np.uint8))
 
     # 1. Verify all PatchCraft modes produce exact 128x128 RGB images
     for mode in ("mosaic", "crop", "off"):
