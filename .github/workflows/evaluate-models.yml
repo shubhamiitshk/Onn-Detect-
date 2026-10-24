@@ -35,9 +35,12 @@ jobs:
         env:
           ONN_REQUIRE_REAL_AUDIO_IO: '1'
         run: |
+          python onn_release_lineage_gate.py --repo .
           python scripts/check_android_consistency.py
           python -m unittest discover -s scripts/tests -v
           python -m unittest discover -s ml/tests -p 'test_*.py' -v
+          python ml/scripts/train_srm_dcpt_patchcraft.py --self-test
+          python ml/scripts/train_bfree_tap_and_ssl_distill.py --self-test
           python scripts/verify_front_end_parity.py --require-torch
           python scripts/gen_lfcc_golden.py --torch --check scripts/lfcc_golden.json
           python scripts/verify_fft_parity.py

@@ -186,3 +186,145 @@ class CodecMatchedBatchSampler:
         if self.shuffle:
             self._rng.shuffle(batch)
         return batch
+
+
+@dataclass(frozen=True)
+class BFreeTwinPair:
+    """A content-matched (real, synthetic_twin) pair bound to the same `real_parent_id`."""
+
+    real_parent_id: str
+    source_domain: str
+    generator_family: str
+    manipulation_type: str  # "full_reconstruction" or "local_inpaint"
+    real_image: Image.Image
+    fake_twin_image: Image.Image
+    patch_mask_14x14: np.ndarray  # float32 (196,) in [0, 1] for 14x14 SigLIP patches
+    edited_area_ratio: float
+    codec_profile_name: str
+
+
+def build_patch_mask_14x14(pixel_mask: np.ndarray, grid_size: int = 14) -> np.ndarray:
+    """Downsamples a binary/continuous `(H, W)` manipulation mask to `(grid_size * grid_size,)`."""
+    mask_pil = Image.fromarray((np.clip(pixel_mask, 0.0, 1.0) * 255.0).astype(np.uint8), mode="L")
+    small = mask_pil.resize((grid_size, grid_size), Image.Resampling.BILINEAR)
+    return (np.asarray(small, dtype=np.float32) / 255.0).reshape(-1)
+
+
+class BFreeSyntheticTwinBuilder:
+    """Creates content-matched synthetic twins and local inpainted variants from real images.
+
+    Why this solves the `LAION` vs `Pexels` source shortcut (B-Free, CVPR 2025):
+      1. Every positive (fake) training sample has a 1-to-1 negative (real) parent
+         with the EXACT same scene semantics, camera perspective, and background.
+      2. Both the real parent and the synthetic twin are passed through the SAME
+         randomly sampled `CodecProfile` (JPEG QF, chroma subsampling, WebP, resize)
+         so compression and resolution carry zero mutual information with the label.
+      3. Returns the ground-truth `14x14` (`196`-token) manipulation mask so TAP
+         attention pooling learns to focus on small (5%-25% area) inpainted regions.
+    """
+
+    def __init__(self, seed: int = 42) -> None:
+        self._rng = random.Random(seed)
+        self._np_rng = np.random.RandomState(seed)
+
+    def _simulate_decoder_upsampling_footprint(self, img: Image.Image) -> Image.Image:
+        """Fallback latent-decoder reconstruction simulator when a GPU VAE/diffusion pipe is absent.
+
+        Applies a 2x2 latent-grid roundtrip + subtle chroma/frequency residual that
+        mimics a VAE decoder rebuild while preserving 100% scene content. In GPU
+        production, pass `vae_or_inpaint_callable` to `generate_pair()` to run
+        SDXL-VAE / Flux-VAE / OpenSDI reconstruction directly.
+        """
+        rgb = np.asarray(img.convert("RGB"), dtype=np.float32)
+        h, w, _ = rgb.shape
+        # Bottleneck 2x downsample + bilinear decode + 2x2 checkerboard residual
+        pil_small = img.convert("RGB").resize((max(16, w // 2), max(16, h // 2)), Image.Resampling.BILINEAR)
+        rec = np.asarray(pil_small.resize((w, h), Image.Resampling.BILINEAR), dtype=np.float32)
+        yy, xx = np.ogrid[:h, :w]
+        grid_2x2 = (((yy % 2) ^ (xx % 2)).astype(np.float32) - 0.5) * 1.5
+        rec = np.clip(0.85 * rec + 0.15 * rgb + grid_2x2[..., None], 0.0, 255.0).astype(np.uint8)
+        return Image.fromarray(rec, mode="RGB")
+
+    def generate_pair(
+        self,
+        real_img: Image.Image,
+        real_parent_id: str,
+        source_domain: str = "camera_real",
+        generator_family: str = "vae_twin",
+        mode: str = "auto",
+        external_generator_fn: Optional[Any] = None,
+        codec_transform_fn: Optional[Any] = None,
+    ) -> BFreeTwinPair:
+        """Generates a content-matched `(real, fake_twin)` pair and its `14x14` patch mask."""
+        clean_real = real_img.convert("RGB")
+        w, h = clean_real.size
+
+        chosen_mode = (
+            ("local_inpaint" if self._rng.random() < 0.5 else "full_reconstruction")
+            if mode == "auto"
+            else mode
+        )
+
+        synth_full = (
+            external_generator_fn(clean_real)
+            if external_generator_fn is not None
+            else self._simulate_decoder_upsampling_footprint(clean_real)
+        )
+
+        if chosen_mode == "full_reconstruction":
+            pixel_mask = np.ones((h, w), dtype=np.float32)
+            fake_img = synth_full
+            area_ratio = 1.0
+        else:
+            # Local inpainting: splice a 5%..25% area rectangular/elliptical region
+            area_frac = self._rng.uniform(0.05, 0.25)
+            aspect = self._rng.uniform(0.6, 1.6)
+            box_h = max(16, min(h - 4, int(round(math.sqrt(area_frac * w * h / aspect)))))
+            box_w = max(16, min(w - 4, int(round(box_h * aspect))))
+            y0 = self._rng.randint(0, max(0, h - box_h))
+            x0 = self._rng.randint(0, max(0, w - box_w))
+
+            mask_L = Image.new("L", (w, h), 0)
+            patch_white = Image.new("L", (box_w, box_h), 255)
+            mask_L.paste(patch_white, (x0, y0))
+            mask_L = mask_L.filter(ImageFilter.GaussianBlur(radius=2.0))
+
+            pixel_mask = np.asarray(mask_L, dtype=np.float32) / 255.0
+            real_arr = np.asarray(clean_real, dtype=np.float32)
+            synth_arr = np.asarray(synth_full, dtype=np.float32)
+            blended = real_arr * (1.0 - pixel_mask[..., None]) + synth_arr * pixel_mask[..., None]
+            fake_img = Image.fromarray(np.clip(blended, 0.0, 255.0).round().astype(np.uint8), mode="RGB")
+            area_ratio = float(np.mean(pixel_mask > 0.25))
+
+        codec_name = "clean_raw"
+        if codec_transform_fn is not None:
+            clean_real, fake_img, codec_name = codec_transform_fn(clean_real, fake_img)
+
+        patch_mask = build_patch_mask_14x14(pixel_mask, grid_size=14)
+        return BFreeTwinPair(
+            real_parent_id=real_parent_id,
+            source_domain=source_domain,
+            generator_family=generator_family,
+            manipulation_type=chosen_mode,
+            real_image=clean_real,
+            fake_twin_image=fake_img,
+            patch_mask_14x14=patch_mask,
+            edited_area_ratio=round(area_ratio, 4),
+            codec_profile_name=codec_name,
+        )
+
+
+def assert_parent_disjoint_splits(records: List[Dict[str, Any]]) -> None:
+    """Hard gate (`P0-A` / Stage 1): ensures no `real_parent_id` crosses train/val/calibration/test."""
+    parent_to_splits: Dict[str, set] = {}
+    for r in records:
+        pid = str(r.get("real_parent_id") or r.get("content_group_id") or r.get("path"))
+        sp = str(r.get("split", "train"))
+        parent_to_splits.setdefault(pid, set()).add(sp)
+
+    leaked = {pid: sorted(sps) for pid, sps in parent_to_splits.items() if len(sps) > 1}
+    if leaked:
+        sample_leaks = dict(list(leaked.items())[:5])
+        raise ValueError(
+            f"B-Free parent-ID split leakage detected across {len(leaked)} parent groups: {sample_leaks}"
+        )

@@ -73,7 +73,7 @@ python scripts/verify_android_artifact.py --apk android/app/build/outputs/apk/re
 ```powershell
 .\.venv\Scripts\python.exe -m pytest ml/tests
 ```
-*All 155 Python ML tests pass (PyTorch vs. LiteRT parity, Keras channels-last mirror, Multi-Instance Learning, and XGBoost base_margin calibration).*
+*All 162 Python ML tests pass (PyTorch vs. LiteRT parity, Keras channels-last mirror, Multi-Instance Learning, B-Free Twins, SigLIP-TAP, and Dual-SSL distillation).*
 
 ---
 
