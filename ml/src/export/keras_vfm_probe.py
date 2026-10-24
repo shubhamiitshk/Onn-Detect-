@@ -48,11 +48,22 @@ probabilities BEFORE it is written: see :func:`export_keras_vfm_to_tflite`.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import tempfile
+from pathlib import Path
 
 import numpy as np
 import tensorflow as tf
+
+
+def sha256_file(path) -> str:
+    """Compute hex SHA-256 hash of a file."""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        while chunk := f.read(1024 * 1024):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 # ---------------------------------------------------------------------------
