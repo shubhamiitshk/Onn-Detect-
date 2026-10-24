@@ -184,9 +184,8 @@ def train_lcnn_audio(
             optimizer.zero_grad()
             with autocast("cuda", enabled=(use_amp and device.type == "cuda")):
                 # LCNN takes (B, 1, 401, 40)
-                probs = model(specs_b)
-                probs_clamped = probs.clamp(1e-7, 1.0 - 1e-7)
-                loss = F.binary_cross_entropy(probs_clamped, y_b)
+                logits = model(specs_b, return_logits=True)
+                loss = F.binary_cross_entropy_with_logits(logits, y_b)
 
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
@@ -207,7 +206,8 @@ def train_lcnn_audio(
             for v_specs_b, v_y_b in val_loader:
                 v_specs_b = v_specs_b.to(device, non_blocking=True).float()
                 with autocast("cuda", enabled=(use_amp and device.type == "cuda")):
-                    v_probs = model(v_specs_b)
+                    v_logits = model(v_specs_b, return_logits=True)
+                    v_probs = torch.sigmoid(v_logits)
                 val_probs_list.extend(v_probs.cpu().squeeze(-1).numpy().tolist())
                 val_targets_list.extend(v_y_b.numpy().tolist())
 
@@ -287,7 +287,9 @@ def train_lcnn_audio(
     with torch.no_grad():
         for c_specs_b, c_y_b in cal_loader:
             c_specs_b = c_specs_b.to(device).float()
-            c_probs = model(c_specs_b)
+            with autocast("cuda", enabled=(use_amp and device.type == "cuda")):
+                c_logits = model(c_specs_b, return_logits=True)
+                c_probs = torch.sigmoid(c_logits)
             cal_probs_list.extend(c_probs.cpu().squeeze(-1).numpy().tolist())
             cal_targets_list.extend(c_y_b.numpy().tolist())
 
@@ -342,7 +344,9 @@ def train_lcnn_audio(
     with torch.no_grad():
         for t_specs_b, t_y_b in test_loader:
             t_specs_b = t_specs_b.to(device).float()
-            t_probs = model(t_specs_b)
+            with autocast("cuda", enabled=(use_amp and device.type == "cuda")):
+                t_logits = model(t_specs_b, return_logits=True)
+                t_probs = torch.sigmoid(t_logits)
             test_probs_list.extend(t_probs.cpu().squeeze(-1).numpy().tolist())
             test_targets_list.extend(t_y_b.numpy().tolist())
 
