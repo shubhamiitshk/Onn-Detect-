@@ -59,7 +59,7 @@ cd android
 .\gradlew.bat testDebugUnitTest assembleRelease
 cd ..
 ```
-*All 127 Kotlin unit tests pass; the release APK is generated at `android/app/build/outputs/apk/release/app-release.apk` (110.93 MB, signed, zero internet permissions).*
+*All 222 Kotlin unit tests pass; the release APK is generated at `android/app/build/outputs/apk/release/app-release.apk` (110.93 MB, signed, zero internet permissions).*
 
 ### 2. Consistency & Integrity Gating
 ```powershell
@@ -73,7 +73,7 @@ python scripts/verify_android_artifact.py --apk android/app/build/outputs/apk/re
 ```powershell
 .\.venv\Scripts\python.exe -m pytest ml/tests
 ```
-*All 146 Python ML tests pass (PyTorch vs. LiteRT parity, Keras channels-last mirror, and XGBoost base_margin calibration).*
+*All 155 Python ML tests pass (PyTorch vs. LiteRT parity, Keras channels-last mirror, Multi-Instance Learning, and XGBoost base_margin calibration).*
 
 ---
 

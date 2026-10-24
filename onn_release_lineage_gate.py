@@ -111,6 +111,12 @@ def main() -> None:
     parser.add_argument("--repo", default=".", help="Root repository path")
     args = parser.parse_args()
 
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
+
     repo_dir = Path(args.repo).resolve()
     print(f"Checking ONN-DETECT release lineage for: {repo_dir}")
 
@@ -122,11 +128,11 @@ def main() -> None:
         sys.exit(1)
 
     print("=== LINEAGE GATE PASSED ===")
-    print("  ✓ SRM TFLite binary header (TFL3) verified")
-    print("  ✓ release_manifest.json model contract matches actual binary SHA-256")
-    print("  ✓ model_hashes.json matches actual binary SHA-256")
-    print("  ✓ meta_classifier.json visual_model_hash matches SRM binary SHA-256 (P0-1 verified)")
-    print("  ✓ release_id consistency verified")
+    print("  [OK] SRM TFLite binary header (TFL3) verified")
+    print("  [OK] release_manifest.json model contract matches actual binary SHA-256")
+    print("  [OK] model_hashes.json matches actual binary SHA-256")
+    print("  [OK] meta_classifier.json visual_model_hash matches SRM binary SHA-256 (P0-1 verified)")
+    print("  [OK] release_id consistency verified")
     sys.exit(0)
 
 
