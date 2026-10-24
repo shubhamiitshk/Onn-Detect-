@@ -661,7 +661,9 @@ def run_training(args: argparse.Namespace) -> None:
 
     # Evaluate across the full degradation matrix on the sealed test split
     degradation_results: dict[str, dict[str, float]] = {}
-    for cond_name, deg_fn in DEGRADATION_CONDITIONS.items():
+    print(f"\n📊 Evaluating full 8-slice degradation matrix on test split across {len(DEGRADATION_CONDITIONS)} conditions...")
+    for idx, (cond_name, deg_fn) in enumerate(DEGRADATION_CONDITIONS.items(), start=1):
+        print(f"  [{idx}/{len(DEGRADATION_CONDITIONS)}] Testing slice: {cond_name}...", end="", flush=True)
         cond_tf = DCPTPatchCraftEvalTransform(
             size=size,
             patchcraft_mode=args.patchcraft_mode,
@@ -678,9 +680,12 @@ def run_training(args: argparse.Namespace) -> None:
                 labels.extend(targets.tolist())
 
         low_fpr = compute_low_fpr_operating_points(labels, scores)
+        auc_val = round(float(compute_auc(labels, scores)), 6)
+        eer_val = round(float(compute_eer(labels, scores)), 6)
+        print(f" -> AUC: {auc_val:.4f}, EER: {eer_val:.4f}", flush=True)
         degradation_results[cond_name] = {
-            "auc": round(float(compute_auc(labels, scores)), 6),
-            "eer": round(float(compute_eer(labels, scores)), 6),
+            "auc": auc_val,
+            "eer": eer_val,
             "accuracy_at_0_5": round(float(compute_accuracy(labels, scores)), 6),
             **low_fpr,
         }
