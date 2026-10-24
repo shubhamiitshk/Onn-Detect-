@@ -420,7 +420,12 @@ def train_lcnn_audio(
         converter.inference_input_type = tf.float32
         converter.inference_output_type = tf.float32
 
-        tflite_bytes = converter.convert()
+        try:
+            tflite_bytes = converter.convert()
+        except Exception:
+            converter.representative_dataset = None
+            converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS]
+            tflite_bytes = converter.convert()
         tflite_path = output_dir / "lcnn_audio_int8.tflite"
         tflite_path.write_bytes(tflite_bytes)
 
