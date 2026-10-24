@@ -152,14 +152,22 @@ def export_srm_to_tflite(
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--checkpoint", required=True, help="Path to input .pth checkpoint")
-    parser.add_argument("--output-dir", default=str(ML_ROOT / "export" / "srm_tflite"))
+    parser.add_argument("--output-dir", default=None, help="Directory to save exported TFLite")
+    parser.add_argument("--output", default=None, help="Output path (directory or .tflite file)")
     parser.add_argument("--data-dir", default=None, help="Optional dataset directory for calibration images")
     parser.add_argument("--limit", type=int, default=150, help="Number of calibration samples")
     args = parser.parse_args()
 
+    out = args.output or args.output_dir or str(ML_ROOT / "export" / "srm_tflite")
+    out_path = Path(out)
+    if out_path.suffix.lower() == ".tflite":
+        output_dir = str(out_path.parent)
+    else:
+        output_dir = str(out_path)
+
     export_srm_to_tflite(
         checkpoint_path=args.checkpoint,
-        output_dir=args.output_dir,
+        output_dir=output_dir,
         data_dir=args.data_dir,
         limit=args.limit,
     )
