@@ -660,10 +660,10 @@ def run_training(args: argparse.Namespace) -> None:
     model.to(device).eval()
 
     # Evaluate across the full degradation matrix on the sealed test split
+    print(f"\nEvaluating sealed test split ({len(datasets.get('test', [])) or 20000} samples) across {len(DEGRADATION_CONDITIONS)} degradation conditions...")
     degradation_results: dict[str, dict[str, float]] = {}
-    print(f"\n📊 Evaluating full 8-slice degradation matrix on test split across {len(DEGRADATION_CONDITIONS)} conditions...")
-    for idx, (cond_name, deg_fn) in enumerate(DEGRADATION_CONDITIONS.items(), start=1):
-        print(f"  [{idx}/{len(DEGRADATION_CONDITIONS)}] Testing slice: {cond_name}...", end="", flush=True)
+    for idx, (cond_name, deg_fn) in enumerate(DEGRADATION_CONDITIONS.items(), 1):
+        print(f"  [{idx}/{len(DEGRADATION_CONDITIONS)}] Testing slice '{cond_name}'...", flush=True)
         cond_tf = DCPTPatchCraftEvalTransform(
             size=size,
             patchcraft_mode=args.patchcraft_mode,
@@ -680,15 +680,13 @@ def run_training(args: argparse.Namespace) -> None:
                 labels.extend(targets.tolist())
 
         low_fpr = compute_low_fpr_operating_points(labels, scores)
-        auc_val = round(float(compute_auc(labels, scores)), 6)
-        eer_val = round(float(compute_eer(labels, scores)), 6)
-        print(f" -> AUC: {auc_val:.4f}, EER: {eer_val:.4f}", flush=True)
         degradation_results[cond_name] = {
-            "auc": auc_val,
-            "eer": eer_val,
+            "auc": round(float(compute_auc(labels, scores)), 6),
+            "eer": round(float(compute_eer(labels, scores)), 6),
             "accuracy_at_0_5": round(float(compute_accuracy(labels, scores)), 6),
             **low_fpr,
         }
+        print(f"      -> AUC: {degradation_results[cond_name]['auc']:.4f}, EER: {degradation_results[cond_name]['eer']:.4f}, TPR@1%FPR: {low_fpr['tpr_at_fpr_1pct']:.4f}", flush=True)
 
     clean_metrics = degradation_results["clean"]
     deg_aucs = [v["auc"] for k, v in degradation_results.items() if k != "clean"]
