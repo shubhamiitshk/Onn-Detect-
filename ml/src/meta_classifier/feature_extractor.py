@@ -268,6 +268,7 @@ def extract_visual_features(
     provenance: dict | None = None,
     input_size: int = 32,
     semantic_probe_score: float | None = None,
+    frontend_id: str | None = None,
 ) -> np.ndarray:
     """Full canonical feature vector for one image file.
 
@@ -297,8 +298,15 @@ def extract_visual_features(
     decoded = decode_image(img_path)
     img = decoded.image
 
-    # Match the checkpoint/mobile square resize contract.
-    tensor = image_tensor(img, input_size).unsqueeze(0).to(device)
+    # Match the checkpoint/mobile frontend contract (PatchCraft mosaic vs legacy bilinear).
+    if frontend_id and "-patchcraft-mosaic-tile32" in frontend_id:
+        from train_srm_dcpt_patchcraft import extract_patchcraft_mosaic
+        tile = 32 if input_size >= 64 and input_size % 32 == 0 else max(8, input_size // 4)
+        srm_img = extract_patchcraft_mosaic(img, mosaic_size=input_size, tile_size=tile, select="rich")
+        arr = np.asarray(srm_img.convert("RGB"), dtype=np.float32).transpose(2, 0, 1) / 255.0
+        tensor = torch.from_numpy(np.ascontiguousarray(arr)).unsqueeze(0).to(device)
+    else:
+        tensor = image_tensor(img, input_size).unsqueeze(0).to(device)
     with torch.no_grad():
         srm = float(srm_model(tensor).item())
 

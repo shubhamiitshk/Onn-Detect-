@@ -88,6 +88,7 @@ def main():
                 "calibration_auc": results["calibration"]["auc"], "test_auc": results["test_auc"],
                 "test_accuracy": results["test_accuracy"], "n_trees": results["n_trees"],
                 "base_margin_intercept": results["base_margin_intercept"], "release_id": results["release_id"],
+                "fusion_base_margin": results.get("fusion_base_margin") or results.get("identity", {}).get("fusion_base_margin", "probe"),
                 "fusion_model_hash": results["model_hash"], "visual_model_hash": visual["sha256"]}
     (bundle / "constants" / "meta_classifier.json").write_text(json.dumps(constant, indent=2), encoding="utf-8")
     (bundle / "fusion").mkdir(exist_ok=True)

@@ -49,6 +49,19 @@ class ArtifactTests(unittest.TestCase):
         release_errors, _ = verify_asset_bundle(files.__getitem__, set(files), require_validated=True)
         self.assertTrue(release_errors)
 
+    def test_swapped_srm_without_retrained_meta_classifier_is_rejected(self):
+        files = diagnostic_assets()
+        manifest = json.loads(files["constants/release_manifest.json"])
+        meta_bytes = json.dumps({
+            "release_id": "test-only",
+            "visual_model_hash": "0" * 64,
+        }).encode()
+        files["constants/meta_classifier.json"] = meta_bytes
+        manifest["artifacts"]["constants/meta_classifier.json"] = hashlib.sha256(meta_bytes).hexdigest()
+        files["constants/release_manifest.json"] = json.dumps(manifest).encode()
+        errors, _ = verify_asset_bundle(files.__getitem__, set(files))
+        self.assertTrue(any("visual_model_hash" in x for x in errors), errors)
+
     def test_changed_model_or_unhashed_constant_rejected(self):
         files = diagnostic_assets()
         files["models/lcnn_audio_int8.tflite"] += b"damage"

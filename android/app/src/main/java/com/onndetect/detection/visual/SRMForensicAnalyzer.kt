@@ -8,7 +8,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import org.json.JSONObject
 
-/** Square RGB float32 preprocessing sized from the model's tensor contract. */
+/** Square RGB float32 preprocessing sized and routed from the model's declared frontend_id contract. */
 class SRMForensicAnalyzer(private val context: Context, private val engine: LiteRTInferenceEngine) {
     companion object { const val MODEL_FILE = "srm_forensic_cnn_int8.tflite" }
     fun analyze(bitmap: Bitmap, checkStop: () -> Unit = {}): Float {
@@ -17,11 +17,27 @@ class SRMForensicAnalyzer(private val context: Context, private val engine: Lite
         val contract = engine.contract(MODEL_FILE)
         val shape = contract.inputShape
         requireModelContract(shape.size == 4 && shape[0] == 1 && shape[3] == 3 && shape[1] == shape[2] && shape[1] in 16..1024) { "Unsupported image tensor" }
-        val expected = JSONObject(context.assets.open("constants/release_manifest.json").bufferedReader().use { it.readText() })
-            .getJSONObject("models").getJSONObject(MODEL_FILE).getJSONArray("input_shape")
+        val modelManifest = JSONObject(context.assets.open("constants/release_manifest.json").bufferedReader().use { it.readText() })
+            .getJSONObject("models").getJSONObject(MODEL_FILE)
+        val expected = modelManifest.getJSONArray("input_shape")
         requireModelContract((0 until 4).all { expected.getInt(it) == shape[it] }) { "Release/model input mismatch" }
+        val frontendId = modelManifest.optString("frontend_id", "")
         val size = shape[1]
-        val scaled = Bitmap.createScaledBitmap(bitmap, size, size, true)
+        val legacyBilinearId = "rgb-exif-srgb-whitealpha-pow2cap1024-bilinear-square-v2-size${size}-float32"
+        val mosaicId = "${legacyBilinearId}-patchcraft-mosaic-tile32"
+        val scaled: Bitmap = when (frontendId) {
+            mosaicId -> {
+                val tile = if (size >= 64 && size % 32 == 0) 32 else maxOf(8, size / 4)
+                val pair = PhaseSpectrumAndPatchCraftAndroid.extractPatchCraftMosaics(bitmap, mosaicSize = size, tileSize = tile)
+                pair.poorMosaic.recycle()
+                pair.richMosaic
+            }
+            legacyBilinearId -> Bitmap.createScaledBitmap(bitmap, size, size, true)
+            else -> {
+                requireModelContract(false) { "Unsupported SRM frontend_id: $frontendId" }
+                Bitmap.createScaledBitmap(bitmap, size, size, true)
+            }
+        }
         val pixels = IntArray(size * size)
         try { scaled.getPixels(pixels, 0, size, 0, 0, size, size) }
         finally { if (scaled !== bitmap) scaled.recycle() }

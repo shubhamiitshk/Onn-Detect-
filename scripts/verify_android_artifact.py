@@ -115,7 +115,9 @@ def verify_asset_bundle(read, names: set[str], require_validated: bool = False) 
         try:
             data = read(path)
             digest = hashlib.sha256(data).hexdigest()
-            if len(data) < 8 or data[4:8] != b"TFL3":
+            if data.startswith(b"version https://git-lfs.github.com/spec/v1"):
+                errors.append(f"Git LFS pointer packaged instead of model binary: {path}")
+            elif len(data) < 8 or data[4:8] != b"TFL3":
                 errors.append(f"Invalid TFLite header: {path}")
             if digest != contract.get("sha256"):
                 errors.append(f"Model contract hash mismatch: {path}")
@@ -140,6 +142,17 @@ def verify_asset_bundle(read, names: set[str], require_validated: bool = False) 
     uncovered = relevant - set(artifacts) - {manifest_path}
     if uncovered:
         errors.append(f"Unhashed packaged artifacts: {sorted(uncovered)}")
+    if "constants/meta_classifier.json" in names:
+        try:
+            meta_cfg = json.loads(read("constants/meta_classifier.json"))
+            srm_contract = models.get("srm_forensic_cnn_int8.tflite")
+            if isinstance(meta_cfg, dict) and isinstance(srm_contract, dict):
+                if meta_cfg.get("visual_model_hash") != srm_contract.get("sha256"):
+                    errors.append("Fusion meta_classifier.json visual_model_hash does not match srm_forensic_cnn_int8.tflite sha256 (P0-1)")
+                if meta_cfg.get("release_id") != manifest.get("release_id"):
+                    errors.append("Fusion meta_classifier.json release_id does not match release_manifest.json")
+        except (KeyError, FileNotFoundError, ValueError, UnicodeError) as exc:
+            errors.append(f"Invalid constants/meta_classifier.json: {exc}")
     if manifest.get("validated") is True:
         for field in ("source_commit", "data_manifest_hashes", "evaluation_report_hash", "calibration", "validation_status"):
             if not manifest.get(field):

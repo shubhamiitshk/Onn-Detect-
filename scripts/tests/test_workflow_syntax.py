@@ -58,6 +58,14 @@ class WorkflowSyntaxCheckerTest(unittest.TestCase):
             errors = run_checker(directory)
             self.assertTrue(any("commit SHA" in e for e in errors), errors)
 
+    def test_root_level_steps_is_rejected(self):
+        with tempfile.TemporaryDirectory() as d:
+            directory = Path(d)
+            text = BASE_JOB.format(name="badindent").replace("    steps:\n", "steps:\n")
+            write_workflow(directory, text)
+            errors = run_checker(directory)
+            self.assertTrue(any("top-level 'steps:'" in e for e in errors), errors)
+
     def test_continue_on_error_is_rejected(self):
         with tempfile.TemporaryDirectory() as d:
             directory = Path(d)

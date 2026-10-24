@@ -398,22 +398,68 @@ DEGRADATION_CONDITIONS: dict[str, Callable[[Image.Image], Image.Image] | None] =
 }
 
 
-def compute_low_fpr_operating_points(labels: list[int], scores: list[float]) -> dict[str, float]:
-    """Computes TPR at 1% FPR and TPR at 5% FPR using exact empirical quantiles on real samples."""
+def _wilson_95ci(k: int, n: int) -> tuple[float, float]:
+    """Exact Wilson score 95% binomial confidence interval for k/n."""
+    if n <= 0:
+        return 0.0, 1.0
+    z = 1.959963984540054
+    p = k / float(n)
+    denom = 1.0 + (z * z) / n
+    center = (p + (z * z) / (2.0 * n)) / denom
+    half = (z * np.sqrt((p * (1.0 - p) + (z * z) / (4.0 * n)) / n)) / denom
+    return float(max(0.0, center - half)), float(min(1.0, center + half))
+
+
+def fit_calibration_thresholds(cal_labels: list[int], cal_scores: list[float]) -> dict[str, float]:
+    """Fits and freezes 1% and 5% FPR thresholds strictly on untouched calibration/val real samples (P0-4)."""
+    y = np.asarray(cal_labels, dtype=np.int32)
+    s = np.asarray(cal_scores, dtype=np.float64)
+    real_scores = s[y == 0]
+    if len(real_scores) == 0:
+        return {"locked_threshold_1pct_cal": 1.0, "locked_threshold_5pct_cal": 1.0, "n_cal_real": 0}
+    return {
+        "locked_threshold_1pct_cal": float(np.quantile(real_scores, 0.99)),
+        "locked_threshold_5pct_cal": float(np.quantile(real_scores, 0.95)),
+        "n_cal_real": int(len(real_scores)),
+    }
+
+
+def compute_low_fpr_operating_points(
+    labels: list[int],
+    scores: list[float],
+    locked_thresholds: dict[str, float] | None = None,
+) -> dict[str, float]:
+    """Evaluates both calibration-locked thresholds (no test peeking) and empirical ROC diagnostics (P0-4)."""
     y = np.asarray(labels, dtype=np.int32)
     s = np.asarray(scores, dtype=np.float64)
     real_scores = s[y == 0]
     fake_scores = s[y == 1]
     if len(real_scores) == 0 or len(fake_scores) == 0:
         return {"tpr_at_fpr_1pct": 0.0, "tpr_at_fpr_5pct": 0.0, "threshold_at_fpr_1pct": 1.0}
-    thr_1pct = float(np.quantile(real_scores, 0.99))
-    thr_5pct = float(np.quantile(real_scores, 0.95))
-    tpr_1pct = float(np.mean(fake_scores >= thr_1pct))
-    tpr_5pct = float(np.mean(fake_scores >= thr_5pct))
+
+    # Diagnostic ROC curve quantiles on this split (labelled explicitly as diagnostic)
+    roc_thr_1pct = float(np.quantile(real_scores, 0.99))
+    roc_thr_5pct = float(np.quantile(real_scores, 0.95))
+    roc_tpr_1pct = float(np.mean(fake_scores >= roc_thr_1pct))
+    roc_tpr_5pct = float(np.mean(fake_scores >= roc_thr_5pct))
+
+    locked_1pct = float((locked_thresholds or {}).get("locked_threshold_1pct_cal", roc_thr_1pct))
+    locked_5pct = float((locked_thresholds or {}).get("locked_threshold_5pct_cal", roc_thr_5pct))
+    fp_count_1pct = int(np.sum(real_scores >= locked_1pct))
+    tp_count_1pct = int(np.sum(fake_scores >= locked_1pct))
+    achieved_fpr_1pct = fp_count_1pct / float(len(real_scores))
+    locked_tpr_1pct = tp_count_1pct / float(len(fake_scores))
+    locked_tpr_5pct = float(np.mean(fake_scores >= locked_5pct))
+    fpr_ci_lo, fpr_ci_hi = _wilson_95ci(fp_count_1pct, len(real_scores))
+
     return {
-        "tpr_at_fpr_1pct": round(tpr_1pct, 6),
-        "tpr_at_fpr_5pct": round(tpr_5pct, 6),
-        "threshold_at_fpr_1pct": round(thr_1pct, 6),
+        "tpr_at_fpr_1pct": round(locked_tpr_1pct, 6),
+        "tpr_at_fpr_5pct": round(locked_tpr_5pct, 6),
+        "threshold_at_fpr_1pct": round(locked_1pct, 6),
+        "achieved_test_fpr_at_1pct_cal": round(achieved_fpr_1pct, 6),
+        "achieved_test_fpr_95ci": [round(fpr_ci_lo, 6), round(fpr_ci_hi, 6)],
+        "roc_diagnostic_tpr_at_fpr_1pct": round(roc_tpr_1pct, 6),
+        "roc_diagnostic_tpr_at_fpr_5pct": round(roc_tpr_5pct, 6),
     }
 
 
@@ -659,9 +705,18 @@ def run_training(args: argparse.Namespace) -> None:
     model.load_state_dict(state["state_dict"])
     model.to(device).eval()
 
-    # Evaluate across the full degradation matrix on the sealed test split
-    print(f"\nEvaluating sealed test split across {len(DEGRADATION_CONDITIONS)} degradation conditions on {device}...", flush=True)
-    degradation_results: dict[str, dict[str, float]] = {}
+    # P0-4: Fit and freeze low-FPR thresholds strictly on the untouched calibration/val split first
+    cal_labels: list[int] = []
+    cal_scores: list[float] = []
+    with torch.no_grad():
+        for inputs, targets in val_loader:
+            probs = model(inputs.to(device, dtype=torch.float32)).cpu().flatten().tolist()
+            cal_scores.extend(probs)
+            cal_labels.extend(targets.tolist())
+    locked_cal_thresholds = fit_calibration_thresholds(cal_labels, cal_scores)
+
+    # Evaluate across the full degradation matrix on the sealed test split using frozen calibration thresholds
+    degradation_results: dict[str, dict[str, Any]] = {}
     for cond_idx, (cond_name, deg_fn) in enumerate(DEGRADATION_CONDITIONS.items()):
         print(f"  [{cond_idx+1}/{len(DEGRADATION_CONDITIONS)}] Testing slice: {cond_name}...", flush=True)
         cond_tf = DCPTPatchCraftEvalTransform(
@@ -679,7 +734,7 @@ def run_training(args: argparse.Namespace) -> None:
                 scores.extend(probs)
                 labels.extend(targets.tolist())
 
-        low_fpr = compute_low_fpr_operating_points(labels, scores)
+        low_fpr = compute_low_fpr_operating_points(labels, scores, locked_thresholds=locked_cal_thresholds)
         res = {
             "auc": round(float(compute_auc(labels, scores)), 6),
             "eer": round(float(compute_eer(labels, scores)), 6),

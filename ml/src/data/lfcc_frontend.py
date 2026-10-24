@@ -54,7 +54,12 @@ from __future__ import annotations
 
 import math
 
-import torch
+try:
+    import torch
+    _TORCH_NN_MODULE = torch.nn.Module
+except ImportError:  # pragma: no cover - allow FRONTEND_ID import in stdlib-only CI
+    torch = None  # type: ignore[assignment]
+    _TORCH_NN_MODULE = object
 
 # --- the contract ---------------------------------------------------------
 SAMPLE_RATE = 16000
@@ -113,7 +118,7 @@ def dct_matrix(n_lfcc: int = N_LFCC, n_filter: int = N_FILTER) -> torch.Tensor:
     return m.T.contiguous()         # (n_lfcc, n_filter) -> (n_filter, n_lfcc)
 
 
-class LFCCFrontend(torch.nn.Module):
+class LFCCFrontend(_TORCH_NN_MODULE):
     """Stateless, buffer-only LFCC front end. Batch, time -> (B, T, n_lfcc)."""
 
     def __init__(

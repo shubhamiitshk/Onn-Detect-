@@ -76,6 +76,8 @@ def validate(workflows: Path, actionlint_config: Path) -> tuple[list[str], list[
             elif not SHA.match(ref):
                 errors.append(f"{path.name}: 'uses: {action}@{ref}' is not a full 40-character commit SHA")
 
+        if re.search(r"^steps\s*:", text, re.MULTILINE):
+            errors.append(f"{path.name}: top-level 'steps:' key must be indented under a job (P0-5)")
         if CONTINUE_ON_ERROR.search(text):
             errors.append(f"{path.name}: continue-on-error: true can mask a real failure")
         if re.search(r"\|\|\s*true", text):

@@ -65,11 +65,30 @@ def _load_booster(fusion_dir: Path):
     return booster
 
 
-def _predict(booster, X: np.ndarray) -> np.ndarray:
+BASE_MARGIN_EPS = 1e-6
+
+
+def _probe_base_margin(X: np.ndarray) -> np.ndarray:
+    """logit(slot 6), and 0.0 wherever the probe is unavailable (NaN)."""
+    probe = np.asarray(X[:, SEMANTIC_PROBE_INDEX], dtype=np.float64)
+    margin = np.zeros(len(probe), dtype=np.float64)
+    available = np.isfinite(probe)
+    q = np.clip(probe[available], BASE_MARGIN_EPS, 1.0 - BASE_MARGIN_EPS)
+    margin[available] = np.log(q / (1.0 - q))
+    return margin
+
+
+def _predict(booster, X: np.ndarray, base_margin_mode: str = "probe") -> np.ndarray:
     import xgboost as xgb
     from meta_classifier.feature_extractor import FEATURE_NAMES
 
-    dmatrix = xgb.DMatrix(X, feature_names=list(FEATURE_NAMES))
+    if base_margin_mode == "probe":
+        bm = _probe_base_margin(X)
+    elif base_margin_mode == "none":
+        bm = None
+    else:
+        raise ValueError(f"Unsupported fusion_base_margin mode: {base_margin_mode!r} (fail closed)")
+    dmatrix = xgb.DMatrix(X, feature_names=list(FEATURE_NAMES), base_margin=bm)
     return booster.predict(dmatrix)
 
 
@@ -95,6 +114,11 @@ def main() -> None:
     results_path = fusion_dir / "meta_results.json"
     meta = json.loads(results_path.read_text(encoding="utf-8")) if results_path.is_file() else {}
     fusion_threshold = float(meta.get("calibration", {}).get("threshold", 0.5))
+    base_margin_mode = (
+        meta.get("fusion_base_margin")
+        or (meta.get("identity") or {}).get("fusion_base_margin")
+        or ("probe" if "base_margin_intercept" in meta else "none")
+    )
 
     # A release built before the dual engine held slot 6 at a neutral
     # CONSTANT. A constant is not a measurement, so it must not be mistaken
@@ -125,12 +149,12 @@ def main() -> None:
     mask_rate = float(meta.get("dual_engine", {}).get("cascade_mask_rate", 0.0))
     X_cal_a = mask_semantic_probe(X_cal)
     X_test_a = mask_semantic_probe(X_test)
-    cal_a = _predict(booster, X_cal_a)
-    test_a = _predict(booster, X_test_a)
+    cal_a = _predict(booster, X_cal_a, base_margin_mode)
+    test_a = _predict(booster, X_test_a, base_margin_mode)
     report["engine_a"] = {
         "calibration_auc": _auc(y_cal, cal_a),
         "test_auc": _auc(y_test, test_a),
-        "laundered_test_auc": _auc(y_test, _predict(booster, mask_semantic_probe(X_laund))) if X_laund is not None else None,
+        "laundered_test_auc": _auc(y_test, _predict(booster, mask_semantic_probe(X_laund), base_margin_mode)) if X_laund is not None else None,
         "cascade_mask_rate": mask_rate,
         "probe_free_path_is_trained": mask_rate > 0.0,
     }
@@ -169,14 +193,14 @@ def main() -> None:
         print(f"Engine C (semantic probe)     laundered AUC  : {report['engine_c']['laundered_test_auc']:.4f}")
 
     # ── Dual-engine fusion ────────────────────────────────────────────────
-    cal_dual = _predict(booster, X_cal)
-    test_dual = _predict(booster, X_test)
+    cal_dual = _predict(booster, X_cal, base_margin_mode)
+    test_dual = _predict(booster, X_test, base_margin_mode)
     report["dual_engine"] = {
         "calibration_auc": _auc(y_cal, cal_dual),
         "test_auc": _auc(y_test, test_dual),
     }
     if X_laund is not None:
-        report["dual_engine"]["laundered_test_auc"] = _auc(y_test, _predict(booster, X_laund))
+        report["dual_engine"]["laundered_test_auc"] = _auc(y_test, _predict(booster, X_laund, base_margin_mode))
     print(f"Dual-engine fusion            calibration AUC : {report['dual_engine']['calibration_auc']:.4f}")
     print(f"Dual-engine fusion            test AUC       : {report['dual_engine']['test_auc']:.4f}")
     if "laundered_test_auc" in report["dual_engine"]:

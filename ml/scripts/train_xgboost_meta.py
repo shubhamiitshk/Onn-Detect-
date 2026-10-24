@@ -342,6 +342,7 @@ def extract_laundered_features(
     semantic_tflite: str | None = None,
     semantic_input_size: int = 224,
     semantic_frontend: str = "clip",
+    srm_frontend_id: str | None = None,
 ) -> np.ndarray:
     """Re-encode every sample to uniform JPEG (max_side, jpeg_quality) and extract features.
 
@@ -376,7 +377,7 @@ def extract_laundered_features(
                     Image.Resampling.BILINEAR,
                 )
             decoded.convert("RGB").save(tmp_path, format="JPEG", quality=jpeg_quality)
-            vec = extract_visual_features(str(tmp_path), model, torch.device("cpu"), baseline, input_size=input_size)
+            vec = extract_visual_features(str(tmp_path), model, torch.device("cpu"), baseline, input_size=input_size, frontend_id=srm_frontend_id)
             if semantic_tflite:
                 laundered = decode_image(str(tmp_path)).image
                 sem_t = np.transpose(
@@ -580,7 +581,7 @@ def main():
         rows = []
         for path, _ in samples:
             try:
-                vec = extract_visual_features(str(path), model, torch.device("cpu"), baseline, input_size=size)
+                vec = extract_visual_features(str(path), model, torch.device("cpu"), baseline, input_size=size, frontend_id=checkpoint["contract"].get("frontend_id"))
                 if args.semantic_tflite:
                     from data.image_frontend import decode_image, semantic_image_tensor
                     from export.vfm_frontend import vfm_image_tensor
@@ -620,6 +621,7 @@ def main():
         semantic_tflite=args.semantic_tflite,
         semantic_input_size=args.semantic_input_size,
         semantic_frontend=args.semantic_frontend,
+        srm_frontend_id=checkpoint["contract"].get("frontend_id"),
     )
 
     cache["X_test_laundered_512_q85"] = X_test_laundered
@@ -829,6 +831,7 @@ def main():
         "test_accuracy": float(compute_accuracy(cache["y_test"], test, threshold)),
         "laundered_test_accuracy": float(compute_accuracy(cache["y_test"], test_laundered, threshold)),
         "base_margin_intercept": intercept,
+        "fusion_base_margin": args.fusion_base_margin,
         "n_trees": booster.num_boosted_rounds(),
         "source_fpr_bound": {
             "enforced": not args.allow_source_fpr_violation,

@@ -17,7 +17,8 @@
   "test_accuracy": 0.815,
   "n_trees": 16,
   "base_margin_intercept": 3.190582629694627e-09,
+  "fusion_base_margin": "probe",
   "release_id": "onn-20261021-v7",
   "fusion_model_hash": "c9606462172771abcbe5e05386ae0484294b705481e499ba2088d50033e65c78",
-  "visual_model_hash": "d74a657c454e00f2181f4a3d98fa981ca63daf51d23e978da19c60c59e9b37c1"
+  "visual_model_hash": "7bc1a8b3365de9213c957ad584ae98c28783dad6b515a6d11dd4957812adc026"
 }
