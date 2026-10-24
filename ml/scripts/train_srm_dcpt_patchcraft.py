@@ -551,6 +551,8 @@ def run_training(args: argparse.Namespace) -> None:
             config["training"][flag] = val
     if args.lr is not None:
         config["optimizer"]["lr"] = args.lr
+    if getattr(args, "data_dir", None):
+        config["data"]["root_dir"] = str(Path(args.data_dir).resolve())
 
     data_cfg = config["data"]
     root = Path(data_cfg["root_dir"])
@@ -737,6 +739,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=str(ML_ROOT / "configs" / "srm_cnn_openfake.yaml"),
         help="Path to YAML training config (default: ml/configs/srm_cnn_openfake.yaml)",
     )
+    parser.add_argument("--data-dir", default=None, help="Override dataset root directory from YAML config")
     parser.add_argument("--output-dir", default=str(ML_ROOT / "checkpoints" / "srm_dcpt_patchcraft_v8"))
     parser.add_argument("--model-name", default="srm_cnn_openfake")
     parser.add_argument("--device", default="auto")
