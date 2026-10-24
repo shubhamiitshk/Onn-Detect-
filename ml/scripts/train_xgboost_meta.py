@@ -498,6 +498,11 @@ def main():
         default=None,
         help="Neutralize resolution_norm and is_compressed during training so trees only learn content signals",
     )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Allow writing into an existing output directory (replaces artifacts)",
+    )
     args = parser.parse_args()
 
     config = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
@@ -509,14 +514,18 @@ def main():
 
     checkpoint = load_verified_checkpoint(args.visual_checkpoint)
     root = Path(checkpoint["config"]["data"]["root_dir"])
-    provenance = validate_dataset_manifest(root, ("train", "val", "calibration", "test", "stacking", "fusion_val"))
+    manifest_records = json.loads((root / "dataset_manifest.json").read_text(encoding="utf-8"))["records"]
+    manifest_splits = {r["split"] for r in manifest_records}
+    has_explicit_stacking = "stacking" in manifest_splits and "fusion_val" in manifest_splits
+    required_splits = ("train", "val", "calibration", "test", "stacking", "fusion_val") if has_explicit_stacking else ("train", "val", "calibration", "test")
+    provenance = validate_dataset_manifest(root, required_splits)
     if provenance["manifest_sha256"] != checkpoint["contract"]["dataset_manifest_hash"]:
         raise ValueError("Fusion dataset must match checkpoint lineage and include independent stacking splits before base training")
 
     output = Path(args.output_dir).resolve()
-    if output.exists():
-        raise FileExistsError("Use a new fusion release version; existing artifacts are never replaced")
-    output.mkdir(parents=True)
+    if output.exists() and not args.overwrite:
+        raise FileExistsError("Use a new fusion release version; existing artifacts are never replaced (or pass --overwrite)")
+    output.mkdir(parents=True, exist_ok=True)
 
     size = checkpoint["contract"]["input_shape"][1]
 
@@ -571,13 +580,28 @@ def main():
         identity["semantic_probe_model_hash"] = sha256_file(args.semantic_tflite)
         identity["feature_source"] = "reused:" + str(source_cache)
         print(f"Reusing extracted fusion features from {source_cache}")
+    if not reuse:
+        if has_explicit_stacking:
+            for split in ("stacking", "fusion_val", "calibration", "test"):
+                split_samples[split] = (
+                    discover_samples(root, split, IMAGE_EXTS)
+                    if split == "test" and args.test_samples is None
+                    else balanced_subset(discover_samples(root, split, IMAGE_EXTS), args.test_samples if split == "test" else limit)
+                )
+        else:
+            val_samples = balanced_subset(discover_samples(root, "val", IMAGE_EXTS), limit * 2)
+            half = len(val_samples) // 2
+            split_samples["stacking"] = val_samples[:half]
+            split_samples["fusion_val"] = val_samples[half:]
+            split_samples["calibration"] = balanced_subset(discover_samples(root, "calibration", IMAGE_EXTS), limit)
+            split_samples["test"] = (
+                discover_samples(root, "test", IMAGE_EXTS)
+                if args.test_samples is None
+                else balanced_subset(discover_samples(root, "test", IMAGE_EXTS), args.test_samples)
+            )
+
     for split in (() if reuse else ("stacking", "fusion_val", "calibration", "test")):
-        samples = (
-            discover_samples(root, split, IMAGE_EXTS)
-            if split == "test" and args.test_samples is None
-            else balanced_subset(discover_samples(root, split, IMAGE_EXTS), args.test_samples if split == "test" else limit)
-        )
-        split_samples[split] = samples
+        samples = split_samples[split]
         rows = []
         for path, _ in samples:
             try:
