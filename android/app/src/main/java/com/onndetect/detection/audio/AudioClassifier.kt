@@ -109,7 +109,8 @@ class AudioClassifier(private val context: Context, private val engine: LiteRTIn
                 val features = lfcc.extractBuffer(decoded.pcm, ::check)
                 check(); onStage("Audio model diagnostics...")
                 scores += engine.predict(MODEL_FILE, features, ::check)
-                if (SpeechContentGate.isSpeechLike(decoded.pcm, decoded.validSamples, TARGET_RATE)) speechLikeWindows++
+                if (SpeechContentGate.isSpeechLike(decoded.pcm, decoded.validSamples, TARGET_RATE) &&
+                    VoicedDurationGate.voicedMs(decoded.pcm, TARGET_RATE) >= 300L) speechLikeWindows++
             }
 
             val score = if (scores.isEmpty()) -1f
