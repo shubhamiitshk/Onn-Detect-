@@ -551,6 +551,8 @@ def run_training(args: argparse.Namespace) -> None:
             config["training"][flag] = val
     if args.lr is not None:
         config["optimizer"]["lr"] = args.lr
+    if getattr(args, "patience", None) is not None:
+        config["early_stopping"]["patience"] = args.patience
     if getattr(args, "data_dir", None):
         config["data"]["root_dir"] = str(Path(args.data_dir).resolve())
 
@@ -755,7 +757,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dcpt-feature-weight", type=float, default=0.5, help="Weight lambda_f on DCPT cosine feature loss")
     parser.add_argument("--dcpt-temperature", type=float, default=1.0)
     parser.add_argument("--dcpt-degrade-prob", type=float, default=0.85)
-    for flag, kind in [("epochs", int), ("batch-size", int), ("lr", float), ("num-workers", int)]:
+    for flag, kind in [("epochs", int), ("batch-size", int), ("lr", float), ("num-workers", int), ("patience", int)]:
         parser.add_argument("--" + flag, type=kind)
     parser.add_argument("--amp", action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument("--resume", help="Resume from an existing checkpoint path")
