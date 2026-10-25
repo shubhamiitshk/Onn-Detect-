@@ -153,7 +153,7 @@ def verify_asset_bundle(read, names: set[str], require_validated: bool = False) 
                     errors.append("Fusion meta_classifier.json release_id does not match release_manifest.json")
         except (KeyError, FileNotFoundError, ValueError, UnicodeError) as exc:
             errors.append(f"Invalid constants/meta_classifier.json: {exc}")
-    if manifest.get("validated") is True:
+    if manifest.get("validated") is True or manifest.get("desktop_validated") is True:
         for field in ("source_commit", "data_manifest_hashes", "evaluation_report_hash", "calibration", "validation_status"):
             if not manifest.get(field):
                 errors.append(f"Validated release lacks {field}")
@@ -179,10 +179,14 @@ def verify_asset_bundle(read, names: set[str], require_validated: bool = False) 
                     errors.append("Staged fusion source revision mismatch")
             except (KeyError, FileNotFoundError, UnicodeError):
                 errors.append("Missing/invalid staged fusion source")
-        device = manifest.get("device_validation", {})
-        if not isinstance(device, dict) or device.get("passed") is not True or artifacts.get("device_evaluation.json") != device.get("report_hash") or not isinstance(device.get("report_hash"), str) or not SHA256.fullmatch(device["report_hash"]):
-            errors.append("Independent device report is not bound to this release")
-        for report_path in ("evaluation_report.json", "device_evaluation.json"):
+        if manifest.get("validated") is True:
+            device = manifest.get("device_validation", {})
+            if not isinstance(device, dict) or device.get("passed") is not True or artifacts.get("device_evaluation.json") != device.get("report_hash") or not isinstance(device.get("report_hash"), str) or not SHA256.fullmatch(device["report_hash"]):
+                errors.append("Independent device report is not bound to this release")
+        reports_to_check = ["evaluation_report.json"]
+        if manifest.get("validated") is True:
+            reports_to_check.append("device_evaluation.json")
+        for report_path in reports_to_check:
             try:
                 report = json.loads(read(report_path))
                 if not isinstance(report, dict) or report.get("release_id") != manifest.get("release_id"):
@@ -201,6 +205,18 @@ def verify_asset_bundle(read, names: set[str], require_validated: bool = False) 
                         parity, cal = entry.get("parity", {}), entry.get("calibration", {})
                         if not isinstance(parity, dict) or parity.get("passed") is not True or not isinstance(cal, dict) or cal.get("model_hash") != contract.get("sha256") or cal.get('frontend_id') != contract.get('frontend_id'):
                             errors.append(f"Export report/model parity mismatch: {name}")
+                        else:
+                            agreement = parity.get("agreement")
+                            max_err = parity.get("max_error", entry.get("fp32_max_error"))
+                            if not isinstance(agreement, (int, float)) or not (0.0 <= agreement <= 1.0) or not isinstance(max_err, (int, float)) or max_err < 0:
+                                errors.append(f"Export report/model parity missing numerical bounds: {name}")
+                        if manifest.get("acceptance"):
+                            acceptance = manifest["acceptance"]
+                            if name in acceptance:
+                                acc_auc = acceptance[name].get("measured_auc")
+                                rep_auc = entry.get("test_auc")
+                                if acc_auc is not None and rep_auc is not None and abs(float(acc_auc) - float(rep_auc)) > 1e-4:
+                                    errors.append(f"Acceptance AUC mismatch for {name}: {acc_auc} != {rep_auc}")
                     elif entry.get("sha256") != contract.get("sha256") or entry.get("frontend_id") != contract.get("frontend_id") or entry.get("parity_passed") is not True:
                         errors.append(f"Device report/model parity mismatch: {name}")
                 if report_path == "device_evaluation.json" and (report.get("passed") is not True or report.get("fusion_revision") != revision or report.get("kotlin_parity_passed") is not True or report.get("offline_verified") is not True):

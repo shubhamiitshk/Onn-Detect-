@@ -24,6 +24,11 @@ on:
         type: choice
         default: cuda
         options: [cuda, cpu]
+      training_flow:
+        description: 'Training pipeline flow: v9-four-track (v9 measured four-track) or legacy (run_training_pipeline.py)'
+        type: choice
+        default: v9-four-track
+        options: [v9-four-track, legacy]
 
 permissions:
   contents: read
@@ -64,10 +69,17 @@ jobs:
           ONN_VISUAL_CONFIG: ${{ inputs.visual_config }}
           ONN_AUDIO_CONFIG: ${{ inputs.audio_config }}
           ONN_DEVICE: ${{ inputs.device }}
+          ONN_TRAINING_FLOW: ${{ inputs.training_flow }}
         run: |
           test -d "$ONN_DATA_ROOT"
           if [ "$ONN_DEVICE" = cuda ]; then python -c "import torch, sys; sys.exit(0 if torch.cuda.is_available() else 'ONN_DEVICE=cuda but torch.cuda.is_available() is False')"; fi
-          python scripts/run_training_pipeline.py --visual-config "$ONN_VISUAL_CONFIG" --audio-config "$ONN_AUDIO_CONFIG" --data-root "$ONN_DATA_ROOT" --device "$ONN_DEVICE" --output-dir runs/current
+          if [ "$ONN_TRAINING_FLOW" = "v9-four-track" ]; then
+            python scripts/run_track4_fusion_release.py --srm-dir "$ONN_DATA_ROOT/srm" --siglip-dir "$ONN_DATA_ROOT/siglip" --audio-dir "$ONN_DATA_ROOT/audio" --data-dir "$ONN_DATA_ROOT/visual" --output-dir runs/current --release-id onn-prod-v9
+            python ../onn_release_lineage_gate.py --repo ..
+            python scripts/release_bundle.py --bundle runs/current/bundle --verify
+          else
+            python scripts/run_training_pipeline.py --visual-config "$ONN_VISUAL_CONFIG" --audio-config "$ONN_AUDIO_CONFIG" --data-root "$ONN_DATA_ROOT" --device "$ONN_DEVICE" --output-dir runs/current
+          fi
       - name: Upload complete staged artifacts and evaluation evidence
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

@@ -29,8 +29,9 @@ object CanonicalReceiptPayload {
      * Serializes [data] into a deterministic, sorted-key JSON string with no outer whitespace.
      */
     fun serialize(data: ReceiptData): String {
-        require(data.challengeNonce.isNotBlank()) { "Challenge nonce must not be blank" }
-        require(data.mediaSha256.matches(Regex("^[0-9a-fA-F]{64}$"))) { "Invalid media SHA-256 digest" }
+        require(data.mediaSha256.matches(Regex("^[0-9a-fA-F]{64}$")) && !data.mediaSha256.all { it == '0' }) {
+            "Invalid media SHA-256 digest: cannot be blank or all zeros"
+        }
 
         val sb = StringBuilder()
         sb.append("{")

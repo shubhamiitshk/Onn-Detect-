@@ -151,8 +151,9 @@ class SiglipStreamingDataset(Dataset):
         path, label = self.samples[idx]
         try:
             img = decode_image(str(path)).image.convert("RGB")
-        except Exception:
-            img = Image.new("RGB", (SIGLIP_INPUT_SIZE, SIGLIP_INPUT_SIZE), color=(128, 128, 128))
+        except Exception as e:
+            # Quarantine corrupt sample: fail closed rather than corrupting the dataset with a gray image
+            raise RuntimeError(f"Corrupt image quarantined: {path}") from e
 
         clean_np = preprocess_siglip_chw(img)
 
@@ -444,19 +445,51 @@ def train_siglip_tap(
     test_eer = float(compute_eer(test_targets_arr, test_probs_arr))
     test_acc = float(compute_accuracy(test_targets_arr, (test_probs_arr >= 0.5).astype(int)))
 
-    # TPR @ 1% FPR and TPR @ 0.1% FPR
+    # Derive frozen operational threshold from calibration split (never test split)
+    cal_samples = splits.get("calibration")
+    if cal_samples:
+        cal_dataset = SiglipStreamingDataset(cal_samples, p_degrade=0.0)
+        cal_loader = DataLoader(
+            cal_dataset,
+            batch_size=batch_size,
+            shuffle=False,
+            num_workers=num_workers,
+            pin_memory=(device.type == "cuda"),
+            drop_last=False,
+        )
+        cal_probs_list: List[float] = []
+        cal_targets_list: List[int] = []
+        with torch.no_grad():
+            for c_clean_b, _, c_y_b in cal_loader:
+                c_clean_b = c_clean_b.to(device, non_blocking=True)
+                with autocast("cuda", enabled=(use_amp and device.type == "cuda")):
+                    c_tokens = vm(pixel_values=c_clean_b).last_hidden_state
+                    c_logits, _, _ = tap_head.forward_with_attention(c_tokens)
+                probs = torch.sigmoid(c_logits).squeeze(-1).cpu().numpy()
+                cal_probs_list.extend(probs.tolist())
+                cal_targets_list.extend(c_y_b.numpy().tolist())
+        cal_probs_arr = np.asarray(cal_probs_list)
+        cal_targets_arr = np.asarray(cal_targets_list)
+        cal_real = cal_probs_arr[cal_targets_arr == 0]
+        thr_1pct = float(np.quantile(cal_real, 0.99)) if len(cal_real) else 0.5
+        thr_01pct = float(np.quantile(cal_real, 0.999)) if len(cal_real) else 0.5
+    else:
+        val_real = val_probs_arr[val_targets_arr == 0]
+        thr_1pct = float(np.quantile(val_real, 0.99)) if len(val_real) else 0.5
+        thr_01pct = float(np.quantile(val_real, 0.999)) if len(val_real) else 0.5
+
     real_scores = test_probs_arr[test_targets_arr == 0]
     fake_scores = test_probs_arr[test_targets_arr == 1]
-    thr_1pct = float(np.quantile(real_scores, 0.99)) if len(real_scores) else 0.5
-    thr_01pct = float(np.quantile(real_scores, 0.999)) if len(real_scores) else 0.5
     tpr_1pct = float(np.mean(fake_scores >= thr_1pct)) if len(fake_scores) else 0.0
     tpr_01pct = float(np.mean(fake_scores >= thr_01pct)) if len(fake_scores) else 0.0
+    achieved_test_fpr_1pct = float(np.mean(real_scores >= thr_1pct)) if len(real_scores) else 0.0
 
     print(f"  • Sealed Test ROC-AUC  : {test_auc:.4f}")
     print(f"  • Sealed Test EER      : {test_eer:.4f}")
     print(f"  • Sealed Test Accuracy : {test_acc:.4f}")
+    print(f"  • Calibrated Thr @ 1% FPR: {thr_1pct:.4f}")
     print(f"  • TPR @ 1.0% FPR       : {tpr_1pct:.4f} ({tpr_1pct * 100:.2f}%)")
-    print(f"  • TPR @ 0.1% FPR       : {tpr_01pct:.4f} ({tpr_01pct * 100:.2f}%)")
+    print(f"  • Achieved Test FPR    : {achieved_test_fpr_1pct:.4f} ({achieved_test_fpr_1pct * 100:.2f}%)")
 
     results_summary = {
         "model_name": model_name,

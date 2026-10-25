@@ -183,4 +183,27 @@ class CanonicalReceiptPayloadTest {
         assertEquals(64, sha256.length)
         assertTrue(sha256.matches(Regex("^[0-9a-f]{64}$")))
     }
+
+    @Test
+    fun `all-zero media SHA-256 digest is rejected`() {
+        val data = CanonicalReceiptPayload.ReceiptData(
+            timestampEpochMs = 1729612800000L,
+            challengeNonce = "nonce-zeros",
+            mediaSha256 = "0".repeat(64),
+            modelRelease = "onn-20261021-v7",
+            modelHashes = mapOf("model1" to "hash1"),
+            verdict = "REAL",
+            overallScore = 0.1f,
+            confidence = 0.8f,
+            signals = mapOf("srm_score" to 0.1f),
+            deviceSecurityTier = "TEE",
+        )
+        var rejected = false
+        try {
+            CanonicalReceiptPayload.serialize(data)
+        } catch (_: IllegalArgumentException) {
+            rejected = true
+        }
+        assertTrue("an all-zero media SHA-256 digest must be rejected", rejected)
+    }
 }

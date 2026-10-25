@@ -277,11 +277,12 @@ class VideoForensicAnalyzer @Inject constructor(private val context: Context,
                     } else if (temporal >= 0f) {
                         (0.85f * visualScore + 0.15f * temporal).coerceIn(0f, 1f)
                     } else visualScore
-                    val note = if (issues.isEmpty()) null else issues.distinct().joinToString()
+                    val provisionalNotice = "Provisional video verdict: heuristic multimodal temporal blend without dedicated video calibration"
+                    val note = (listOf(provisionalNotice) + issues).distinct().joinToString("; ")
                     return Outcome(overall, overall >= threshold, 0f, avg(srmScores), avg(fftScores), avg(klScores),
                         avg(flatScores), temporal, audioScore, video.frames.size, video.width, video.height,
                         video.durationMs, AnalysisStatus.SUCCESS, note, true, video.timestampsMs, audioDuration,
-                        threshold, report.releaseId, report.frontendId, report.releaseId,
+                        threshold, report.releaseId, report.frontendId, "provisional-uncalibrated",
                         avg(semanticScores), landmarkJitter)
                 }
                 return Outcome(-1f, false, 0f, avg(srmScores), avg(fftScores), avg(klScores), avg(flatScores), temporal,

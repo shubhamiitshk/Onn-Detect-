@@ -23,11 +23,34 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            val storeFilePath = System.getenv("ONN_RELEASE_STORE_FILE")
+                ?: (project.findProperty("ONN_RELEASE_STORE_FILE") as? String)
+            if (storeFilePath != null && file(storeFilePath).exists()) {
+                storeFile = file(storeFilePath)
+                storePassword = System.getenv("ONN_RELEASE_STORE_PASSWORD")
+                    ?: (project.findProperty("ONN_RELEASE_STORE_PASSWORD") as? String)
+                keyAlias = System.getenv("ONN_RELEASE_KEY_ALIAS")
+                    ?: (project.findProperty("ONN_RELEASE_KEY_ALIAS") as? String)
+                keyPassword = System.getenv("ONN_RELEASE_KEY_PASSWORD")
+                    ?: (project.findProperty("ONN_RELEASE_KEY_PASSWORD") as? String)
+            } else {
+                // Non-production environment fallback: mirror debug keystore for local/CI release verification
+                val debugConfig = signingConfigs.getByName("debug")
+                storeFile = debugConfig.storeFile
+                storePassword = debugConfig.storePassword
+                keyAlias = debugConfig.keyAlias
+                keyPassword = debugConfig.keyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

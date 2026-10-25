@@ -99,6 +99,8 @@ def validate_bundle(bundle, require_validated=False, allow_source_fpr_violation=
             expected_frontend = 'lfcc-v3-sr16000-f128-c40-nfft512-hop160-topdbnone-resampler-quadratic_window_sinc_v1-float64stft-float32'
             if shape != [1, 401, 40, 1]:
                 raise ValueError('Unsupported audio shape')
+            if model.get('frontend_id') != expected_frontend:
+                raise ValueError(f'Frontend mismatch: {name}')
         elif name in CASCADE_MODEL_NAMES:
             # Engine C uses the CLIP appearance frontend (bicubic square
             # resize + CLIP normalization), not the Engine A one. The two
@@ -112,12 +114,15 @@ def validate_bundle(bundle, require_validated=False, allow_source_fpr_violation=
                 expected_frontend = vfm_frontend_id(shape[1])
             else:
                 expected_frontend = f'clip-appearance-bicubic{shape[1]}-clipnorm-meanstd-float32'
+            if model.get('frontend_id') != expected_frontend:
+                raise ValueError(f'Frontend mismatch: {name}')
         else:
             if shape[0] != 1 or shape[1] != shape[2] or shape[3] != 3 or not 32 <= shape[1] <= 1024:
                 raise ValueError('Unsupported visual shape')
-            expected_frontend = frontend_id(shape[1])
-        if model.get('frontend_id') != expected_frontend:
-            raise ValueError(f'Frontend mismatch: {name}')
+            base_frontend = frontend_id(shape[1])
+            valid_srm_frontends = {base_frontend, f'{base_frontend}-patchcraft-mosaic-tile32'}
+            if model.get('frontend_id') not in valid_srm_frontends:
+                raise ValueError(f'Frontend mismatch: {name}')
         declared.add('models/' + name)
     artifacts = manifest.get('artifacts', {})
     if not isinstance(artifacts, dict):
@@ -157,20 +162,17 @@ def validate_bundle(bundle, require_validated=False, allow_source_fpr_violation=
     report_models = report.get('models', {})
     if not isinstance(report_models, dict):
         raise ValueError('Evaluation models must be a JSON object')
-    for name in MODEL_NAMES:
+    for name in MODEL_NAMES | (CASCADE_MODEL_NAMES & set(models)):
         entry = report_models.get(name)
-        parity = entry.get('parity') if isinstance(entry, dict) else None
+        if not isinstance(entry, dict):
+            raise ValueError(f'Missing evaluation report entry: {name}')
+        parity = entry.get('parity')
         if not isinstance(parity, dict) or parity.get('passed') is not True:
             raise ValueError(f'Missing enforced export validation: {name}')
-        calibration = entry.get('calibration')
-        if not isinstance(calibration, dict) or calibration.get('model_hash') != models[name]['sha256'] or calibration.get('frontend_id') != models[name]['frontend_id']:
-            raise ValueError(f'Evaluation report model/frontend lineage differs: {name}')
-    # Engine C is held to the same export-validation standard when shipped.
-    for name in CASCADE_MODEL_NAMES & set(models):
-        entry = report_models.get(name)
-        parity = entry.get('parity') if isinstance(entry, dict) else None
-        if not isinstance(parity, dict) or parity.get('passed') is not True:
-            raise ValueError(f'Missing enforced export validation: {name}')
+        agreement = parity.get('agreement')
+        max_err = parity.get('max_error', entry.get('fp32_max_error'))
+        if not isinstance(agreement, (int, float)) or not (0.0 <= agreement <= 1.0) or not isinstance(max_err, (int, float)) or max_err < 0:
+            raise ValueError(f'Missing or invalid numerical parity bounds: {name}')
         calibration = entry.get('calibration')
         if not isinstance(calibration, dict) or calibration.get('model_hash') != models[name]['sha256'] or calibration.get('frontend_id') != models[name]['frontend_id']:
             raise ValueError(f'Evaluation report model/frontend lineage differs: {name}')
@@ -201,6 +203,13 @@ def validate_bundle(bundle, require_validated=False, allow_source_fpr_violation=
     fusion_cal = calibrations.get('fusion_xgboost') or calibrations['srm_forensic_cnn_int8.tflite']
     if meta.get('decision_threshold') != fusion_cal['threshold']:
         raise ValueError('Fusion operating threshold mismatch')
+    if 'fusion_xgboost' in calibrations and calibrations['fusion_xgboost'].get('frontend_id') != models['srm_forensic_cnn_int8.tflite']['frontend_id']:
+        raise ValueError('Fusion calibration frontend differs from SRM model frontend')
+    if (bundle / 'fusion/meta_results.json').is_file():
+        meta_res = read_object(bundle / 'fusion/meta_results.json')
+        meta_cal_frontend = meta_res.get('calibration', {}).get('frontend_id')
+        if meta_cal_frontend and meta_cal_frontend != models['srm_forensic_cnn_int8.tflite']['frontend_id']:
+            raise ValueError('meta_results calibration frontend differs from SRM model frontend')
     audio = read_object(bundle / 'constants/lcnn_audio_threshold.json')
     if audio.get('threshold_at_eer') != manifest['calibration']['lcnn_audio_int8.tflite']['threshold']:
         raise ValueError('Audio operating threshold mismatch')
@@ -237,6 +246,17 @@ def validate_bundle(bundle, require_validated=False, allow_source_fpr_violation=
         # floor is enforced; the 0.1% floor is not, and that is exactly what
         # `require_low_fpr_statistic=False` is for.
         check_model_acceptance(name, test, context='release', require_low_fpr_statistic=False)
+    if manifest.get('acceptance'):
+        acceptance = manifest['acceptance']
+        for name in MODEL_NAMES | (CASCADE_MODEL_NAMES & set(models)):
+            if name in acceptance and name in desktop_models:
+                acc_auc = acceptance[name].get('measured_auc')
+                rep_auc = desktop_models[name].get('test_auc')
+                if acc_auc is not None and rep_auc is not None and abs(float(acc_auc) - float(rep_auc)) > 1e-4:
+                    raise ValueError(f"Acceptance measured_auc mismatch for {name}: manifest={acc_auc} != report={rep_auc}")
+                floor = acceptance[name].get('enforced_floor')
+                if isinstance(floor, list) and len(floor) >= 3 and acc_auc is not None and acc_auc < floor[2]:
+                    raise ValueError(f"Model {name} measured AUC {acc_auc} below enforced floor {floor[2]}")
     fusion_results = read_object(bundle / 'fusion/meta_results.json')
     fusion_test = fusion_results.get('test')
     if isinstance(fusion_test, dict):

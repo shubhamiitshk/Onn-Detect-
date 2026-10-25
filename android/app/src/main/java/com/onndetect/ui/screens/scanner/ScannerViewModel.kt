@@ -111,7 +111,7 @@ class ScannerViewModel @Inject constructor(
             _state.value = UiState(error = message(R.string.save_failed), unsavedResult = result)
         }
     }
-    private fun computeFileSha256(file: File): String = runCatching {
+    private fun computeFileSha256(file: File): String {
         val md = MessageDigest.getInstance("SHA-256")
         file.inputStream().use { inStream ->
             val buf = ByteArray(32 * 1024)
@@ -120,8 +120,12 @@ class ScannerViewModel @Inject constructor(
                 md.update(buf, 0, n)
             }
         }
-        md.digest().joinToString("") { "%02x".format(it) }
-    }.getOrDefault("0".repeat(64))
+        val digest = md.digest().joinToString("") { "%02x".format(it) }
+        check(digest.length == 64 && !digest.all { it == '0' }) {
+            "Failed to compute valid media SHA-256 digest"
+        }
+        return digest
+    }
 
     private suspend fun scanImage(file: File, mediaSha256: String) {
         val decoded = decodeScaled(file)

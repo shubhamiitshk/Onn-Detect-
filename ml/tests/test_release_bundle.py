@@ -35,7 +35,7 @@ def fixture(root):
               'constants/lcnn_audio_threshold.json': {'threshold_at_eer': .4},
               'constants/natural_diff_histogram.json': {'bins': [.1]},
               'constants/model_hashes.json': {}, 'fusion/xgboost_meta.json': {}, 'fusion/meta_results.json': {},
-              'evaluation_report.json': {'release_id': 'test-release', 'models': {name: {'parity': {'passed': True},
+              'evaluation_report.json': {'release_id': 'test-release', 'models': {name: {'parity': {'passed': True, 'agreement': 1.0, 'max_error': 0.0},
                   'calibration': {'model_hash': value['sha256'], 'frontend_id': value['frontend_id']}}
                   for name, value in models.items()}}}
     for relative, value in values.items():
@@ -334,7 +334,7 @@ class CascadeModelContractTests(unittest.TestCase):
                                          'split_manifest_hash': 'a' * 64}
         report_path = root / 'evaluation_report.json'
         report = json.loads(report_path.read_text(encoding='utf-8'))
-        report['models'][name] = {'parity': {'passed': True},
+        report['models'][name] = {'parity': {'passed': True, 'agreement': 1.0, 'max_error': 0.0},
                                   'calibration': {'model_hash': sha256_file(path), 'frontend_id': frontend_id}}
         report_path.write_text(json.dumps(report), encoding='utf-8')
         manifest['evaluation_report_hash'] = sha256_file(report_path)
@@ -425,6 +425,56 @@ class CascadeModelContractTests(unittest.TestCase):
             (root / 'release_manifest.json').write_text(json.dumps(manifest), encoding='utf-8')
             with self.assertRaises(ValueError):
                 release_bundle.validate_bundle(root)
+
+    def test_fabricated_parity_assertion_without_bounds_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / 'bundle'
+            manifest = fixture(root)
+            report_path = root / 'evaluation_report.json'
+            report = json.loads(report_path.read_text(encoding='utf-8'))
+            # Force parity passed without measured numerical error bounds
+            report['models']['srm_forensic_cnn_int8.tflite']['parity'] = {'passed': True}
+            report_path.write_text(json.dumps(report), encoding='utf-8')
+            manifest['evaluation_report_hash'] = sha256_file(report_path)
+            manifest['artifacts']['evaluation_report.json'] = sha256_file(report_path)
+            (root / 'release_manifest.json').write_text(json.dumps(manifest), encoding='utf-8')
+            with self.assertRaises(ValueError) as ctx:
+                release_bundle.validate_bundle(root)
+            self.assertTrue('numerical parity bounds' in str(ctx.exception))
+
+    def test_cross_file_frontend_mismatch_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / 'bundle'
+            manifest = fixture(root)
+            meta_path = root / 'fusion' / 'meta_results.json'
+            meta = {
+                'calibration': {
+                    'frontend_id': 'different-unmatched-frontend-id'
+                }
+            }
+            meta_path.write_text(json.dumps(meta), encoding='utf-8')
+            manifest['artifacts']['fusion/meta_results.json'] = sha256_file(meta_path)
+            (root / 'release_manifest.json').write_text(json.dumps(manifest), encoding='utf-8')
+            with self.assertRaises(ValueError) as ctx:
+                release_bundle.validate_bundle(root)
+            self.assertTrue('frontend differs' in str(ctx.exception))
+
+    def test_patchcraft_mosaic_srm_frontend_is_accepted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / 'bundle'
+            manifest = fixture(root)
+            mosaic_frontend = 'rgb-exif-srgb-whitealpha-pow2cap1024-bilinear-square-v2-size32-float32-patchcraft-mosaic-tile32'
+            manifest['models']['srm_forensic_cnn_int8.tflite']['frontend_id'] = mosaic_frontend
+            manifest['calibration']['srm_forensic_cnn_int8.tflite']['frontend_id'] = mosaic_frontend
+            report_path = root / 'evaluation_report.json'
+            report = json.loads(report_path.read_text(encoding='utf-8'))
+            report['models']['srm_forensic_cnn_int8.tflite']['calibration']['frontend_id'] = mosaic_frontend
+            report_path.write_text(json.dumps(report), encoding='utf-8')
+            manifest['evaluation_report_hash'] = sha256_file(report_path)
+            manifest['artifacts']['evaluation_report.json'] = sha256_file(report_path)
+            (root / 'release_manifest.json').write_text(json.dumps(manifest), encoding='utf-8')
+            # Must validate without error
+            release_bundle.validate_bundle(root)
 
 
 if __name__ == '__main__':

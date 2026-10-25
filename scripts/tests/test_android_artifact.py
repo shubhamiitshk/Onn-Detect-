@@ -147,6 +147,19 @@ class ArtifactTests(unittest.TestCase):
             self.assertTrue(any("ZIP 16KiB" in x for x in errors))
             self.assertFalse(any("ELF 16KiB" in x for x in errors))
 
+    def test_adversarial_parity_without_bounds_in_asset_bundle_is_rejected(self):
+        assets_dir = Path(__file__).resolve().parents[2] / "android" / "app" / "src" / "main" / "assets"
+        files = {p.relative_to(assets_dir).as_posix(): p.read_bytes() for p in assets_dir.rglob("*") if p.is_file()}
+        report = json.loads(files["evaluation_report.json"])
+        report["models"]["srm_forensic_cnn_int8.tflite"]["parity"] = {"passed": True}
+        files["evaluation_report.json"] = json.dumps(report).encode("utf-8")
+        manifest = json.loads(files["constants/release_manifest.json"])
+        manifest["artifacts"]["evaluation_report.json"] = hashlib.sha256(files["evaluation_report.json"]).hexdigest()
+        manifest["evaluation_report_hash"] = manifest["artifacts"]["evaluation_report.json"]
+        files["constants/release_manifest.json"] = json.dumps(manifest).encode("utf-8")
+        errors, _ = verify_asset_bundle(files.__getitem__, set(files))
+        self.assertTrue(any("parity missing numerical bounds" in e for e in errors), f"Must reject parity without bounds: {errors}")
+
 
 if __name__ == "__main__":
     unittest.main()

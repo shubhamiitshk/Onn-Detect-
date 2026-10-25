@@ -300,22 +300,65 @@ def train_lcnn_audio(
     cal_auc = float(compute_auc(cal_targets_arr, cal_probs_arr))
 
     # Multi-window aggregator calibration (WINDOWS_PER_FILE = 3)
-    sim_window_scores = []
-    for p in cal_probs_arr:
-        # Simulate slight score perturbations across 3 consecutive 4s audio windows
-        w1 = float(p)
-        w2 = float(np.clip(p + np.random.normal(0.0, 0.05), 0.0, 1.0))
-        w3 = float(np.clip(p + np.random.normal(0.0, 0.05), 0.0, 1.0))
-        sim_window_scores.append([w1, w2, w3])
+    multiwindow_scores = []
+    multiwindow_labels = []
+    use_simulated_windows = False
+
+    # Attempt to extract 3 real windows per file from calibration audio files
+    import soundfile as sf
+    from data.lfcc_reference import resample_sinc
+    for s_path, label in splits["calibration"]:
+        try:
+            info = sf.info(str(s_path))
+            rate, frames = int(info.samplerate), int(info.frames)
+            win_frames = int(4.0 * rate)
+            if frames >= win_frames:
+                step = max(0, (frames - win_frames) // 2)
+                window_scores = []
+                for w_idx in range(3):
+                    start = min(max(0, frames - win_frames), w_idx * step)
+                    waveform, decoded_rate = sf.read(
+                        str(s_path), start=start, stop=start + win_frames, dtype="float32", always_2d=True
+                    )
+                    mono = resample_sinc(waveform.mean(axis=1, dtype=np.float64), rate, 16000).astype(np.float32)
+                    if len(mono) > 64000:
+                        mono = mono[:64000]
+                    elif len(mono) < 64000:
+                        mono = np.pad(mono, (0, 64000 - len(mono)))
+                    spec = datasets["calibration"].lfcc_extractor.extract(torch.from_numpy(mono)).unsqueeze(0).to(device).float()
+                    with torch.no_grad():
+                        w_logit = model(spec, return_logits=True)
+                        w_prob = float(torch.sigmoid(w_logit).cpu().item())
+                    window_scores.append(w_prob)
+                multiwindow_scores.append(window_scores)
+                multiwindow_labels.append(label)
+        except Exception:
+            continue
+
+    if len(multiwindow_scores) >= 10:
+        print(f"  • Extracted 3 real acoustic windows from {len(multiwindow_scores)} calibration audio files.")
+    else:
+        use_simulated_windows = True
+        print("  ⚠️ Warning: Fewer than 10 multisegment audio files available in calibration split.")
+        print("    Falling back to simulated score perturbations; real multisegment audio files required for production certification.")
+        multiwindow_scores = []
+        multiwindow_labels = cal_targets_list
+        for p in cal_probs_arr:
+            w1 = float(p)
+            w2 = float(np.clip(p + np.random.normal(0.0, 0.05), 0.0, 1.0))
+            w3 = float(np.clip(p + np.random.normal(0.0, 0.05), 0.0, 1.0))
+            multiwindow_scores.append([w1, w2, w3])
 
     multiwindow_cal = fit_multiwindow_audio_aggregator(
-        window_scores_list=sim_window_scores,
-        labels=cal_targets_list,
+        window_scores_list=multiwindow_scores,
+        labels=multiwindow_labels,
         target_fpr=0.01,
     )
+    multiwindow_cal["windows_source"] = "simulated_noise_fallback" if use_simulated_windows else "real_multisegment"
     print(f"  • Single-Window EER Operating Threshold : {cal_threshold:.5f} (EER: {cal_eer:.4f})")
     print(f"  • Multi-Window Aggregator (3 Windows)   : w_max={multiwindow_cal['w_max']:.3f}, w_mean={multiwindow_cal['w_mean']:.3f}")
     print(f"  • Multi-Window 1% FPR Threshold         : {multiwindow_cal['threshold_at_fpr_1pct']:.5f}")
+    print(f"  • Multi-Window Calibration Source       : {multiwindow_cal['windows_source']}")
 
     threshold_payload = {
         "model_hash": sha256_file(best_ckpt_path),
@@ -426,10 +469,10 @@ def train_lcnn_audio(
 
         try:
             tflite_bytes = converter.convert()
-        except Exception:
-            converter.representative_dataset = None
-            converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS]
-            tflite_bytes = converter.convert()
+        except Exception as exc:
+            raise RuntimeError(
+                f"Failed to quantize LCNN-MFM to INT8 TFLite; refusing fallback to unquantized float graph: {exc}"
+            ) from exc
         tflite_path = output_dir / "lcnn_audio_int8.tflite"
         tflite_path.write_bytes(tflite_bytes)
 
@@ -476,6 +519,16 @@ def run_self_tests() -> None:
     cal = fit_multiwindow_audio_aggregator(win_scores, [0] * 50 + [1] * 50)
     assert cal["windows_per_file"] == 3 and cal["w_max"] > 0.0
     print(f"  ✅ Multi-Window Aggregator verified: w_max={cal['w_max']:.3f}, thr_eer={cal['threshold_at_eer']:.4f}.")
+
+    # 3. Test DualSSLToLCNNDistiller
+    distiller = DualSSLToLCNNDistiller(alpha=0.5, temperature=2.0)
+    s_logits = torch.tensor([0.2, -0.4])
+    y_lbl = torch.tensor([1.0, 0.0])
+    w_logits = torch.tensor([0.3, -0.2])
+    h_logits = torch.tensor([0.1, -0.5])
+    d_loss, d_components = distiller.compute_distillation_loss(s_logits, y_lbl, w_logits, h_logits)
+    assert float(d_loss) > 0.0 and "teacher_kl" in d_components and "bce" in d_components
+    print(f"  ✅ DualSSLToLCNNDistiller verified: loss={float(d_loss):.4f}, teacher_kl={d_components['teacher_kl']:.4f}.")
 
     print("🎉 ALL TRACK 3 AUDIO SELF-TESTS PASSED PERFECTLY!\n")
 

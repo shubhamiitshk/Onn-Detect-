@@ -104,9 +104,9 @@ class ResultViewModel @Inject constructor(
         // nothing, and the specification's replay guarantee rests on this
         // binding. A receipt without a real digest is not produced.
         val mediaSha256 = evidence.optString("mediaSha256")
-            .takeIf { it.matches(Regex("^[0-9a-fA-F]{64}$")) }
+            .takeIf { it.matches(Regex("^[0-9a-fA-F]{64}$")) && !it.all { c -> c == '0' } }
             ?: return throw IllegalStateException(
-                "This assessment has no media digest, so it cannot be attested"
+                "This assessment has no valid media digest, so it cannot be attested"
             )
         // A fresh random nonce per export. The previous value was derived
         // from the scan id, which is a DETERMINISTIC function of the

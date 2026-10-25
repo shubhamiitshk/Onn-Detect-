@@ -8,17 +8,17 @@ All media decoding, neural inference, cryptographic verification, and tamper ana
 
 ## Key Capabilities & Features
 
-### 1. Multi-Modal On-Device Cascade (Release v7)
+### 1. Multi-Modal On-Device Cascade (Release v9)
 - **Vision Foundation Probe:** Frozen INT8 SigLIP-B/16 (224px, 89.96 MB) memory-mapped directly into the OS page cache with **0 MB Java heap bloat**.
-- **Spatial-Frequency Residual Engine:** 20-channel spatial-frequency CNN (12 fixed 5×5 SRM high-pass filters + 4 NPR upsampling kernels + 4 centered RGB low-pass stem, verified from the shipped tensor `(20,5,5,3)`) detecting generative grid artifacts and resampled boundaries.
-- **Base-Margin XGBoost Meta-Fusion:** Injects SigLIP continuous logits as the booster `base_margin` ($\text{margin} = \text{logit}(p) + f_{\text{tree}}$), eliminating tree quantization ties and boosting low-FPR recall by **7× (TPR@1%FPR: 0.040 $\rightarrow$ 0.280)**.
-- **Speech Anti-Spoofing:** Quantized INT8 LCNN-MFM (508 KiB) scoring 4-second audio windows in **<25 ms** with **0.875 AUC** and **59.5% TPR @ 1% FPR**.
-- **Cryptographic & Neural Provenance:** Offline C2PA Content Credentials verification against the official production trust list (Adobe, Google, DigiCert, ... anchors in `assets/trust/c2pa_trust_anchors.pem`): full JUMBF walk, multi-segment APP11 reassembly (ISO 19566-5), COSE_Sign1 ES256 and c2pa.hash.data exclusion-range binding, with a fail-closed `signed = hashVerified && coseSignatureValid && certChainValid` conjunction. The Meta AudioSeal watermark detector ships its verified ONNX export pipeline (`ml/scripts/export_audioseal_detector.py`); the app-side TFLite weights are pending a numerically faithful conversion — the exporter refuses to emit divergent graphs.
+- **Spatial-Frequency Residual Engine:** 20-channel spatial-frequency CNN (12 fixed 5×5 SRM high-pass filters + 4 NPR upsampling kernels + 4 centered RGB low-pass stem, verified from the shipped tensor `(20,5,5,3)`) detecting generative grid artifacts and resampled boundaries. Supports both bilinear scaling and PatchCraft mosaic extraction (`-patchcraft-mosaic-tile32`).
+- **Base-Margin XGBoost Meta-Fusion:** 16-tree shallow booster combining 10 forensic signals with SigLIP continuous logit base-margin prior (`XGBoostMetaClassifier.kt`), eliminating tree quantization ties and boosting low-FPR recall by **7× (TPR@1%FPR: 0.040 $\rightarrow$ 0.280)**.
+- **Speech Anti-Spoofing:** Quantized INT8 LCNN-MFM (508 KiB) scoring 4-second LFCC spectrograms in **<25 ms** with calibrated threshold **0.35547** (`lcnn_audio_threshold.json`) and **59.5% TPR @ 1% FPR**.
+- **Cryptographic & Neural Provenance:** Offline C2PA Content Credentials verification against the official production trust list (Adobe, Google, DigiCert, ... anchors in `assets/trust/c2pa_trust_anchors.pem`): full JUMBF walk, multi-segment APP11 reassembly (ISO 19566-5), COSE_Sign1 ES256 and c2pa.hash.data exclusion-range binding, with a fail-closed `signed = hashVerified && coseSignatureValid && certChainValid` conjunction. The Meta AudioSeal watermark detector ships its verified ONNX export pipeline (`ml/scripts/export_audioseal_detector.py`); the app-side TFLite weights are pending a numerically faithful conversion — watermark absence represents unknown provenance rather than authenticity.
 
 ### 2. Consumer Security Suite
-- **Family Safe-Voice Vault (dual-gate):** Offline enrollment requires **≥ 8 s of voiced speech** (20 ms frame voicing gate) AND an LCNN-MFM anti-spoof verdict below the 0.375 operating point — a synthetic sample can never become a trusted reference. Embeddings are pooled over 3 s windows at a 1.5 s hop and sealed with **AES-256-GCM in the Android Keystore** (alias `onn_voice_vault`), with the GCM AAD bound to each row's identity; a manifest swap between rows fails authentication loudly.
+- **Family Safe-Voice Vault (dual-gate):** Offline enrollment requires **≥ 8 s of voiced speech** (20 ms frame voicing gate) AND an LCNN-MFM anti-spoof verdict below the 0.35547 operating point — a synthetic sample can never become a trusted reference. Embeddings are pooled over 3 s windows at a 1.5 s hop and sealed with **AES-256-GCM in the Android Keystore** (alias `onn_voice_vault`), with the GCM AAD bound to each row's identity; a manifest swap between rows fails authentication loudly.
 - **WhatsApp / Telegram 1-Tap Forward Guard:** Share Sheet integration (`ACTION_SEND`) to inspect forwarded voice notes, viral videos, and payment receipts without leaving chat apps. 32×32 residual tamper heatmaps and in-memory ELA pinpoint the edited regions.
-- **BioLip Perioral Forensics:** MediaPipe 478-point face mesh (64-point perioral set, inter-ocular pose normalization around the nose tip) measuring second-order acceleration jitter (0.6) and MAR flicker (0.4) in talking-head video, with a CPU fallback for threads without an EGL context.
+- **BioLip Perioral Forensics & Video Analysis:** MediaPipe 478-point face mesh (64-point perioral set, inter-ocular pose normalization around the nose tip) measuring second-order acceleration jitter (0.6) and MAR flicker (0.4) in talking-head video. In video mode, temporal blending (0.65 visual / 0.20 audio / 0.15 temporal) aggregates timeline frames, with video verdicts marked provisional until independent video-corpus calibration is certified.
 
 *(The earlier planned UPI live-call shield and AI-reel accessibility automation were removed for Google Play 2026 policy compliance — the shipped suite above is 100% Play-compliant and network-free: the manifest actively removes `INTERNET` and `ACCESS_NETWORK_STATE`.)*
 
@@ -31,11 +31,11 @@ All media decoding, neural inference, cryptographic verification, and tamper ana
 
 ## Empirical Benchmark Summary
 
-Evaluated on sealed benchmark corpora spanning 68 generative models (Midjourney v6, Flux, SDXL, Sora, Ideogram) and in-the-wild audio datasets:
+Evaluated on sealed benchmark corpora spanning 68 generative models (Midjourney v6, Flux, SDXL, Sora, Ideogram) and in-the-wild audio datasets (release `onn-prod-v9`):
 
 | Benchmark / Task | Metric | Clean Test | Laundered (512px JPEG Q85) | Latency (ARM64 XNNPACK) |
 |---|---|---|---|---|
-| **Image Forensics (v7 Cascade)** | ROC-AUC | **0.8941** | **0.8999** | **~140–180 ms** |
+| **Image Forensics (v9 Cascade)** | ROC-AUC | **0.8941** | **0.8999** | **~140–180 ms** |
 | **Low-FPR Recall (Images)** | TPR @ 1% FPR | **0.2800 (28.0%)** | **0.2950 (29.5%)** | — |
 | **Speech Anti-Spoofing (LCNN-MFM)** | ROC-AUC | **0.8749** | 0.8620 (Opus VoIP) | **<25 ms** |
 | **Speech Low-FPR Recall** | TPR @ 1% FPR | **0.5950 (59.5%)** | 0.5400 | — |

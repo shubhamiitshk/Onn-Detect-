@@ -113,6 +113,13 @@ def validate(workflows: Path, actionlint_config: Path) -> tuple[list[str], list[
                 if label and label not in labels:
                     errors.append(f"{path.name}: runner label {label!r} is not declared in the actionlint config")
 
+        # YAML 1.1 allows 'yes'/'no' as booleans, but GitHub Actions action inputs
+        # require explicit 'true'/'false'. Catch 'yes'/'no' action inputs.
+        for match in re.finditer(r"^\s+([a-zA-Z0-9_-]+):\s*(yes|no)\s*(?:#.*)?$", text, re.MULTILINE):
+            errors.append(
+                f"{path.name}: '{match.group(1)}: {match.group(2)}' uses YAML 1.1 boolean '{match.group(2)}'; use explicit 'true' or 'false'"
+            )
+
         try:
             import yaml
         except ImportError:

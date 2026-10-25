@@ -143,6 +143,18 @@ class WorkflowSyntaxCheckerTest(unittest.TestCase):
             ".github/actionlint.yaml is required for the self-hosted runner label",
         )
 
+    def test_yaml_11_boolean_yes_no_is_rejected(self):
+        with tempfile.TemporaryDirectory() as d:
+            directory = Path(d)
+            text = BASE_JOB.format(name="yesboolean") + (
+                "      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd\n"
+                "        with:\n"
+                "          log-accepted-android-sdk-licenses: yes\n"
+            )
+            write_workflow(directory, text)
+            errors = run_checker(directory)
+            self.assertTrue(any("YAML 1.1 boolean 'yes'" in e for e in errors), errors)
+
 
 if __name__ == "__main__":
     unittest.main()
