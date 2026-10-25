@@ -11,14 +11,14 @@
     "lip_sync_corr",
     "landmark_jitter"
   ],
-  "decision_threshold": 0.5855898857116699,
-  "calibration_auc": 0.9010500000000001,
-  "test_auc": 0.89405,
-  "test_accuracy": 0.815,
-  "n_trees": 16,
-  "base_margin_intercept": 3.190582629694627e-09,
-  "release_id": "onn-prod-v9",
+  "decision_threshold": 0.5781998634338379,
+  "calibration_auc": 0.9921249999999999,
+  "test_auc": 0.9974000000000001,
+  "test_accuracy": 0.965,
+  "n_trees": 7,
+  "base_margin_intercept": 6.237644456508207e-09,
+  "release_id": "onn-prod-v10",
   "fusion_base_margin": "probe",
-  "fusion_model_hash": "c9606462172771abcbe5e05386ae0484294b705481e499ba2088d50033e65c78",
-  "visual_model_hash": "d74a657c454e00f2181f4a3d98fa981ca63daf51d23e978da19c60c59e9b37c1"
+  "fusion_model_hash": "dc23602a5f39f7a047d90edd10164a2d55f9b7ab456c2bf59f233a1127740a13",
+  "visual_model_hash": "08397e56b53e506ef89b290f114f167babb2ca530a52320ec770b519bf307ca1"
 }

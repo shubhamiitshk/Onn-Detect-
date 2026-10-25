@@ -419,8 +419,9 @@ def run_track4(
     audio_n_eval = audio_art["calibration"]["n_calibration"]
 
     siglip_frontend = siglip_art["calibration"]["frontend_id"]
-    probe_thr_val = siglip_art["calibration"]["threshold"]
-    probe_auc_val = siglip_art["calibration"]["auc"]
+    siglip_art["calibration"]["threshold"] = probe_thr_val
+    siglip_art["calibration"]["auc"] = probe_auc_val
+    siglip_art["calibration"]["n_calibration"] = n_cal
 
     eval_report = {
         "release_id": release_id,

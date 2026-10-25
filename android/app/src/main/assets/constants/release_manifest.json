@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
-  "release_id": "onn-prod-v9",
+  "release_id": "onn-prod-v10",
   "validated": false,
   "desktop_validated": true,
   "validation_status": "desktop_pipeline_passed_requires_independent_device_evaluation",
   "score_convention": "real=0_fake=1",
   "models": {
     "srm_forensic_cnn_int8.tflite": {
-      "sha256": "d74a657c454e00f2181f4a3d98fa981ca63daf51d23e978da19c60c59e9b37c1",
+      "sha256": "08397e56b53e506ef89b290f114f167babb2ca530a52320ec770b519bf307ca1",
       "input_shape": [
         1,
         128,
@@ -19,8 +19,8 @@
         1
       ],
       "dtype": "FLOAT32",
-      "frontend_id": "rgb-exif-srgb-whitealpha-pow2cap1024-bilinear-square-v2-size128-float32",
-      "quantization": "full-int8"
+      "frontend_id": "rgb-exif-srgb-whitealpha-pow2cap1024-bilinear-square-v2-size128-float32-patchcraft-mosaic-tile32",
+      "quantization": "dynamic-range-int8"
     },
     "lcnn_audio_int8.tflite": {
       "sha256": "6963363f0e51f6338ceac34575e4c9fdeeb8ecbebe33605695721232377af508",
@@ -36,10 +36,10 @@
       ],
       "dtype": "FLOAT32",
       "frontend_id": "lfcc-v3-sr16000-f128-c40-nfft512-hop160-topdbnone-resampler-quadratic_window_sinc_v1-float64stft-float32",
-      "quantization": "full-int8"
+      "quantization": "dynamic-range-int8"
     },
     "siglip_probe_int8.tflite": {
-      "sha256": "76454452bae9af17e315e78440d283ac2ea7a8551a9e05e16b9350fb40f97ea0",
+      "sha256": "1b8c4f3de7822196c3c0ebf59f683d86f24d5fa2476fb1d9312a1e14b1519c7b",
       "input_shape": [
         1,
         224,
@@ -56,31 +56,30 @@
     }
   },
   "artifacts": {
-    "evaluation_report.json": "2b251a131d3983863f998bd8437e34a4eea948e6662efdce07898ac792ff115a",
-    "source_snapshot.json": "88e6f63691bbabd3841c34a6e7adcd9381f46e4b17a22a6772692d5edf5afee0",
-    "constants/cascade_policy.json": "876630a30661e0ca5317518196f10bf6b819423bd0c02fb851480f39a26477ea",
-    "constants/lcnn_audio_threshold.json": "80d912a1f7a590d398e2f0225bbc3414ac5a1579f34ff0518baf642c9bdab5f0",
-    "constants/meta_classifier.json": "701f7bbf6a009bf20d6192d3fdce25366ebfc5967adf0d15338c154e8e05b4cc",
-    "constants/model_hashes.json": "ca8646bbfffbd0473b33d878253e390710e101f4ed797d698edda1d1fc33bef2",
-    "constants/natural_diff_histogram.json": "11c02987e968c6332cb5312f6a749e95934325020f7ecb0b8045b2598afd39e7",
-    "constants/semantic_probe_threshold.json": "95e0cea0be3263cf5c5bcd147842e1140333d8e0d6b36148d8c84d6139e490d0",
-    "fusion/meta_results.json": "82588a90cd4e0af2255b43a5207e77af5d83e45e2949bda9d1706d52565ac917",
-    "fusion/XGBoostMetaClassifier.kt": "da61fac81b637bc61c62dffceb5cde20c67db0cb5f3408bc22681d25fd92a9b7",
-    "fusion/xgboost_meta.json": "c9606462172771abcbe5e05386ae0484294b705481e499ba2088d50033e65c78",
+    "evaluation_report.json": "3b25d0395a52f52e37f7c05be4e42a7c4100c32bddc8560c3dc6b18121d17fdf",
+    "source_snapshot.json": "a55ec3f294566517bb744ac8e43787a2a0fc9a5bd33e00acc1e29c17e9abe973",
+    "constants/cascade_policy.json": "ebc1b125769624ba8572eccc06680b88e0d4c5b4c11a512a61acc80cd4f33fd7",
+    "constants/lcnn_audio_threshold.json": "a794c69ec718fea1db6da8d23b3bceb2db44ab548a987f1f8b7f53346029c7f6",
+    "constants/meta_classifier.json": "c8ca4222ce769fa9f21d55d1cfc0ed9945e1a1795b2d4e4ec79231d880ff6cdd",
+    "constants/model_hashes.json": "5e25ce03a828fcdbc858393c6dd5323648c7ff9e664e2dc2a48b95f09d75b646",
+    "constants/natural_diff_histogram.json": "7c08dec0149f41c26d570a9a44b55b072cf24255035f3b648e6bd01f68828280",
+    "constants/semantic_probe_threshold.json": "4f7f0564c4497de447d6605e48bac0ab3f7b9f602fd9d57332bc65f9602436fd",
+    "fusion/meta_results.json": "e274ea4cb41b112543df81db9f4b645167bf6a2ca17c60039577bc965e2aac85",
+    "fusion/XGBoostMetaClassifier.kt": "dd56fd6ba15398ee213c73a8a2374dec4b3a654d2533ebcec2a30a0677f91a00",
+    "fusion/xgboost_meta.json": "dc23602a5f39f7a047d90edd10164a2d55f9b7ab456c2bf59f233a1127740a13",
     "models/face_landmarker.task": "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff",
     "models/lcnn_audio_int8.tflite": "6963363f0e51f6338ceac34575e4c9fdeeb8ecbebe33605695721232377af508",
-    "models/siglip_probe_int8.tflite": "76454452bae9af17e315e78440d283ac2ea7a8551a9e05e16b9350fb40f97ea0",
-    "models/srm_forensic_cnn_int8.tflite": "d74a657c454e00f2181f4a3d98fa981ca63daf51d23e978da19c60c59e9b37c1",
-    "trust/c2pa_trust_anchors.pem": "b3949271a07b007e92ef1d18050b55388f5e0d2686a16fd864176c48421af8ae"
+    "models/siglip_probe_int8.tflite": "1b8c4f3de7822196c3c0ebf59f683d86f24d5fa2476fb1d9312a1e14b1519c7b",
+    "models/srm_forensic_cnn_int8.tflite": "08397e56b53e506ef89b290f114f167babb2ca530a52320ec770b519bf307ca1"
   },
   "calibration": {
     "srm_forensic_cnn_int8.tflite": {
-      "model_hash": "d74a657c454e00f2181f4a3d98fa981ca63daf51d23e978da19c60c59e9b37c1",
-      "frontend_id": "rgb-exif-srgb-whitealpha-pow2cap1024-bilinear-square-v2-size128-float32",
-      "threshold": 0.53125,
-      "auc": 0.6033,
-      "n_calibration": 200,
-      "split_manifest_hash": "9b0400fcc82e08d117c5cb245fd2c3081b3ba8ed9fd2f169a5455248c84c9312"
+      "model_hash": "08397e56b53e506ef89b290f114f167babb2ca530a52320ec770b519bf307ca1",
+      "frontend_id": "rgb-exif-srgb-whitealpha-pow2cap1024-bilinear-square-v2-size128-float32-patchcraft-mosaic-tile32",
+      "threshold": 0.5,
+      "auc": 0.965524,
+      "n_calibration": 400,
+      "split_manifest_hash": "940bedf7412f383be7ed6f2f425b6208b02cf7de29f66bc3a37386ce9aa17505"
     },
     "lcnn_audio_int8.tflite": {
       "model_hash": "6963363f0e51f6338ceac34575e4c9fdeeb8ecbebe33605695721232377af508",
@@ -91,55 +90,39 @@
       "split_manifest_hash": "6d56263cfdce0b8d1fc8f83cdef9261b91438a5a511e83a3401892be1e1fb524"
     },
     "siglip_probe_int8.tflite": {
-      "model_hash": "76454452bae9af17e315e78440d283ac2ea7a8551a9e05e16b9350fb40f97ea0",
+      "model_hash": "1b8c4f3de7822196c3c0ebf59f683d86f24d5fa2476fb1d9312a1e14b1519c7b",
       "frontend_id": "vfm-siglip224-siglip-base-patch16-224-bicubic-clamp-meanstd-float32",
-      "threshold": 0.49412423372268677,
-      "auc": 0.8982,
-      "n_calibration": 200,
-      "split_manifest_hash": "9b0400fcc82e08d117c5cb245fd2c3081b3ba8ed9fd2f169a5455248c84c9312"
+      "threshold": 0.7673405408859253,
+      "auc": 0.9796499999999999,
+      "n_calibration": 400,
+      "split_manifest_hash": "940bedf7412f383be7ed6f2f425b6208b02cf7de29f66bc3a37386ce9aa17505"
     },
     "fusion_xgboost": {
-      "threshold": 0.5855898857116699,
-      "auc": 0.9010500000000001,
+      "threshold": 0.5781998634338379,
+      "auc": 0.9921249999999999,
       "n_calibration": 400,
-      "split_manifest_hash": "fbab1565b7a2494cc2434ca18134f713280e27143a1ddcc6d5668a41459c6853",
-      "model_hash": "c9606462172771abcbe5e05386ae0484294b705481e499ba2088d50033e65c78",
-      "frontend_id": "rgb-exif-srgb-whitealpha-pow2cap1024-bilinear-square-v2-size128-float32"
+      "split_manifest_hash": "940bedf7412f383be7ed6f2f425b6208b02cf7de29f66bc3a37386ce9aa17505",
+      "model_hash": "dc23602a5f39f7a047d90edd10164a2d55f9b7ab456c2bf59f233a1127740a13",
+      "frontend_id": "rgb-exif-srgb-whitealpha-pow2cap1024-bilinear-square-v2-size128-float32-patchcraft-mosaic-tile32"
     }
   },
   "data_manifest_hashes": {
-    "visual": "9b0400fcc82e08d117c5cb245fd2c3081b3ba8ed9fd2f169a5455248c84c9312",
+    "visual": "940bedf7412f383be7ed6f2f425b6208b02cf7de29f66bc3a37386ce9aa17505",
     "audio": "6d56263cfdce0b8d1fc8f83cdef9261b91438a5a511e83a3401892be1e1fb524"
   },
   "device_validation": {
     "passed": false
   },
-  "source_commit": "20a8225dc3cebeac203a87912c36b480c619744f",
+  "source_commit": "c2e03afbc37898b840c3a828cab6a1aa0450d6cf",
   "source_dirty": true,
-  "source_snapshot_sha256": "88e6f63691bbabd3841c34a6e7adcd9381f46e4b17a22a6772692d5edf5afee0",
-  "evaluation_report_hash": "2b251a131d3983863f998bd8437e34a4eea948e6662efdce07898ac792ff115a",
-  "fusion_revision": "onn-prod-v9",
+  "source_snapshot_sha256": "a55ec3f294566517bb744ac8e43787a2a0fc9a5bd33e00acc1e29c17e9abe973",
+  "evaluation_report_hash": "3b25d0395a52f52e37f7c05be4e42a7c4100c32bddc8560c3dc6b18121d17fdf",
+  "fusion_revision": "onn-prod-v10",
   "acceptance": {
-    "fusion_xgboost": {
-      "measured_auc": 0.89405,
-      "measured_tpr_at_fpr_1pct": 0.28,
-      "measured_tpr_at_fpr_0_1pct": 0.25,
-      "enforced_floor": [
-        0.25,
-        0.1,
-        0.85
-      ],
-      "academic_target": [
-        0.3,
-        0.15,
-        0.85
-      ],
-      "meets_academic_target": false
-    },
     "srm_forensic_cnn_int8.tflite": {
-      "measured_auc": 0.6584375,
-      "measured_tpr_at_fpr_1pct": 0.72,
-      "measured_tpr_at_fpr_0_1pct": 0.55,
+      "measured_auc": 0.965524,
+      "measured_tpr_at_fpr_1pct": 0.531429,
+      "measured_tpr_at_fpr_0_1pct": 0.265715,
       "enforced_floor": [
         0.05,
         0.0,
@@ -154,8 +137,8 @@
     },
     "lcnn_audio_int8.tflite": {
       "measured_auc": 0.874725,
-      "measured_tpr_at_fpr_1pct": 0.72,
-      "measured_tpr_at_fpr_0_1pct": 0.55,
+      "measured_tpr_at_fpr_1pct": 0.65,
+      "measured_tpr_at_fpr_0_1pct": 0.45,
       "enforced_floor": [
         0.5,
         0.3,
@@ -169,8 +152,8 @@
       "meets_academic_target": true
     },
     "siglip_probe_int8.tflite": {
-      "measured_auc": 0.891,
-      "measured_tpr_at_fpr_1pct": 0.72,
+      "measured_auc": 0.9921,
+      "measured_tpr_at_fpr_1pct": 0.7243,
       "measured_tpr_at_fpr_0_1pct": 0.55,
       "enforced_floor": [
         0.2,
@@ -183,35 +166,46 @@
         0.88
       ],
       "meets_academic_target": true
+    },
+    "fusion_xgboost": {
+      "measured_auc": 0.9974000000000001,
+      "measured_tpr_at_fpr_1pct": 0.94,
+      "measured_tpr_at_fpr_0_1pct": 0.915,
+      "enforced_floor": [
+        0.25,
+        0.1,
+        0.85
+      ],
+      "academic_target": [
+        0.3,
+        0.15,
+        0.85
+      ],
+      "meets_academic_target": true
     }
   },
   "desktop_validation": {
     "measured_by": "desktop_pipeline",
     "device_validation": "pending",
-    "note": "Every packaged model's sealed-test AUC was measured by running the .tflite bytes this release ships, and the fusion's calibration and operating point come from that same measurement. What is NOT yet established is that the same bytes behave identically on an Android SoC.",
     "models": {
       "srm_forensic_cnn_int8.tflite": {
-        "sha256": "d74a657c454e00f2181f4a3d98fa981ca63daf51d23e978da19c60c59e9b37c1",
-        "sealed_test_auc": 0.6584375,
-        "parity_passed": true
+        "parity_passed": true,
+        "sealed_test_auc": 0.965524
       },
       "lcnn_audio_int8.tflite": {
-        "sha256": "6963363f0e51f6338ceac34575e4c9fdeeb8ecbebe33605695721232377af508",
-        "sealed_test_auc": 0.874725,
-        "parity_passed": true
+        "parity_passed": true,
+        "sealed_test_auc": 0.874725
       },
       "siglip_probe_int8.tflite": {
-        "sha256": "76454452bae9af17e315e78440d283ac2ea7a8551a9e05e16b9350fb40f97ea0",
-        "sealed_test_auc": 0.891,
-        "parity_passed": true
+        "parity_passed": true,
+        "sealed_test_auc": 0.9921
       }
     },
-    "problems": [],
     "fusion": {
-      "model_hash": "c9606462172771abcbe5e05386ae0484294b705481e499ba2088d50033e65c78",
-      "sealed_test_auc": 0.89405,
-      "laundered_sealed_test_auc": 0.89985,
-      "decision_threshold": 0.5855898857116699
+      "model_hash": "dc23602a5f39f7a047d90edd10164a2d55f9b7ab456c2bf59f233a1127740a13",
+      "sealed_test_auc": 0.9974000000000001,
+      "laundered_sealed_test_auc": 0.9971749999999999,
+      "decision_threshold": 0.5781998634338379
     }
   }
 }

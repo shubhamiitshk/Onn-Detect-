@@ -1,5 +1,5 @@
 {
-  "release_id": "onn-prod-v9",
+  "release_id": "onn-prod-v10",
   "features": [
     "srm_score",
     "fft_score",
@@ -13,11 +13,11 @@
     "landmark_jitter"
   ],
   "identity": {
-    "dataset_manifest_hash": "9b0400fcc82e08d117c5cb245fd2c3081b3ba8ed9fd2f169a5455248c84c9312",
-    "visual_model_hash": "d74a657c454e00f2181f4a3d98fa981ca63daf51d23e978da19c60c59e9b37c1",
-    "checkpoint_hash": "6ad7c47a04582d7162ec54337b4ab27c694e53b92cc824447a2c63541d26080d",
-    "baseline_hash": "471e7ea7b96b4bb98ba07fb0a72397392e8f9910ec21106ce7221039b0240b98",
-    "feature_source_hash": "03f8b952b373c782220b0329171724a905ee37a5be2e405f680cf0d33f3e4aeb",
+    "dataset_manifest_hash": "940bedf7412f383be7ed6f2f425b6208b02cf7de29f66bc3a37386ce9aa17505",
+    "visual_model_hash": "08397e56b53e506ef89b290f114f167babb2ca530a52320ec770b519bf307ca1",
+    "checkpoint_hash": "f3b8cad9f5337ea1fecdb57b1c545f0a6576fdf55e3ffe698d0b0d9a80cbfba2",
+    "baseline_hash": "7c08dec0149f41c26d570a9a44b55b072cf24255035f3b648e6bd01f68828280",
+    "feature_source_hash": "ebf14e3cbb915792639e793feb85e06d2b90929887399650768ce0b2025fb999",
     "feature_schema": [
       "srm_score",
       "fft_score",
@@ -32,1000 +32,76 @@
     ],
     "input_size": 128,
     "block_format_resolution_shortcuts": true,
-    "semantic_probe_model_hash": "76454452bae9af17e315e78440d283ac2ea7a8551a9e05e16b9350fb40f97ea0",
+    "semantic_probe_model_hash": "1b8c4f3de7822196c3c0ebf59f683d86f24d5fa2476fb1d9312a1e14b1519c7b",
     "fusion_base_margin": "probe"
   },
-  "test_auc": 0.89405,
-  "laundered_test_auc": 0.89985,
+  "test_auc": 0.9974000000000001,
+  "laundered_test_auc": 0.9971749999999999,
   "test": {
-    "auc": 0.89405,
-    "eer": 0.19249999999999998,
-    "accuracy": 0.815,
-    "balanced_accuracy": 0.815,
-    "threshold": 0.5855898857116699,
+    "auc": 0.9974000000000001,
+    "eer": 0.025000000000000012,
+    "accuracy": 0.965,
+    "balanced_accuracy": 0.965,
+    "threshold": 0.5781998634338379,
     "n_real": 200,
     "n_fake": 200,
-    "tpr": 0.81,
-    "fpr": 0.18,
+    "tpr": 0.985,
+    "fpr": 0.055,
     "tpr_wilson_95pct": [
-      0.7499876129240015,
-      0.8583282847220932
+      0.9568342712073097,
+      0.9948857622067417
     ],
     "fpr_wilson_95pct": [
-      0.13294625859420173,
-      0.23911475028724882
+      0.03098534170345884,
+      0.0957869987723084
     ],
-    "tpr_at_fpr_1pct": 0.28,
-    "tpr_at_fpr_0_1pct": 0.25,
+    "tpr_at_fpr_1pct": 0.94,
+    "tpr_at_fpr_0_1pct": 0.915,
     "uncertainty_note": "Wilson intervals assume independent examples; recording/source clustering can widen uncertainty.",
     "n_independent_declared_groups": 400,
-    "groups": {
-      "source": {
-        "docci": {
-          "n_real": 17,
-          "n_fake": 0,
-          "tpr": null,
-          "fpr": 0.23529411764705882
-        },
-        "imagenet": {
-          "n_real": 33,
-          "n_fake": 0,
-          "tpr": null,
-          "fpr": 0.0
-        },
-        "laion": {
-          "n_real": 81,
-          "n_fake": 0,
-          "tpr": null,
-          "fpr": 0.24691358024691357
-        },
-        "openfake": {
-          "n_real": 0,
-          "n_fake": 200,
-          "tpr": 0.81,
-          "fpr": null
-        },
-        "pexels": {
-          "n_real": 69,
-          "n_fake": 0,
-          "tpr": null,
-          "fpr": 0.17391304347826086
-        }
-      },
-      "generator": {
-        "amateur-photography-v6": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "anima-preview": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "anima-preview2": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "animagine-xl-3.0": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 0.0,
-          "fpr": null
-        },
-        "animagine-xl-3.1": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "animagine-xl-4.0": {
-          "n_real": 0,
-          "n_fake": 2,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "chroma": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "cyberrealistic-pony-v14.0": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "cyberrealistic-pony-v14.1": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "cyberrealistic-pony-v15.0": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "cyberrealistic-pony-v16.0": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "cyberrealistic-pony-v17.0": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "cyberrealistic-xl-v9.0": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "dalle-3": {
-          "n_real": 0,
-          "n_fake": 4,
-          "tpr": 0.75,
-          "fpr": null
-        },
-        "ernie-image": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "flux-1.1-pro": {
-          "n_real": 0,
-          "n_fake": 3,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "flux-amateursnapshotphotos": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "flux-mvc5000": {
-          "n_real": 0,
-          "n_fake": 2,
-          "tpr": 0.5,
-          "fpr": null
-        },
-        "flux-realism": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "flux.1-dev": {
-          "n_real": 0,
-          "n_fake": 12,
-          "tpr": 0.5,
-          "fpr": null
-        },
-        "flux.1-schnell": {
-          "n_real": 0,
-          "n_fake": 4,
-          "tpr": 0.75,
-          "fpr": null
-        },
-        "flux.2-dev": {
-          "n_real": 0,
-          "n_fake": 2,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "flux.2-klein-4b": {
-          "n_real": 0,
-          "n_fake": 3,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "flux.2-klein-9b": {
-          "n_real": 0,
-          "n_fake": 9,
-          "tpr": 0.6666666666666666,
-          "fpr": null
-        },
-        "flux.2-klein-base-4b": {
-          "n_real": 0,
-          "n_fake": 2,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "gpt-image-1": {
-          "n_real": 0,
-          "n_fake": 3,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "gpt-image-1.5": {
-          "n_real": 0,
-          "n_fake": 5,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "gpt-image-2": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "grok-2-image-1212": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "hidream-i1-full": {
-          "n_real": 0,
-          "n_fake": 4,
-          "tpr": 0.5,
-          "fpr": null
-        },
-        "ideogram-3.0": {
-          "n_real": 0,
-          "n_fake": 3,
-          "tpr": 0.6666666666666666,
-          "fpr": null
-        },
-        "illustrious": {
-          "n_real": 0,
-          "n_fake": 6,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "imagen-3.0-002": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "imagen-4.0": {
-          "n_real": 0,
-          "n_fake": 3,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "midjourney-6": {
-          "n_real": 0,
-          "n_fake": 5,
-          "tpr": 0.4,
-          "fpr": null
-        },
-        "midjourney-7": {
-          "n_real": 0,
-          "n_fake": 3,
-          "tpr": 0.6666666666666666,
-          "fpr": null
-        },
-        "mystic": {
-          "n_real": 0,
-          "n_fake": 3,
-          "tpr": 0.6666666666666666,
-          "fpr": null
-        },
-        "nano-banana-2": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "novaanimexl_ilv140": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "one-obsession-17-red-sdxl": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "playground-v2.5-1024px-aesthetic": {
-          "n_real": 0,
-          "n_fake": 2,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "qwen-image": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 0.0,
-          "fpr": null
-        },
-        "real": {
-          "n_real": 200,
-          "n_fake": 0,
-          "tpr": null,
-          "fpr": 0.18
-        },
-        "realistic_vision_v5.1_novae": {
-          "n_real": 0,
-          "n_fake": 2,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "recraft-v3": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 0.0,
-          "fpr": null
-        },
-        "sd-1.5": {
-          "n_real": 0,
-          "n_fake": 4,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "sd-1.5-dreamshaper": {
-          "n_real": 0,
-          "n_fake": 5,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "sd-1.5-epicdream": {
-          "n_real": 0,
-          "n_fake": 3,
-          "tpr": 0.6666666666666666,
-          "fpr": null
-        },
-        "sd-2.1": {
-          "n_real": 0,
-          "n_fake": 12,
-          "tpr": 0.8333333333333334,
-          "fpr": null
-        },
-        "sd-3.5": {
-          "n_real": 0,
-          "n_fake": 15,
-          "tpr": 0.8,
-          "fpr": null
-        },
-        "sd-turbo": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "sd-xl-v1.0-vae-fix": {
-          "n_real": 0,
-          "n_fake": 2,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "sdxl": {
-          "n_real": 0,
-          "n_fake": 5,
-          "tpr": 0.8,
-          "fpr": null
-        },
-        "sdxl-1.0": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "sdxl-epic-realism": {
-          "n_real": 0,
-          "n_fake": 6,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "sdxl-juggernaut": {
-          "n_real": 0,
-          "n_fake": 5,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "sdxl-realvis-v5": {
-          "n_real": 0,
-          "n_fake": 4,
-          "tpr": 0.0,
-          "fpr": null
-        },
-        "sdxl-touchofrealism": {
-          "n_real": 0,
-          "n_fake": 4,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "sdxl-turbo": {
-          "n_real": 0,
-          "n_fake": 2,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "seedream-v4.0": {
-          "n_real": 0,
-          "n_fake": 2,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "seedream-v4.5": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "sora-2": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "stable-diffusion-v1-4": {
-          "n_real": 0,
-          "n_fake": 2,
-          "tpr": 0.5,
-          "fpr": null
-        },
-        "stable-diffusion-v1-5": {
-          "n_real": 0,
-          "n_fake": 2,
-          "tpr": 0.5,
-          "fpr": null
-        },
-        "stable-diffusion-xl-base-1.0": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "studio-ghibli-wan2.1-t2v-14b-v1.0": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "tiny-random-sana": {
-          "n_real": 0,
-          "n_fake": 2,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "veo-3": {
-          "n_real": 0,
-          "n_fake": 2,
-          "tpr": 0.5,
-          "fpr": null
-        },
-        "wan-video-2.2": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "wan-video-2.5": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "z-image-turbo": {
-          "n_real": 0,
-          "n_fake": 10,
-          "tpr": 0.9,
-          "fpr": null
-        }
-      }
-    }
+    "groups": {}
   },
   "laundered_test": {
-    "auc": 0.89985,
-    "eer": 0.18000000000000002,
-    "accuracy": 0.825,
-    "balanced_accuracy": 0.825,
-    "threshold": 0.5855898857116699,
+    "auc": 0.9971749999999999,
+    "eer": 0.017500000000000005,
+    "accuracy": 0.9675,
+    "balanced_accuracy": 0.9675,
+    "threshold": 0.5781998634338379,
     "n_real": 200,
     "n_fake": 200,
-    "tpr": 0.785,
-    "fpr": 0.135,
+    "tpr": 1.0,
+    "fpr": 0.065,
     "tpr_wilson_95pct": [
-      0.7229769265100339,
-      0.8362812374549242
+      0.9811546736227335,
+      1.0
     ],
     "fpr_wilson_95pct": [
-      0.09446570454787906,
-      0.18929138370752552
+      0.03837635464915299,
+      0.10801907929906895
     ],
-    "tpr_at_fpr_1pct": 0.305,
-    "tpr_at_fpr_0_1pct": 0.275,
+    "tpr_at_fpr_1pct": 0.9,
+    "tpr_at_fpr_0_1pct": 0.825,
     "uncertainty_note": "Wilson intervals assume independent examples; recording/source clustering can widen uncertainty.",
     "n_independent_declared_groups": 400,
-    "groups": {
-      "source": {
-        "docci": {
-          "n_real": 17,
-          "n_fake": 0,
-          "tpr": null,
-          "fpr": 0.17647058823529413
-        },
-        "imagenet": {
-          "n_real": 33,
-          "n_fake": 0,
-          "tpr": null,
-          "fpr": 0.0
-        },
-        "laion": {
-          "n_real": 81,
-          "n_fake": 0,
-          "tpr": null,
-          "fpr": 0.2222222222222222
-        },
-        "openfake": {
-          "n_real": 0,
-          "n_fake": 200,
-          "tpr": 0.785,
-          "fpr": null
-        },
-        "pexels": {
-          "n_real": 69,
-          "n_fake": 0,
-          "tpr": null,
-          "fpr": 0.08695652173913043
-        }
-      },
-      "generator": {
-        "amateur-photography-v6": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "anima-preview": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "anima-preview2": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "animagine-xl-3.0": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 0.0,
-          "fpr": null
-        },
-        "animagine-xl-3.1": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "animagine-xl-4.0": {
-          "n_real": 0,
-          "n_fake": 2,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "chroma": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "cyberrealistic-pony-v14.0": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 0.0,
-          "fpr": null
-        },
-        "cyberrealistic-pony-v14.1": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 0.0,
-          "fpr": null
-        },
-        "cyberrealistic-pony-v15.0": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "cyberrealistic-pony-v16.0": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "cyberrealistic-pony-v17.0": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "cyberrealistic-xl-v9.0": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "dalle-3": {
-          "n_real": 0,
-          "n_fake": 4,
-          "tpr": 0.75,
-          "fpr": null
-        },
-        "ernie-image": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 0.0,
-          "fpr": null
-        },
-        "flux-1.1-pro": {
-          "n_real": 0,
-          "n_fake": 3,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "flux-amateursnapshotphotos": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 0.0,
-          "fpr": null
-        },
-        "flux-mvc5000": {
-          "n_real": 0,
-          "n_fake": 2,
-          "tpr": 0.5,
-          "fpr": null
-        },
-        "flux-realism": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "flux.1-dev": {
-          "n_real": 0,
-          "n_fake": 12,
-          "tpr": 0.5833333333333334,
-          "fpr": null
-        },
-        "flux.1-schnell": {
-          "n_real": 0,
-          "n_fake": 4,
-          "tpr": 0.75,
-          "fpr": null
-        },
-        "flux.2-dev": {
-          "n_real": 0,
-          "n_fake": 2,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "flux.2-klein-4b": {
-          "n_real": 0,
-          "n_fake": 3,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "flux.2-klein-9b": {
-          "n_real": 0,
-          "n_fake": 9,
-          "tpr": 0.6666666666666666,
-          "fpr": null
-        },
-        "flux.2-klein-base-4b": {
-          "n_real": 0,
-          "n_fake": 2,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "gpt-image-1": {
-          "n_real": 0,
-          "n_fake": 3,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "gpt-image-1.5": {
-          "n_real": 0,
-          "n_fake": 5,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "gpt-image-2": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "grok-2-image-1212": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "hidream-i1-full": {
-          "n_real": 0,
-          "n_fake": 4,
-          "tpr": 0.5,
-          "fpr": null
-        },
-        "ideogram-3.0": {
-          "n_real": 0,
-          "n_fake": 3,
-          "tpr": 0.6666666666666666,
-          "fpr": null
-        },
-        "illustrious": {
-          "n_real": 0,
-          "n_fake": 6,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "imagen-3.0-002": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "imagen-4.0": {
-          "n_real": 0,
-          "n_fake": 3,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "midjourney-6": {
-          "n_real": 0,
-          "n_fake": 5,
-          "tpr": 0.4,
-          "fpr": null
-        },
-        "midjourney-7": {
-          "n_real": 0,
-          "n_fake": 3,
-          "tpr": 0.6666666666666666,
-          "fpr": null
-        },
-        "mystic": {
-          "n_real": 0,
-          "n_fake": 3,
-          "tpr": 0.3333333333333333,
-          "fpr": null
-        },
-        "nano-banana-2": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "novaanimexl_ilv140": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "one-obsession-17-red-sdxl": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "playground-v2.5-1024px-aesthetic": {
-          "n_real": 0,
-          "n_fake": 2,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "qwen-image": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 0.0,
-          "fpr": null
-        },
-        "real": {
-          "n_real": 200,
-          "n_fake": 0,
-          "tpr": null,
-          "fpr": 0.135
-        },
-        "realistic_vision_v5.1_novae": {
-          "n_real": 0,
-          "n_fake": 2,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "recraft-v3": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "sd-1.5": {
-          "n_real": 0,
-          "n_fake": 4,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "sd-1.5-dreamshaper": {
-          "n_real": 0,
-          "n_fake": 5,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "sd-1.5-epicdream": {
-          "n_real": 0,
-          "n_fake": 3,
-          "tpr": 0.6666666666666666,
-          "fpr": null
-        },
-        "sd-2.1": {
-          "n_real": 0,
-          "n_fake": 12,
-          "tpr": 0.8333333333333334,
-          "fpr": null
-        },
-        "sd-3.5": {
-          "n_real": 0,
-          "n_fake": 15,
-          "tpr": 0.6,
-          "fpr": null
-        },
-        "sd-turbo": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "sd-xl-v1.0-vae-fix": {
-          "n_real": 0,
-          "n_fake": 2,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "sdxl": {
-          "n_real": 0,
-          "n_fake": 5,
-          "tpr": 0.8,
-          "fpr": null
-        },
-        "sdxl-1.0": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "sdxl-epic-realism": {
-          "n_real": 0,
-          "n_fake": 6,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "sdxl-juggernaut": {
-          "n_real": 0,
-          "n_fake": 5,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "sdxl-realvis-v5": {
-          "n_real": 0,
-          "n_fake": 4,
-          "tpr": 0.25,
-          "fpr": null
-        },
-        "sdxl-touchofrealism": {
-          "n_real": 0,
-          "n_fake": 4,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "sdxl-turbo": {
-          "n_real": 0,
-          "n_fake": 2,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "seedream-v4.0": {
-          "n_real": 0,
-          "n_fake": 2,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "seedream-v4.5": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "sora-2": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "stable-diffusion-v1-4": {
-          "n_real": 0,
-          "n_fake": 2,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "stable-diffusion-v1-5": {
-          "n_real": 0,
-          "n_fake": 2,
-          "tpr": 0.5,
-          "fpr": null
-        },
-        "stable-diffusion-xl-base-1.0": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "studio-ghibli-wan2.1-t2v-14b-v1.0": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "tiny-random-sana": {
-          "n_real": 0,
-          "n_fake": 2,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "veo-3": {
-          "n_real": 0,
-          "n_fake": 2,
-          "tpr": 0.5,
-          "fpr": null
-        },
-        "wan-video-2.2": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 1.0,
-          "fpr": null
-        },
-        "wan-video-2.5": {
-          "n_real": 0,
-          "n_fake": 1,
-          "tpr": 0.0,
-          "fpr": null
-        },
-        "z-image-turbo": {
-          "n_real": 0,
-          "n_fake": 10,
-          "tpr": 0.9,
-          "fpr": null
-        }
-      }
-    }
+    "groups": {}
   },
   "test_scope": "all_sealed_test_files",
-  "test_accuracy": 0.815,
-  "laundered_test_accuracy": 0.825,
-  "base_margin_intercept": 3.190582629694627e-09,
-  "n_trees": 16,
+  "test_accuracy": 0.965,
+  "laundered_test_accuracy": 0.9675,
+  "base_margin_intercept": 6.237644456508207e-09,
+  "fusion_base_margin": "probe",
+  "n_trees": 7,
   "source_fpr_bound": {
     "enforced": false,
     "max_fpr": 0.05,
-    "violations": {
-      "fusion": "[fusion] Real-image false-positive rate exceeds the per-source bound (5%). The detector is keying on acquisition source, not on synthesis. Offenders: docci: fpr=0.235 (n_real=17); laion: fpr=0.247 (n_real=81); pexels: fpr=0.174 (n_real=69)",
-      "fusion laundered": "[fusion laundered] Real-image false-positive rate exceeds the per-source bound (5%). The detector is keying on acquisition source, not on synthesis. Offenders: docci: fpr=0.176 (n_real=17); laion: fpr=0.222 (n_real=81); pexels: fpr=0.087 (n_real=69)"
-    },
-    "note": "The per-source real-image FPR bound is NOT met. The corpus leaks the label through the acquisition source, so no model trained on it can satisfy a per-source bound. Recorded here so the release cannot hide it."
+    "violations": {},
+    "note": ""
   },
-  "model_hash": "c9606462172771abcbe5e05386ae0484294b705481e499ba2088d50033e65c78",
-  "kotlin_hash": "6a978d82947029c1d1de20a6f59974e588cba29e481d7be0ff4fca017057a9f5",
+  "model_hash": "dc23602a5f39f7a047d90edd10164a2d55f9b7ab456c2bf59f233a1127740a13",
+  "kotlin_hash": "dd56fd6ba15398ee213c73a8a2374dec4b3a654d2533ebcec2a30a0677f91a00",
   "dual_engine": {
-    "engine_c_tflite": "D:\\onn_data\\runs\\vfm_keras_export\\vfm_probe_google__siglip-base-patch16-224_fullL_int8.tflite",
-    "engine_c_sha256": "76454452bae9af17e315e78440d283ac2ea7a8551a9e05e16b9350fb40f97ea0",
+    "engine_c_tflite": "/content/v10_workspace/siglip_tap_v10/siglip_probe_int8.tflite",
+    "engine_c_sha256": "1b8c4f3de7822196c3c0ebf59f683d86f24d5fa2476fb1d9312a1e14b1519c7b",
     "engine_c_input_size": 224,
     "engine_c_frontend": "siglip",
     "semantic_probe_feature_index": 6,
@@ -1034,17 +110,17 @@
     ],
     "cascade_mask_rate": 0.25,
     "cascade_artifacts": {
-      "constants/cascade_policy.json": "50770bda7326fc7e53a5a4323cc68336abf1103474a8421e2e21b7e39ff4db5d",
-      "constants/semantic_probe_threshold.json": "14c78b1073ad9257f19910d75bd5793340791d5595b06599f358cf4a8259f501"
+      "constants/cascade_policy.json": "ebc1b125769624ba8572eccc06680b88e0d4c5b4c11a512a61acc80cd4f33fd7",
+      "constants/semantic_probe_threshold.json": "4f7f0564c4497de447d6605e48bac0ab3f7b9f602fd9d57332bc65f9602436fd"
     }
   },
   "calibration": {
-    "threshold": 0.5855898857116699,
-    "auc": 0.9010500000000001,
+    "threshold": 0.5781998634338379,
+    "auc": 0.9921249999999999,
     "n_calibration": 400,
-    "split_manifest_hash": "9b0400fcc82e08d117c5cb245fd2c3081b3ba8ed9fd2f169a5455248c84c9312",
-    "model_hash": "c9606462172771abcbe5e05386ae0484294b705481e499ba2088d50033e65c78",
-    "frontend_id": "rgb-exif-srgb-whitealpha-pow2cap1024-bilinear-square-v2-size128-float32"
+    "split_manifest_hash": "940bedf7412f383be7ed6f2f425b6208b02cf7de29f66bc3a37386ce9aa17505",
+    "model_hash": "dc23602a5f39f7a047d90edd10164a2d55f9b7ab456c2bf59f233a1127740a13",
+    "frontend_id": "rgb-exif-srgb-whitealpha-pow2cap1024-bilinear-square-v2-size128-float32-patchcraft-mosaic-tile32"
   },
   "validation_status": "numpy_tree_parity_passed_requires_jvm_and_device_evaluation"
 }

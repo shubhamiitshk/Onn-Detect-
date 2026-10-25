@@ -1,9 +1,9 @@
 {
-  "threshold_at_eer": 0.49412423372268677,
-  "auc": 0.8982,
-  "n_calibration": 200,
-  "split_manifest_hash": "9b0400fcc82e08d117c5cb245fd2c3081b3ba8ed9fd2f169a5455248c84c9312",
-  "model_hash": "76454452bae9af17e315e78440d283ac2ea7a8551a9e05e16b9350fb40f97ea0",
+  "threshold_at_eer": 0.7673405408859253,
+  "auc": 0.9796499999999999,
+  "n_calibration": 400,
+  "split_manifest_hash": "940bedf7412f383be7ed6f2f425b6208b02cf7de29f66bc3a37386ce9aa17505",
+  "model_hash": "1b8c4f3de7822196c3c0ebf59f683d86f24d5fa2476fb1d9312a1e14b1519c7b",
   "frontend_id": "vfm-siglip224-siglip-base-patch16-224-bicubic-clamp-meanstd-float32",
   "score_semantics": {
     "model_output": "P(synthetic) in [0,1]",

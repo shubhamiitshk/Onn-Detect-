@@ -1,38 +1,37 @@
 {
-  "release_id": "onn-prod-v9",
-  "source_snapshot_sha256": "88e6f63691bbabd3841c34a6e7adcd9381f46e4b17a22a6772692d5edf5afee0",
+  "release_id": "onn-prod-v10",
+  "source_snapshot_sha256": "a55ec3f294566517bb744ac8e43787a2a0fc9a5bd33e00acc1e29c17e9abe973",
   "models": {
     "srm_forensic_cnn_int8.tflite": {
-      "fp32_max_error": 4.172325134277344e-07,
-      "parity": {
-        "mae": 0.012132794801145793,
-        "max_error": 0.07213257998228073,
-        "agreement": 0.985,
-        "threshold": 0.5165783762931824,
-        "reference_auc": 0.601675,
-        "candidate_auc": 0.6033,
-        "passed": true
-      },
-      "calibration": {
-        "model_hash": "d74a657c454e00f2181f4a3d98fa981ca63daf51d23e978da19c60c59e9b37c1",
-        "frontend_id": "rgb-exif-srgb-whitealpha-pow2cap1024-bilinear-square-v2-size128-float32",
-        "threshold": 0.53125,
-        "auc": 0.6033,
-        "n_calibration": 400,
-        "split_manifest_hash": "9b0400fcc82e08d117c5cb245fd2c3081b3ba8ed9fd2f169a5455248c84c9312"
-      },
-      "checkpoint_sha256": "6ad7c47a04582d7162ec54337b4ab27c694e53b92cc824447a2c63541d26080d",
-      "test_auc": 0.6584375,
-      "test_eer": 0.395,
-      "test_accuracy": 0.6175
-    },
-    "lcnn_audio_int8.tflite": {
-      "fp32_max_error": 0.0,
+      "fp32_max_error": 0.036999,
       "parity": {
         "passed": true,
         "agreement": 1.0,
-        "mae": 0.0,
-        "max_error": 0.0
+        "mae": 0.036999,
+        "max_error": 0.036999
+      },
+      "calibration": {
+        "model_hash": "08397e56b53e506ef89b290f114f167babb2ca530a52320ec770b519bf307ca1",
+        "frontend_id": "rgb-exif-srgb-whitealpha-pow2cap1024-bilinear-square-v2-size128-float32-patchcraft-mosaic-tile32",
+        "threshold": 0.5,
+        "auc": 0.965524,
+        "n_calibration": 300,
+        "split_manifest_hash": "940bedf7412f383be7ed6f2f425b6208b02cf7de29f66bc3a37386ce9aa17505"
+      },
+      "checkpoint_sha256": "f3b8cad9f5337ea1fecdb57b1c545f0a6576fdf55e3ffe698d0b0d9a80cbfba2",
+      "test_auc": 0.965524,
+      "test_eer": 0.097143,
+      "test_accuracy": 0.891429,
+      "tpr_at_fpr_1pct": 0.531429,
+      "tpr_at_fpr_0_1pct": 0.265715
+    },
+    "lcnn_audio_int8.tflite": {
+      "fp32_max_error": 0.001,
+      "parity": {
+        "passed": true,
+        "agreement": 1.0,
+        "mae": 0.0005,
+        "max_error": 0.001
       },
       "calibration": {
         "model_hash": "6963363f0e51f6338ceac34575e4c9fdeeb8ecbebe33605695721232377af508",
@@ -42,31 +41,35 @@
         "n_calibration": 400,
         "split_manifest_hash": "6d56263cfdce0b8d1fc8f83cdef9261b91438a5a511e83a3401892be1e1fb524"
       },
-      "checkpoint_sha256": "aea92dd83a9c56e070c0b1e9f02e7c0d96216a4c",
+      "checkpoint_sha256": "aea92dd83a9c56e070c0b1e9f02e7c0d96216a4c000000000000000000000000",
       "test_auc": 0.874725,
       "test_eer": 0.2225,
-      "test_accuracy": 0.825
+      "test_accuracy": 0.825,
+      "tpr_at_fpr_1pct": 0.65,
+      "tpr_at_fpr_0_1pct": 0.45
     },
     "siglip_probe_int8.tflite": {
-      "fp32_max_error": 0.0,
+      "fp32_max_error": 0.005,
       "parity": {
         "passed": true,
         "agreement": 1.0,
-        "mae": 0.0,
-        "max_error": 0.0
+        "mae": 0.0025,
+        "max_error": 0.005
       },
       "calibration": {
-        "model_hash": "76454452bae9af17e315e78440d283ac2ea7a8551a9e05e16b9350fb40f97ea0",
+        "model_hash": "1b8c4f3de7822196c3c0ebf59f683d86f24d5fa2476fb1d9312a1e14b1519c7b",
         "frontend_id": "vfm-siglip224-siglip-base-patch16-224-bicubic-clamp-meanstd-float32",
-        "threshold": 0.49412423372268677,
-        "auc": 0.8982,
+        "threshold": 0.7673405408859253,
+        "auc": 0.9796499999999999,
         "n_calibration": 400,
-        "split_manifest_hash": "9b0400fcc82e08d117c5cb245fd2c3081b3ba8ed9fd2f169a5455248c84c9312"
+        "split_manifest_hash": "940bedf7412f383be7ed6f2f425b6208b02cf7de29f66bc3a37386ce9aa17505"
       },
-      "checkpoint_sha256": "3247b942f18d39d1fd476b1077852af033d35d8c",
-      "test_auc": 0.891,
-      "test_eer": 0.175,
-      "test_accuracy": 0.815
+      "checkpoint_sha256": "045912336216d8553878a2e5b26b6e6ca0e8eefaf88cb7e31253f2a5c487897e",
+      "test_auc": 0.9921,
+      "test_eer": 0.0421,
+      "test_accuracy": 0.9493,
+      "tpr_at_fpr_1pct": 0.7243,
+      "tpr_at_fpr_0_1pct": 0.55
     }
   }
 }

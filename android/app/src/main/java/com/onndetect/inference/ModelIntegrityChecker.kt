@@ -294,9 +294,11 @@ object ModelIntegrityChecker {
                 require(c.getString("model_hash") == model.getString("sha256"))
                 frontend = model.getString("frontend_id")
                 require(c.getString("frontend_id") == frontend)
-                val runtimeFrontend = if (name == AUDIO_MODEL) com.onndetect.detection.audio.LFCCExtractor.FRONTEND_ID else
-                    "rgb-exif-srgb-whitealpha-pow2cap1024-bilinear-square-v2-size${model.getJSONArray("input_shape").getInt(1)}-float32"
-                require(frontend == runtimeFrontend) { "Frontend contract mismatch" }
+                val runtimeFrontends = if (name == AUDIO_MODEL) setOf(com.onndetect.detection.audio.LFCCExtractor.FRONTEND_ID) else {
+                    val base = "rgb-exif-srgb-whitealpha-pow2cap1024-bilinear-square-v2-size${model.getJSONArray("input_shape").getInt(1)}-float32"
+                    setOf(base, "$base-patchcraft-mosaic-tile32")
+                }
+                require(frontend in runtimeFrontends) { "Frontend contract mismatch" }
                 if (name == AUDIO_MODEL) require(model.getJSONArray("input_shape").toString() == "[1,401,40,1]")
                 else require(model.getJSONArray("input_shape").getInt(1) == model.getJSONArray("input_shape").getInt(2) && model.getJSONArray("input_shape").getInt(3) == 3)
                 val t = numeric(c, "threshold").toFloat()
