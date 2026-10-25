@@ -269,18 +269,21 @@ object PerioralLandmarkAnalyzer {
 
     private fun getLandmarkX(landmark: Any): Double {
         return try {
-            // Try property access first (Kotlin property)
-            landmark.javaClass.getDeclaredField("x").let { field ->
-                field.isAccessible = true
-                field.getDouble(landmark)
-            }
-        } catch (_: NoSuchFieldException) {
-            // Try getter method
+            // Try property access first (Kotlin property / field)
             try {
-                landmark.javaClass.getMethod("getX").invoke(landmark) as Double
-            } catch (_: Exception) {
-                (landmark.javaClass.getMethod("getX").invoke(landmark) as Number).toDouble()
+                val field = landmark.javaClass.getDeclaredField("x")
+                field.isAccessible = true
+                return field.getDouble(landmark)
+            } catch (_: NoSuchFieldException) { }
+
+            // Try getter methods: getX() or x()
+            val method = try {
+                landmark.javaClass.getMethod("getX")
+            } catch (_: NoSuchMethodException) {
+                landmark.javaClass.getMethod("x")
             }
+            val res = method.invoke(landmark)
+            (res as? Number)?.toDouble() ?: throw IllegalStateException("Unexpected return type: $res")
         } catch (e: Exception) {
             throw RuntimeException("Failed to get landmark X", e)
         }
@@ -288,16 +291,19 @@ object PerioralLandmarkAnalyzer {
 
     private fun getLandmarkY(landmark: Any): Double {
         return try {
-            landmark.javaClass.getDeclaredField("y").let { field ->
-                field.isAccessible = true
-                field.getDouble(landmark)
-            }
-        } catch (_: NoSuchFieldException) {
             try {
-                landmark.javaClass.getMethod("getY").invoke(landmark) as Double
-            } catch (_: Exception) {
-                (landmark.javaClass.getMethod("getY").invoke(landmark) as Number).toDouble()
+                val field = landmark.javaClass.getDeclaredField("y")
+                field.isAccessible = true
+                return field.getDouble(landmark)
+            } catch (_: NoSuchFieldException) { }
+
+            val method = try {
+                landmark.javaClass.getMethod("getY")
+            } catch (_: NoSuchMethodException) {
+                landmark.javaClass.getMethod("y")
             }
+            val res = method.invoke(landmark)
+            (res as? Number)?.toDouble() ?: throw IllegalStateException("Unexpected return type: $res")
         } catch (e: Exception) {
             throw RuntimeException("Failed to get landmark Y", e)
         }

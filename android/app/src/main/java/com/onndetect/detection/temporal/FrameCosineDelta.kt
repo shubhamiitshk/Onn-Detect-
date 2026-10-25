@@ -74,7 +74,11 @@ object FrameCosineDelta {
     fun anomalyScore(sims: List<Float>): Float {
         require(sims.all { it.isFinite() && it in -1f..1f })
         if (sims.isEmpty()) return 0f
-        val mean = sims.sum() / sims.size
+        // Filter out abrupt scene cuts (sim < 0.50f) so ordinary camera shot transitions
+        // do not masquerade as deepfake temporal flicker.
+        val intraShotSims = sims.filter { it >= 0.50f }
+        val evalSims = if (intraShotSims.size >= 2) intraShotSims else sims
+        val mean = evalSims.sum() / evalSims.size
         var vr = 0.0
         for (s in sims) vr += (s - mean).toDouble() * (s - mean)
         val std = kotlin.math.sqrt(vr / sims.size).toFloat()

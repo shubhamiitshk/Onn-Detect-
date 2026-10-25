@@ -7,7 +7,7 @@
   "score_convention": "real=0_fake=1",
   "models": {
     "srm_forensic_cnn_int8.tflite": {
-      "sha256": "44962c415f552cedbdb3921f1d22f243d7c4bf8e7a1340d35db9772d070f2fdd",
+      "sha256": "d74a657c454e00f2181f4a3d98fa981ca63daf51d23e978da19c60c59e9b37c1",
       "input_shape": [
         1,
         128,
@@ -20,10 +20,10 @@
       ],
       "dtype": "FLOAT32",
       "frontend_id": "rgb-exif-srgb-whitealpha-pow2cap1024-bilinear-square-v2-size128-float32",
-      "quantization": "dynamic-range-int8"
+      "quantization": "full-int8"
     },
     "lcnn_audio_int8.tflite": {
-      "sha256": "8c2e28cb262b9db93b9eae4b9f9941d03e5a5f8836a65fbf0f26154c26309054",
+      "sha256": "6963363f0e51f6338ceac34575e4c9fdeeb8ecbebe33605695721232377af508",
       "input_shape": [
         1,
         401,
@@ -36,10 +36,10 @@
       ],
       "dtype": "FLOAT32",
       "frontend_id": "lfcc-v3-sr16000-f128-c40-nfft512-hop160-topdbnone-resampler-quadratic_window_sinc_v1-float64stft-float32",
-      "quantization": "dynamic-range-int8"
+      "quantization": "full-int8"
     },
     "siglip_probe_int8.tflite": {
-      "sha256": "5a4a3352e3b68874c714485f1363bef1f7930f7dedfaf40e5e25338ac1b5b5f9",
+      "sha256": "76454452bae9af17e315e78440d283ac2ea7a8551a9e05e16b9350fb40f97ea0",
       "input_shape": [
         1,
         224,
@@ -56,34 +56,34 @@
     }
   },
   "artifacts": {
-    "evaluation_report.json": "61a3dabd05d7ddbcdff18f7d9841e097718e55390708cfb6879335c7ba32465d",
+    "evaluation_report.json": "2b251a131d3983863f998bd8437e34a4eea948e6662efdce07898ac792ff115a",
     "source_snapshot.json": "88e6f63691bbabd3841c34a6e7adcd9381f46e4b17a22a6772692d5edf5afee0",
     "constants/cascade_policy.json": "876630a30661e0ca5317518196f10bf6b819423bd0c02fb851480f39a26477ea",
-    "constants/lcnn_audio_threshold.json": "81957938e2c6192ea0474ebfaecd007994e0029170b8a6ca55d3d553ceeddecf",
-    "constants/meta_classifier.json": "65a906e531aa8d307093efd4a8373dc73777120c1a01215ba653468674d8230b",
-    "constants/model_hashes.json": "748dd394bc470479c006aaf1a0350b370f6498f37b462f8fcc5e6fc93576bfea",
+    "constants/lcnn_audio_threshold.json": "80d912a1f7a590d398e2f0225bbc3414ac5a1579f34ff0518baf642c9bdab5f0",
+    "constants/meta_classifier.json": "701f7bbf6a009bf20d6192d3fdce25366ebfc5967adf0d15338c154e8e05b4cc",
+    "constants/model_hashes.json": "ca8646bbfffbd0473b33d878253e390710e101f4ed797d698edda1d1fc33bef2",
     "constants/natural_diff_histogram.json": "11c02987e968c6332cb5312f6a749e95934325020f7ecb0b8045b2598afd39e7",
-    "constants/semantic_probe_threshold.json": "93f28d2fd8ccca1441541d90bee128ee965c0227deb759e49ef001e7ceb205bc",
-    "fusion/meta_results.json": "dc67f32ac6345abf0096d4fe0e205360ce981ed8a6a0b46df85eeb36d7ec6dab",
+    "constants/semantic_probe_threshold.json": "95e0cea0be3263cf5c5bcd147842e1140333d8e0d6b36148d8c84d6139e490d0",
+    "fusion/meta_results.json": "82588a90cd4e0af2255b43a5207e77af5d83e45e2949bda9d1706d52565ac917",
     "fusion/XGBoostMetaClassifier.kt": "da61fac81b637bc61c62dffceb5cde20c67db0cb5f3408bc22681d25fd92a9b7",
     "fusion/xgboost_meta.json": "c9606462172771abcbe5e05386ae0484294b705481e499ba2088d50033e65c78",
     "models/face_landmarker.task": "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff",
-    "models/lcnn_audio_int8.tflite": "8c2e28cb262b9db93b9eae4b9f9941d03e5a5f8836a65fbf0f26154c26309054",
-    "models/siglip_probe_int8.tflite": "5a4a3352e3b68874c714485f1363bef1f7930f7dedfaf40e5e25338ac1b5b5f9",
-    "models/srm_forensic_cnn_int8.tflite": "44962c415f552cedbdb3921f1d22f243d7c4bf8e7a1340d35db9772d070f2fdd",
+    "models/lcnn_audio_int8.tflite": "6963363f0e51f6338ceac34575e4c9fdeeb8ecbebe33605695721232377af508",
+    "models/siglip_probe_int8.tflite": "76454452bae9af17e315e78440d283ac2ea7a8551a9e05e16b9350fb40f97ea0",
+    "models/srm_forensic_cnn_int8.tflite": "d74a657c454e00f2181f4a3d98fa981ca63daf51d23e978da19c60c59e9b37c1",
     "trust/c2pa_trust_anchors.pem": "b3949271a07b007e92ef1d18050b55388f5e0d2686a16fd864176c48421af8ae"
   },
   "calibration": {
     "srm_forensic_cnn_int8.tflite": {
-      "model_hash": "44962c415f552cedbdb3921f1d22f243d7c4bf8e7a1340d35db9772d070f2fdd",
+      "model_hash": "d74a657c454e00f2181f4a3d98fa981ca63daf51d23e978da19c60c59e9b37c1",
       "frontend_id": "rgb-exif-srgb-whitealpha-pow2cap1024-bilinear-square-v2-size128-float32",
       "threshold": 0.53125,
-      "auc": 0.985,
+      "auc": 0.6033,
       "n_calibration": 200,
-      "split_manifest_hash": "fbab1565b7a2494cc2434ca18134f713280e27143a1ddcc6d5668a41459c6853"
+      "split_manifest_hash": "9b0400fcc82e08d117c5cb245fd2c3081b3ba8ed9fd2f169a5455248c84c9312"
     },
     "lcnn_audio_int8.tflite": {
-      "model_hash": "8c2e28cb262b9db93b9eae4b9f9941d03e5a5f8836a65fbf0f26154c26309054",
+      "model_hash": "6963363f0e51f6338ceac34575e4c9fdeeb8ecbebe33605695721232377af508",
       "frontend_id": "lfcc-v3-sr16000-f128-c40-nfft512-hop160-topdbnone-resampler-quadratic_window_sinc_v1-float64stft-float32",
       "threshold": 0.35546875,
       "auc": 0.8648625,
@@ -91,12 +91,12 @@
       "split_manifest_hash": "6d56263cfdce0b8d1fc8f83cdef9261b91438a5a511e83a3401892be1e1fb524"
     },
     "siglip_probe_int8.tflite": {
-      "model_hash": "5a4a3352e3b68874c714485f1363bef1f7930f7dedfaf40e5e25338ac1b5b5f9",
+      "model_hash": "76454452bae9af17e315e78440d283ac2ea7a8551a9e05e16b9350fb40f97ea0",
       "frontend_id": "vfm-siglip224-siglip-base-patch16-224-bicubic-clamp-meanstd-float32",
-      "threshold": 0.4836435914039612,
-      "auc": 0.9914999999999999,
+      "threshold": 0.49412423372268677,
+      "auc": 0.8982,
       "n_calibration": 200,
-      "split_manifest_hash": "fbab1565b7a2494cc2434ca18134f713280e27143a1ddcc6d5668a41459c6853"
+      "split_manifest_hash": "9b0400fcc82e08d117c5cb245fd2c3081b3ba8ed9fd2f169a5455248c84c9312"
     },
     "fusion_xgboost": {
       "threshold": 0.5855898857116699,
@@ -108,7 +108,7 @@
     }
   },
   "data_manifest_hashes": {
-    "visual": "fbab1565b7a2494cc2434ca18134f713280e27143a1ddcc6d5668a41459c6853",
+    "visual": "9b0400fcc82e08d117c5cb245fd2c3081b3ba8ed9fd2f169a5455248c84c9312",
     "audio": "6d56263cfdce0b8d1fc8f83cdef9261b91438a5a511e83a3401892be1e1fb524"
   },
   "device_validation": {
@@ -117,7 +117,7 @@
   "source_commit": "20a8225dc3cebeac203a87912c36b480c619744f",
   "source_dirty": true,
   "source_snapshot_sha256": "88e6f63691bbabd3841c34a6e7adcd9381f46e4b17a22a6772692d5edf5afee0",
-  "evaluation_report_hash": "61a3dabd05d7ddbcdff18f7d9841e097718e55390708cfb6879335c7ba32465d",
+  "evaluation_report_hash": "2b251a131d3983863f998bd8437e34a4eea948e6662efdce07898ac792ff115a",
   "fusion_revision": "onn-prod-v9",
   "acceptance": {
     "fusion_xgboost": {
@@ -137,7 +137,7 @@
       "meets_academic_target": false
     },
     "srm_forensic_cnn_int8.tflite": {
-      "measured_auc": 0.9885,
+      "measured_auc": 0.6584375,
       "measured_tpr_at_fpr_1pct": 0.72,
       "measured_tpr_at_fpr_0_1pct": 0.55,
       "enforced_floor": [
@@ -153,7 +153,7 @@
       "meets_academic_target": true
     },
     "lcnn_audio_int8.tflite": {
-      "measured_auc": 0.9992,
+      "measured_auc": 0.874725,
       "measured_tpr_at_fpr_1pct": 0.72,
       "measured_tpr_at_fpr_0_1pct": 0.55,
       "enforced_floor": [
@@ -169,7 +169,7 @@
       "meets_academic_target": true
     },
     "siglip_probe_int8.tflite": {
-      "measured_auc": 0.9913,
+      "measured_auc": 0.891,
       "measured_tpr_at_fpr_1pct": 0.72,
       "measured_tpr_at_fpr_0_1pct": 0.55,
       "enforced_floor": [
@@ -191,18 +191,18 @@
     "note": "Every packaged model's sealed-test AUC was measured by running the .tflite bytes this release ships, and the fusion's calibration and operating point come from that same measurement. What is NOT yet established is that the same bytes behave identically on an Android SoC.",
     "models": {
       "srm_forensic_cnn_int8.tflite": {
-        "sha256": "44962c415f552cedbdb3921f1d22f243d7c4bf8e7a1340d35db9772d070f2fdd",
-        "sealed_test_auc": 0.9885,
+        "sha256": "d74a657c454e00f2181f4a3d98fa981ca63daf51d23e978da19c60c59e9b37c1",
+        "sealed_test_auc": 0.6584375,
         "parity_passed": true
       },
       "lcnn_audio_int8.tflite": {
-        "sha256": "8c2e28cb262b9db93b9eae4b9f9941d03e5a5f8836a65fbf0f26154c26309054",
-        "sealed_test_auc": 0.9992,
+        "sha256": "6963363f0e51f6338ceac34575e4c9fdeeb8ecbebe33605695721232377af508",
+        "sealed_test_auc": 0.874725,
         "parity_passed": true
       },
       "siglip_probe_int8.tflite": {
-        "sha256": "5a4a3352e3b68874c714485f1363bef1f7930f7dedfaf40e5e25338ac1b5b5f9",
-        "sealed_test_auc": 0.9913,
+        "sha256": "76454452bae9af17e315e78440d283ac2ea7a8551a9e05e16b9350fb40f97ea0",
+        "sealed_test_auc": 0.891,
         "parity_passed": true
       }
     },

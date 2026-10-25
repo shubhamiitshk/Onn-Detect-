@@ -75,7 +75,7 @@ class VideoForensicAnalyzer @Inject constructor(private val context: Context,
          * Minimum adjacent-frame cosine similarity for a frame to inherit a
          * neighbour keyframe's tower score.
          */
-        const val KEYFRAME_SIMILARITY_THRESHOLD = 0.98f
+        const val KEYFRAME_SIMILARITY_THRESHOLD = 0.60f
 
         /** The maximum number of keyframes the tower is run on. */
         const val MAX_PROBE_KEYFRAMES = 4
@@ -199,7 +199,8 @@ class VideoForensicAnalyzer @Inject constructor(private val context: Context,
                     FloatArray(video.frames.size) { Float.NaN }
                 }
                 val bioLip = bioLipAnalyzer.analyzeFrames(video.frames)
-                val landmarkJitter = bioLip.landmarkJitter
+                val measuredJitter = bioLip.landmarkJitter
+                val landmarkJitter = if (measuredJitter.isFinite()) measuredJitter else DetectionPipeline.NEUTRAL_JITTER
                 if (bioLip.hasFace && bioLip.notes != null) {
                     issues += bioLip.notes
                 }
@@ -264,19 +265,49 @@ class VideoForensicAnalyzer @Inject constructor(private val context: Context,
                 fun avg(values: List<Float>) = if (values.isEmpty()) -1f else values.average().toFloat()
                 val threshold = report.threshold
                 if (report.validated && threshold != null && frameFusionScores.isNotEmpty()) {
-                    val visualScore = avg(frameFusionScores)
-                    // The video-level blend is policy-driven so the weights can
-                    // be fitted on a video-level calibration split and
-                    // re-staged, rather than being hard-coded here. TEMPORAL_WEIGHT
-                    // is 0 until that calibration exists; the temporal signal
-                    // is still computed and reported.
-                    val overall = if (audioValidatedSuccess) {
-                        ((VideoScorePolicy.FRAME_WEIGHT * visualScore +
-                            VideoScorePolicy.AUDIO_WEIGHT * audioScore +
-                            VideoScorePolicy.TEMPORAL_WEIGHT * kotlin.math.max(temporal, 0f)).coerceIn(0f, 1f))
-                    } else if (temporal >= 0f) {
-                        (0.85f * visualScore + 0.15f * temporal).coerceIn(0f, 1f)
-                    } else visualScore
+                    // Hybrid pooling: 50% mean across all frames + 50% top-k peak anomaly
+                    // In video deepfakes, artifacts frequently cluster in specific burst frames.
+                    val meanScore = frameFusionScores.average().toFloat()
+                    val k = maxOf(1, frameFusionScores.size / 4)
+                    val topKMean = frameFusionScores.sortedDescending().take(k).average().toFloat()
+                    val visualScore = (0.50f * meanScore + 0.50f * topKMean).coerceIn(0f, 1f)
+
+                    val lipSyncAnomaly = if (bioLip.hasFace && landmarkJitter > 0.15f) {
+                        (landmarkJitter - 0.15f) / 0.85f
+                    } else 0f
+
+                    // Multimodal blending across visual, audio, temporal, and biomechanical lip sync
+                    val overall = when {
+                        audioValidatedSuccess && temporal >= 0f -> {
+                            val lipW = if (lipSyncAnomaly > 0f) 0.10f else 0.0f
+                            val fW = VideoScorePolicy.FRAME_WEIGHT - (lipW / 2)
+                            val aW = VideoScorePolicy.AUDIO_WEIGHT - (lipW / 2)
+                            val tW = VideoScorePolicy.TEMPORAL_WEIGHT
+                            (fW * visualScore + aW * audioScore + tW * kotlin.math.max(temporal, 0f) + lipW * lipSyncAnomaly).coerceIn(0f, 1f)
+                        }
+                        audioValidatedSuccess -> {
+                            val lipW = if (lipSyncAnomaly > 0f) 0.10f else 0.0f
+                            val fW = 0.70f - lipW
+                            val aW = 0.30f
+                            (fW * visualScore + aW * audioScore + lipW * lipSyncAnomaly).coerceIn(0f, 1f)
+                        }
+                        temporal >= 0f -> {
+                            val lipW = if (lipSyncAnomaly > 0f) 0.12f else 0.0f
+                            val fW = 0.80f - lipW
+                            val tW = 0.20f
+                            val base = (fW * visualScore + tW * temporal + lipW * lipSyncAnomaly)
+                            // If audio model reported a synthetic score above threshold even with noisy background
+                            if (audioScore in 0.355f..1f && !audioValidatedSuccess) {
+                                (0.85f * base + 0.15f * audioScore).coerceIn(0f, 1f)
+                            } else {
+                                base.coerceIn(0f, 1f)
+                            }
+                        }
+                        else -> {
+                            val lipW = if (lipSyncAnomaly > 0f) 0.15f else 0.0f
+                            ( (1f - lipW) * visualScore + lipW * lipSyncAnomaly ).coerceIn(0f, 1f)
+                        }
+                    }
                     val provisionalNotice = "Provisional video verdict: heuristic multimodal temporal blend without dedicated video calibration"
                     val note = (listOf(provisionalNotice) + issues).distinct().joinToString("; ")
                     return Outcome(overall, overall >= threshold, 0f, avg(srmScores), avg(fftScores), avg(klScores),

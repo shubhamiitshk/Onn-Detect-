@@ -13,9 +13,9 @@
     "landmark_jitter"
   ],
   "identity": {
-    "dataset_manifest_hash": "fbab1565b7a2494cc2434ca18134f713280e27143a1ddcc6d5668a41459c6853",
-    "visual_model_hash": "44962c415f552cedbdb3921f1d22f243d7c4bf8e7a1340d35db9772d070f2fdd",
-    "checkpoint_hash": "d71dface0e16d45261c45d0c5b4730d33f71a0410a1710751ad7955896861836",
+    "dataset_manifest_hash": "9b0400fcc82e08d117c5cb245fd2c3081b3ba8ed9fd2f169a5455248c84c9312",
+    "visual_model_hash": "d74a657c454e00f2181f4a3d98fa981ca63daf51d23e978da19c60c59e9b37c1",
+    "checkpoint_hash": "6ad7c47a04582d7162ec54337b4ab27c694e53b92cc824447a2c63541d26080d",
     "baseline_hash": "471e7ea7b96b4bb98ba07fb0a72397392e8f9910ec21106ce7221039b0240b98",
     "feature_source_hash": "03f8b952b373c782220b0329171724a905ee37a5be2e405f680cf0d33f3e4aeb",
     "feature_schema": [
@@ -32,7 +32,7 @@
     ],
     "input_size": 128,
     "block_format_resolution_shortcuts": true,
-    "semantic_probe_model_hash": "5a4a3352e3b68874c714485f1363bef1f7930f7dedfaf40e5e25338ac1b5b5f9",
+    "semantic_probe_model_hash": "76454452bae9af17e315e78440d283ac2ea7a8551a9e05e16b9350fb40f97ea0",
     "fusion_base_margin": "probe"
   },
   "test_auc": 0.89405,
@@ -1019,11 +1019,10 @@
       "fusion": "[fusion] Real-image false-positive rate exceeds the per-source bound (5%). The detector is keying on acquisition source, not on synthesis. Offenders: docci: fpr=0.235 (n_real=17); laion: fpr=0.247 (n_real=81); pexels: fpr=0.174 (n_real=69)",
       "fusion laundered": "[fusion laundered] Real-image false-positive rate exceeds the per-source bound (5%). The detector is keying on acquisition source, not on synthesis. Offenders: docci: fpr=0.176 (n_real=17); laion: fpr=0.222 (n_real=81); pexels: fpr=0.087 (n_real=69)"
     },
-    "note": "The per-source real-image FPR bound is NOT met. The corpus leaks the label through the acquisition source, so no model trained on it can satisfy a per-source bound. Recorded here so the release cannot hide it.",
-    "threshold": 0.5855898857116699
+    "note": "The per-source real-image FPR bound is NOT met. The corpus leaks the label through the acquisition source, so no model trained on it can satisfy a per-source bound. Recorded here so the release cannot hide it."
   },
   "model_hash": "c9606462172771abcbe5e05386ae0484294b705481e499ba2088d50033e65c78",
-  "kotlin_hash": "da61fac81b637bc61c62dffceb5cde20c67db0cb5f3408bc22681d25fd92a9b7",
+  "kotlin_hash": "6a978d82947029c1d1de20a6f59974e588cba29e481d7be0ff4fca017057a9f5",
   "dual_engine": {
     "engine_c_tflite": "D:\\onn_data\\runs\\vfm_keras_export\\vfm_probe_google__siglip-base-patch16-224_fullL_int8.tflite",
     "engine_c_sha256": "76454452bae9af17e315e78440d283ac2ea7a8551a9e05e16b9350fb40f97ea0",
@@ -1043,7 +1042,7 @@
     "threshold": 0.5855898857116699,
     "auc": 0.9010500000000001,
     "n_calibration": 400,
-    "split_manifest_hash": "fbab1565b7a2494cc2434ca18134f713280e27143a1ddcc6d5668a41459c6853",
+    "split_manifest_hash": "9b0400fcc82e08d117c5cb245fd2c3081b3ba8ed9fd2f169a5455248c84c9312",
     "model_hash": "c9606462172771abcbe5e05386ae0484294b705481e499ba2088d50033e65c78",
     "frontend_id": "rgb-exif-srgb-whitealpha-pow2cap1024-bilinear-square-v2-size128-float32"
   },
