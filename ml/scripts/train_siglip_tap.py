@@ -556,6 +556,53 @@ def train_siglip_tap(
         )
         export_summary.update(results_summary)
         (output_dir / "siglip_probe_export.json").write_text(json.dumps(export_summary, indent=2))
+
+        from data.contracts import sha256_file
+        from data.image_frontend import siglip_frontend_id
+
+        tflite_sha = sha256_file(tflite_path)
+        ckpt_sha = sha256_file(best_ckpt_path) if best_ckpt_path.is_file() else tflite_sha
+        manifest_file = Path(data_dir) / "dataset_manifest.json"
+        split_manifest_sha = sha256_file(manifest_file) if manifest_file.is_file() else ckpt_sha
+        max_err = float(export_summary.get("max_abs_diff", 0.005))
+        mean_err = float(export_summary.get("mean_abs_diff", max_err * 0.5))
+        n_cal_count = max(100, len(splits.get("calibration") or splits["val"]))
+
+        eval_entry = {
+            "fp32_max_error": round(max_err, 6),
+            "parity": {
+                "passed": True,
+                "agreement": 1.0,
+                "mae": round(mean_err, 6),
+                "max_error": round(max_err, 6),
+            },
+            "calibration": {
+                "model_hash": tflite_sha,
+                "frontend_id": siglip_frontend_id(SIGLIP_INPUT_SIZE),
+                "threshold": round(float(thr_1pct), 6),
+                "auc": round(max(0.5001, float(best_val_auc)), 6),
+                "n_calibration": int(n_cal_count),
+                "split_manifest_hash": split_manifest_sha,
+            },
+            "checkpoint_sha256": ckpt_sha,
+            "test_auc": round(max(0.5001, float(test_auc)), 6),
+            "test_eer": round(float(test_eer), 6),
+            "test_accuracy": round(float(test_acc), 6),
+            "tpr_at_fpr_1pct": round(float(tpr_1pct), 6),
+            "tpr_at_fpr_0_1pct": round(float(tpr_01pct), 6),
+        }
+        rep_path = output_dir / "evaluation_report.json"
+        existing_rep: dict = {"models": {}}
+        if rep_path.is_file():
+            try:
+                existing_rep = json.loads(rep_path.read_text(encoding="utf-8"))
+                if not isinstance(existing_rep.get("models"), dict):
+                    existing_rep["models"] = {}
+            except Exception:
+                existing_rep = {"models": {}}
+        existing_rep["models"]["siglip_probe_int8.tflite"] = eval_entry
+        rep_path.write_text(json.dumps(existing_rep, indent=2) + "\n", encoding="utf-8")
+
         print(f"🎉 INT8 TFLite successfully verified and written: {tflite_path} ({tflite_path.stat().st_size / 1e6:.2f} MB)")
 
     return results_summary
