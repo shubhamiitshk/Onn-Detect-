@@ -41,9 +41,9 @@ import javax.inject.Singleton
  * the signal breakdown) but does not move the verdict.
  */
 object VideoScorePolicy {
-    const val FRAME_WEIGHT = 0.75f
-    const val AUDIO_WEIGHT = 0.25f
-    const val TEMPORAL_WEIGHT = 0f
+    const val FRAME_WEIGHT = 0.65f
+    const val AUDIO_WEIGHT = 0.20f
+    const val TEMPORAL_WEIGHT = 0.15f
 }
 
 /** Sampled-frame and sampled-audio diagnostics, without an untrained video verdict. */
@@ -274,6 +274,8 @@ class VideoForensicAnalyzer @Inject constructor(private val context: Context,
                         ((VideoScorePolicy.FRAME_WEIGHT * visualScore +
                             VideoScorePolicy.AUDIO_WEIGHT * audioScore +
                             VideoScorePolicy.TEMPORAL_WEIGHT * kotlin.math.max(temporal, 0f)).coerceIn(0f, 1f))
+                    } else if (temporal >= 0f) {
+                        (0.85f * visualScore + 0.15f * temporal).coerceIn(0f, 1f)
                     } else visualScore
                     val note = if (issues.isEmpty()) null else issues.distinct().joinToString()
                     return Outcome(overall, overall >= threshold, 0f, avg(srmScores), avg(fftScores), avg(klScores),
