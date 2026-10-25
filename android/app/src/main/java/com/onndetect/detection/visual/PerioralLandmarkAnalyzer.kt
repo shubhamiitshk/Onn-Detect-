@@ -42,6 +42,10 @@ object PerioralLandmarkAnalyzer {
         308, 191, 80, 81, 82, 13, 312, 311, 310, 415
     )
 
+    // Canonical left & right malar (cheek) vascular ROI indices for bilateral rPPG phase coherence
+    val LEFT_MALAR_INDICES = intArrayOf(116, 117, 118, 123, 187, 205)
+    val RIGHT_MALAR_INDICES = intArrayOf(345, 346, 347, 352, 411, 425)
+
     const val LEFT_EYE_OUTER = 33
     const val RIGHT_EYE_OUTER = 263
     const val NOSE_TIP = 1
@@ -265,6 +269,120 @@ object PerioralLandmarkAnalyzer {
     ): Float {
         val corr = computeAvffLipSyncCorrelation(marSeries, audioRmsEnvelope)
         return if (corr.isNaN()) Float.NaN else (1.0f - corr).coerceIn(0f, 1f)
+    }
+
+    /**
+     * Computes Bilateral Malar rPPG (Remote Photoplethysmography) Chromaticity Phase Anomaly in [0, 1].
+     *
+     * In a real living face, green-normalized skin chromaticity `G / (R + G + B)` across the left cheek
+     * and right cheek oscillates in phase (cardiac blood-volume pulse + shared illumination, rho >= 0.55).
+     * In face-swap, neural reenactment, or diffusion-generated video (Sora, HeyGen, DeepFaceLab),
+     * micro-vascular chromaticity across bilateral malar patches is uncorrelated or suppressed.
+     */
+    fun computeRppgBilateralPhaseAnomaly(
+        frames: List<Bitmap>,
+        frameLandmarks: List<List<Any>?>
+    ): Float {
+        val nFrames = minOf(frames.size, frameLandmarks.size)
+        if (nFrames < 4) return Float.NaN
+
+        val leftSeries = ArrayList<Double>(nFrames)
+        val rightSeries = ArrayList<Double>(nFrames)
+
+        for (t in 0 until nFrames) {
+            val bmp = frames[t]
+            val pts = frameLandmarks[t]
+            if (bmp.isRecycled || bmp.width < 16 || bmp.height < 16 || pts == null || pts.size <= 425) continue
+            try {
+                val leftCg = sampleMalarChromaticity(bmp, pts, LEFT_MALAR_INDICES)
+                val rightCg = sampleMalarChromaticity(bmp, pts, RIGHT_MALAR_INDICES)
+                if (leftCg.isFinite() && rightCg.isFinite()) {
+                    leftSeries.add(leftCg)
+                    rightSeries.add(rightCg)
+                }
+            } catch (_: Exception) {
+                // Skip invalid frame
+            }
+        }
+
+        if (leftSeries.size < 4) return Float.NaN
+        val m = leftSeries.size - 1
+        val dLeft = DoubleArray(m) { i -> leftSeries[i + 1] - leftSeries[i] }
+        val dRight = DoubleArray(m) { i -> rightSeries[i + 1] - rightSeries[i] }
+
+        val corr = pearsonCorrelation(dLeft, dRight)
+        if (!corr.isFinite()) return Float.NaN
+        return ((0.55 - corr) / 0.85).coerceIn(0.0, 1.0).toFloat()
+    }
+
+    /**
+     * Pure helper for unit-testing bilateral rPPG chromaticity correlation directly from
+     * per-frame left/right malar green-ratio series.
+     */
+    internal fun computeRppgAnomalyFromSeries(leftSeries: DoubleArray, rightSeries: DoubleArray): Float {
+        val n = minOf(leftSeries.size, rightSeries.size)
+        if (n < 4) return Float.NaN
+        val m = n - 1
+        val dLeft = DoubleArray(m) { i -> leftSeries[i + 1] - leftSeries[i] }
+        val dRight = DoubleArray(m) { i -> rightSeries[i + 1] - rightSeries[i] }
+        val corr = pearsonCorrelation(dLeft, dRight)
+        if (!corr.isFinite()) return Float.NaN
+        return ((0.55 - corr) / 0.85).coerceIn(0.0, 1.0).toFloat()
+    }
+
+    private fun pearsonCorrelation(x: DoubleArray, y: DoubleArray): Double {
+        val n = minOf(x.size, y.size)
+        if (n < 2) return Double.NaN
+        var meanX = 0.0
+        var meanY = 0.0
+        for (i in 0 until n) {
+            meanX += x[i]
+            meanY += y[i]
+        }
+        meanX /= n
+        meanY /= n
+        var cov = 0.0
+        var varX = 0.0
+        var varY = 0.0
+        for (i in 0 until n) {
+            val dx = x[i] - meanX
+            val dy = y[i] - meanY
+            cov += dx * dy
+            varX += dx * dx
+            varY += dy * dy
+        }
+        val denom = kotlin.math.sqrt(varX * varY)
+        if (denom < 1e-12) return Double.NaN
+        return (cov / denom).coerceIn(-1.0, 1.0)
+    }
+
+    private fun sampleMalarChromaticity(bmp: Bitmap, pts: List<Any>, indices: IntArray): Double {
+        var gRatioSum = 0.0
+        var count = 0
+        val w = bmp.width
+        val h = bmp.height
+        for (idx in indices) {
+            if (idx >= pts.size) continue
+            val lm = pts[idx]
+            val rawX = getLandmarkX(lm)
+            val rawY = getLandmarkY(lm)
+            val cx = (if (rawX in 0.0..1.0 && rawY in 0.0..1.0) rawX * w else rawX).toInt().coerceIn(1, w - 2)
+            val cy = (if (rawX in 0.0..1.0 && rawY in 0.0..1.0) rawY * h else rawY).toInt().coerceIn(1, h - 2)
+            for (dy in -1..1) {
+                for (dx in -1..1) {
+                    val c = bmp.getPixel(cx + dx, cy + dy)
+                    val r = (c shr 16 and 0xFF).toDouble()
+                    val g = (c shr 8 and 0xFF).toDouble()
+                    val b = (c and 0xFF).toDouble()
+                    val total = r + g + b
+                    if (total > 15.0) {
+                        gRatioSum += g / total
+                        count++
+                    }
+                }
+            }
+        }
+        return if (count > 0) gRatioSum / count else Double.NaN
     }
 
     private fun getLandmarkX(landmark: Any): Double {

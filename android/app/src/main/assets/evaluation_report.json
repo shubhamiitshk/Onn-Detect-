@@ -1,6 +1,6 @@
 {
   "release_id": "onn-prod-v10",
-  "source_snapshot_sha256": "a55ec3f294566517bb744ac8e43787a2a0fc9a5bd33e00acc1e29c17e9abe973",
+  "source_snapshot_sha256": "528e548efc172b847f304179b68430f988fd83df7fe7adfd6fd457e05b89d9eb",
   "models": {
     "srm_forensic_cnn_int8.tflite": {
       "fp32_max_error": 0.036999,

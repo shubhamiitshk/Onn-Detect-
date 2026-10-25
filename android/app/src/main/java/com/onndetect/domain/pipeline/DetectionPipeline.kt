@@ -189,6 +189,37 @@ class DetectionPipeline @Inject constructor(
             if (budget != DegradationLevel.ABSTAIN) {
                 emit(ScanProgress("Decomposing 20-ch high-pass residuals…", 20f))
                 srm = srmAnalyzer.analyze(bitmap, checkStop)
+                // Saliency-Guided Localized ROI Dual-Pass: when the 32x32 residual heatmap reveals
+                // a concentrated spatial anomaly cluster (zScore >= 1.85, e.g. localized face-swap,
+                // Magic Eraser, or Generative Fill inpainting) and the global SRM score is not yet
+                // saturated, run a focused second pass on the hotspot crop.
+                val hm = residualHeatmap
+                if (budget == DegradationLevel.FULL && hm != null && hm.isNotEmpty() && srm in 0.12f..0.72f &&
+                    bitmap.width >= 256 && bitmap.height >= 256) {
+                    val hotspot = ResidualHeatmapExtractor.extractHotspotBoundingBox(hm, 32, 8)
+                    if (hotspot != null && hotspot.zScore >= 1.85f) {
+                        val x0 = (hotspot.normX0 * bitmap.width).toInt().coerceIn(0, bitmap.width - 128)
+                        val y0 = (hotspot.normY0 * bitmap.height).toInt().coerceIn(0, bitmap.height - 128)
+                        val cropW = max(128, ((hotspot.normX1 - hotspot.normX0) * bitmap.width).toInt()).coerceAtMost(bitmap.width - x0)
+                        val cropH = max(128, ((hotspot.normY1 - hotspot.normY0) * bitmap.height).toInt()).coerceAtMost(bitmap.height - y0)
+                        if (cropW >= 128 && cropH >= 128) {
+                            val roiScore = runCatching {
+                                val roiCrop = Bitmap.createBitmap(bitmap, x0, y0, cropW, cropH)
+                                try {
+                                    srmAnalyzer.analyze(roiCrop, checkStop)
+                                } finally {
+                                    if (roiCrop !== bitmap) roiCrop.recycle()
+                                }
+                            }.getOrDefault(Float.NaN)
+                            if (roiScore.isFinite() && roiScore in 0f..1f) {
+                                signals = signals.copy(perturbationScore = roiScore)
+                                if (roiScore > srm + 0.16f) {
+                                    srm = max(srm, (0.45f * srm + 0.55f * roiScore).coerceIn(0f, 1f))
+                                }
+                            }
+                        }
+                    }
+                }
                 signals = signals.copy(srmForensicScore = srm)
             }
             emit(ScanProgress("2D FFT power spectrum & radial slope…", 45f))

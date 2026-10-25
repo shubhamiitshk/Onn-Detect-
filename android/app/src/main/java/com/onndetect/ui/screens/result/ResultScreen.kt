@@ -208,7 +208,10 @@ fun AssessmentDetails(
         evidence?.optString("heatmap")?.takeIf { it.isNotEmpty() }?.split(",")?.mapNotNull { it.toFloatOrNull() }?.toFloatArray()
     }
     if (heatmap != null && heatmap.isNotEmpty()) {
-        HeatmapViewer(heatmap = heatmap)
+        HeatmapViewer(
+            heatmap = heatmap,
+            roiProbeScore = decodedSignals?.perturbationScore ?: -1f,
+        )
     }
 
     // 4. Forensic Evidence & Metadata Container
@@ -868,6 +871,19 @@ private fun ForensicReceiptCard(
                 ) {
                     Text("Export Audit File", fontSize = 13.sp)
                 }
+            }
+
+            Button(
+                onClick = {
+                    runCatching {
+                        ForensicCertificateExporter.shareCertificate(context, e, evidence, receipt)
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(10.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = CyberCyan.copy(alpha = 0.18f), contentColor = CyberCyan)
+            ) {
+                Text("Share Visual Forensic Certificate (PNG)", fontSize = 13.sp, fontWeight = FontWeight.Bold)
             }
         }
     }

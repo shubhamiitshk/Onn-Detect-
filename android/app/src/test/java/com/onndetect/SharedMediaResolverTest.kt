@@ -36,6 +36,16 @@ class SharedMediaResolverTest {
         assertEquals(SharedMediaResolver.MODE_AUDIO, shared?.mode)
     }
 
+    @Test fun `a video share resolves to the video route`() {
+        val shared = SharedMediaResolver.resolve(
+            streamUri = "content://media/external/video/media/99",
+            clipUris = emptyList(),
+            mimeType = "video/mp4",
+        )
+        assertEquals("content://media/external/video/media/99", shared?.uri)
+        assertEquals(SharedMediaResolver.MODE_VIDEO, shared?.mode)
+    }
+
     @Test fun `a file uri is refused`() {
         // A `file://` hand-off would let another app name a path in this
         // app's private storage.
@@ -70,6 +80,8 @@ class SharedMediaResolverTest {
         assertEquals(SharedMediaResolver.MODE_IMAGE, image?.mode)
         val audio = SharedMediaResolver.resolve("content://x/1/voice.m4a", emptyList(), null)
         assertEquals(SharedMediaResolver.MODE_AUDIO, audio?.mode)
+        val video = SharedMediaResolver.resolve("content://x/1/clip.mp4", emptyList(), null)
+        assertEquals(SharedMediaResolver.MODE_VIDEO, video?.mode)
     }
 
     @Test fun `an unknown extension with no mime type is refused`() {
@@ -108,5 +120,6 @@ class SharedMediaResolverTest {
         // would silently send an image down the audio route.
         assertEquals("IMAGE_ONLY", SharedMediaResolver.MODE_IMAGE)
         assertEquals("AUDIO_ONLY", SharedMediaResolver.MODE_AUDIO)
+        assertEquals("VIDEO_ONLY", SharedMediaResolver.MODE_VIDEO)
     }
 }

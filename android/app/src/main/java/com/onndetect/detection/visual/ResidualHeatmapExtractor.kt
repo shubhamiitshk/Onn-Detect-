@@ -120,6 +120,114 @@ object ResidualHeatmapExtractor {
         return normalized
     }
 
+    /**
+     * Localized spatial anomaly bounding box extracted from the residual heatmap.
+     *
+     * @param gridRow0 Top grid row (inclusive, in 0 until gridSize)
+     * @param gridCol0 Left grid col (inclusive, in 0 until gridSize)
+     * @param gridRow1 Bottom grid row (exclusive, in 1..gridSize)
+     * @param gridCol1 Right grid col (exclusive, in 1..gridSize)
+     * @param normX0 Normalized left coordinate in [0, 1]
+     * @param normY0 Normalized top coordinate in [0, 1]
+     * @param normX1 Normalized right coordinate in [0, 1]
+     * @param normY1 Normalized bottom coordinate in [0, 1]
+     * @param windowMean Mean residual energy inside the hotspot window
+     * @param backgroundMean Mean residual energy outside the hotspot window
+     * @param zScore Spatial concentration Z-score: (windowMean - backgroundMean) / backgroundStd
+     */
+    data class HotspotRoi(
+        val gridRow0: Int,
+        val gridCol0: Int,
+        val gridRow1: Int,
+        val gridCol1: Int,
+        val normX0: Float,
+        val normY0: Float,
+        val normX1: Float,
+        val normY1: Float,
+        val windowMean: Float,
+        val backgroundMean: Float,
+        val zScore: Float,
+    )
+
+    /**
+     * Locates the most concentrated spatial anomaly window (default 8x8 cells = 25%x25% area)
+     * on the residual heatmap and measures its statistical separation (Z-score) from the
+     * surrounding background.
+     */
+    fun extractHotspotBoundingBox(
+        heatmap: FloatArray,
+        gridSize: Int = GRID_SIZE,
+        windowCells: Int = 8,
+    ): HotspotRoi? {
+        if (heatmap.size != gridSize * gridSize || gridSize < 4) return null
+        val win = windowCells.coerceIn(2, gridSize / 2)
+        val totalCells = heatmap.size
+        val winCount = win * win
+        val bgCount = totalCells - winCount
+        if (bgCount <= 1) return null
+
+        var totalSum = 0.0
+        var totalSumSq = 0.0
+        for (v in heatmap) {
+            val d = v.toDouble()
+            totalSum += d
+            totalSumSq += d * d
+        }
+
+        var bestR = 0
+        var bestC = 0
+        var bestWinSum = -1.0
+        var bestWinSumSq = 0.0
+
+        for (r0 in 0..(gridSize - win)) {
+            for (c0 in 0..(gridSize - win)) {
+                var wSum = 0.0
+                var wSumSq = 0.0
+                for (r in r0 until (r0 + win)) {
+                    val rowOffset = r * gridSize
+                    for (c in c0 until (c0 + win)) {
+                        val d = heatmap[rowOffset + c].toDouble()
+                        wSum += d
+                        wSumSq += d * d
+                    }
+                }
+                if (wSum > bestWinSum) {
+                    bestWinSum = wSum
+                    bestWinSumSq = wSumSq
+                    bestR = r0
+                    bestC = c0
+                }
+            }
+        }
+
+        val winMean = (bestWinSum / winCount).toFloat()
+        val bgSum = totalSum - bestWinSum
+        val bgSumSq = totalSumSq - bestWinSumSq
+        val bgMean = bgSum / bgCount
+        val bgVar = max(0.0, (bgSumSq / bgCount) - (bgMean * bgMean))
+        val bgStd = sqrt(bgVar)
+        val delta = winMean - bgMean.toFloat()
+        val zScore = if (kotlin.math.abs(delta) < 1e-4f) {
+            0f
+        } else {
+            (delta / max(bgStd, 0.05).toFloat())
+        }
+
+        return HotspotRoi(
+            gridRow0 = bestR,
+            gridCol0 = bestC,
+            gridRow1 = bestR + win,
+            gridCol1 = bestC + win,
+            normX0 = bestC.toFloat() / gridSize,
+            normY0 = bestR.toFloat() / gridSize,
+            normX1 = (bestC + win).toFloat() / gridSize,
+            normY1 = (bestR + win).toFloat() / gridSize,
+            windowMean = winMean,
+            backgroundMean = bgMean.toFloat(),
+            zScore = zScore,
+        )
+    }
+
     private fun getLuma(rgb: Int): Float {
         val r = (rgb shr 16) and 0xFF
         val g = (rgb shr 8) and 0xFF

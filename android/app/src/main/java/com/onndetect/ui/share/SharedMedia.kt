@@ -25,6 +25,7 @@ object SharedMediaResolver {
 
     const val MODE_IMAGE = "IMAGE_ONLY"
     const val MODE_AUDIO = "AUDIO_ONLY"
+    const val MODE_VIDEO = "VIDEO_ONLY"
 
     private const val CONTENT_SCHEME = "content://"
 
@@ -73,6 +74,7 @@ object SharedMediaResolver {
         return when {
             type != null && type.isNotEmpty() && type.startsWith("image/") -> MODE_IMAGE
             type != null && type.isNotEmpty() && type.startsWith("audio/") -> MODE_AUDIO
+            type != null && type.isNotEmpty() && type.startsWith("video/") -> MODE_VIDEO
             type != null && type.isNotEmpty() -> null
             else -> modeFromExtension(uri)
         }
@@ -87,6 +89,7 @@ object SharedMediaResolver {
         return when {
             IMAGE_EXTENSIONS.any { path.endsWith(it) } -> MODE_IMAGE
             AUDIO_EXTENSIONS.any { path.endsWith(it) } -> MODE_AUDIO
+            VIDEO_EXTENSIONS.any { path.endsWith(it) } -> MODE_VIDEO
             else -> null
         }
     }
@@ -96,5 +99,8 @@ object SharedMediaResolver {
     )
     private val AUDIO_EXTENSIONS = listOf(
         ".wav", ".mp3", ".m4a", ".aac", ".ogg", ".opus", ".flac", ".amr", ".3ga",
+    )
+    private val VIDEO_EXTENSIONS = listOf(
+        ".mp4", ".mov", ".webm", ".mkv", ".avi", ".3gp", ".m4v",
     )
 }

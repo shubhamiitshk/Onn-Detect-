@@ -10,8 +10,42 @@ import org.json.JSONObject
 
 /** Square RGB float32 preprocessing sized and routed from the model's declared frontend_id contract. */
 class SRMForensicAnalyzer(private val context: Context, private val engine: LiteRTInferenceEngine) {
-    companion object { const val MODEL_FILE = "srm_forensic_cnn_int8.tflite" }
-    fun analyze(bitmap: Bitmap, checkStop: () -> Unit = {}): Float {
+    companion object {
+        const val MODEL_FILE = "srm_forensic_cnn_int8.tflite"
+
+        /**
+         * Combines rich-texture and poor-texture PatchCraft mosaic SRM scores:
+         * 1. Portrait-Mode Bokeh Guard: When `poorScore < 0.20` (authentic camera thermal noise floor in
+         *    smooth background) while `richScore` is moderately elevated (`0.40..0.72` due to ISP edge
+         *    sharpening) and `contrast > 0.35`, dampens the sharpening spike by 15% of the contrast.
+         * 2. Co-Synthetic Diffusion Reinforcement: When both `richScore > 0.48` and `poorScore > 0.48`
+         *    (VAE upsampler periodicity present in both textured and flat regions), reinforces the score.
+         */
+        fun computeContrastCalibratedScore(richScore: Float, poorScore: Float): Float {
+            if (!richScore.isFinite()) return richScore
+            if (!poorScore.isFinite() || poorScore !in 0f..1f) return richScore.coerceIn(0f, 1f)
+            val contrast = richScore - poorScore
+            return when {
+                poorScore < 0.20f && richScore in 0.40f..0.72f && contrast > 0.35f ->
+                    (richScore - 0.15f * contrast).coerceIn(0f, 1f)
+                richScore > 0.48f && poorScore > 0.48f ->
+                    (0.75f * richScore + 0.25f * maxOf(richScore, poorScore)).coerceIn(0f, 1f)
+                else -> richScore.coerceIn(0f, 1f)
+            }
+        }
+    }
+
+    data class SrmDetailedResult(
+        val effectiveScore: Float,
+        val richScore: Float,
+        val poorScore: Float = Float.NaN,
+        val richPoorContrast: Float = Float.NaN,
+    )
+
+    fun analyze(bitmap: Bitmap, checkStop: () -> Unit = {}): Float =
+        analyzeDetailed(bitmap, checkStop).effectiveScore
+
+    fun analyzeDetailed(bitmap: Bitmap, checkStop: () -> Unit = {}): SrmDetailedResult {
         checkStop()
         require(!bitmap.isRecycled && bitmap.width > 1 && bitmap.height > 1) { "Invalid image" }
         val contract = engine.contract(MODEL_FILE)
@@ -25,31 +59,52 @@ class SRMForensicAnalyzer(private val context: Context, private val engine: Lite
         val size = shape[1]
         val legacyBilinearId = "rgb-exif-srgb-whitealpha-pow2cap1024-bilinear-square-v2-size${size}-float32"
         val mosaicId = "${legacyBilinearId}-patchcraft-mosaic-tile32"
-        val scaled: Bitmap = when (frontendId) {
+
+        fun scoreScaledBitmap(scaled: Bitmap): Float {
+            val pixels = IntArray(size * size)
+            try { scaled.getPixels(pixels, 0, size, 0, 0, size, size) }
+            finally { if (scaled !== bitmap) scaled.recycle() }
+            // Per-request ownership: another scan cannot overwrite this input.
+            val input = ByteBuffer.allocateDirect(contract.inputBytes).order(ByteOrder.nativeOrder())
+            for (c in pixels) {
+                input.putFloat((c shr 16 and 255) / 255f)
+                input.putFloat((c shr 8 and 255) / 255f)
+                input.putFloat((c and 255) / 255f)
+            }
+            input.flip()
+            return engine.predict(MODEL_FILE, input, checkStop)
+        }
+
+        return when (frontendId) {
             mosaicId -> {
                 val tile = if (size >= 64 && size % 32 == 0) 32 else maxOf(8, size / 4)
                 val pair = PhaseSpectrumAndPatchCraftAndroid.extractPatchCraftMosaics(bitmap, mosaicSize = size, tileSize = tile)
-                pair.poorMosaic.recycle()
-                pair.richMosaic
+                val richScore = try {
+                    scoreScaledBitmap(pair.richMosaic)
+                } catch (t: Throwable) {
+                    pair.poorMosaic.recycle()
+                    throw t
+                }
+                val poorScore = runCatching { scoreScaledBitmap(pair.poorMosaic) }.getOrDefault(Float.NaN)
+                val contrast = if (poorScore.isFinite()) richScore - poorScore else Float.NaN
+                val effective = computeContrastCalibratedScore(richScore, poorScore)
+                SrmDetailedResult(
+                    effectiveScore = effective,
+                    richScore = richScore,
+                    poorScore = poorScore,
+                    richPoorContrast = contrast,
+                )
             }
-            legacyBilinearId -> Bitmap.createScaledBitmap(bitmap, size, size, true)
+            legacyBilinearId -> {
+                val s = scoreScaledBitmap(Bitmap.createScaledBitmap(bitmap, size, size, true))
+                SrmDetailedResult(effectiveScore = s, richScore = s)
+            }
             else -> {
                 requireModelContract(false) { "Unsupported SRM frontend_id: $frontendId" }
-                Bitmap.createScaledBitmap(bitmap, size, size, true)
+                val s = scoreScaledBitmap(Bitmap.createScaledBitmap(bitmap, size, size, true))
+                SrmDetailedResult(effectiveScore = s, richScore = s)
             }
         }
-        val pixels = IntArray(size * size)
-        try { scaled.getPixels(pixels, 0, size, 0, 0, size, size) }
-        finally { if (scaled !== bitmap) scaled.recycle() }
-        // Per-request ownership: another scan cannot overwrite this input.
-        val input = ByteBuffer.allocateDirect(contract.inputBytes).order(ByteOrder.nativeOrder())
-        for (c in pixels) {
-            input.putFloat((c shr 16 and 255) / 255f)
-            input.putFloat((c shr 8 and 255) / 255f)
-            input.putFloat((c and 255) / 255f)
-        }
-        input.flip()
-        return engine.predict(MODEL_FILE, input, checkStop)
     }
 }
 

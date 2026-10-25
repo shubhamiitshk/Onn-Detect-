@@ -123,30 +123,41 @@ class BioLipLandmarkAnalyzer(private val context: Context) {
             )
         }
 
-        val jitterScore = PerioralLandmarkAnalyzer.computeJitterScore(landmarks)
+        val rawJitterScore = PerioralLandmarkAnalyzer.computeJitterScore(landmarks)
+        val rppgAnomaly = PerioralLandmarkAnalyzer.computeRppgBilateralPhaseAnomaly(frames, landmarks)
+        val jitterScore = when {
+            rawJitterScore.isFinite() && rppgAnomaly.isFinite() ->
+                (0.72f * rawJitterScore + 0.28f * rppgAnomaly).coerceIn(0f, 1f)
+            rawJitterScore.isFinite() -> rawJitterScore
+            rppgAnomaly.isFinite() -> rppgAnomaly
+            else -> Float.NaN
+        }
         val marSeries = PerioralLandmarkAnalyzer.extractMarSeries(landmarks)
         val hasFace = landmarks.any { it != null && it.size > 415 }
 
         return BioLipResult(
             landmarkJitter = jitterScore,
             hasFace = hasFace,
-            notes = if (hasFace) "BioLip analysis complete" else "No face detected in frames",
-            marSeries = marSeries
+            notes = if (hasFace) "BioLip + rPPG bilateral phase analysis complete" else "No face detected in frames",
+            marSeries = marSeries,
+            rppgPhaseAnomaly = rppgAnomaly,
         )
     }
 }
 
 /**
- * Result of BioLip lip-sync analysis.
+ * Result of BioLip lip-sync and bilateral malar rPPG analysis.
  *
- * @param landmarkJitter Normalized jitter score in [0, 1], or NaN if unavailable
+ * @param landmarkJitter Normalized jitter + rPPG phase anomaly score in [0, 1], or NaN if unavailable
  * @param hasFace Whether a face was detected in the frames
  * @param notes Diagnostic notes about the analysis
  * @param marSeries Per-frame Mouth Aspect Ratio sequence for AVFF synchrony correlation
+ * @param rppgPhaseAnomaly Bilateral malar rPPG chromaticity phase desynchronization score in [0, 1]
  */
 data class BioLipResult(
     val landmarkJitter: Float,
     val hasFace: Boolean,
     val notes: String?,
-    val marSeries: FloatArray = FloatArray(0)
+    val marSeries: FloatArray = FloatArray(0),
+    val rppgPhaseAnomaly: Float = Float.NaN,
 )
