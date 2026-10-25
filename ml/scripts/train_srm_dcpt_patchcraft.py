@@ -129,17 +129,18 @@ def extract_patchcraft_mosaic(
     arr = np.asarray(rgb, dtype=np.int32)
     luma = (arr[..., 0] * 299 + arr[..., 1] * 587 + arr[..., 2] * 114) // 1000
 
-    tiles: list[tuple[int, int, int]] = []
     n_rows = h // tile_size
     n_cols = w // tile_size
-    for ry in range(n_rows):
-        y0 = ry * tile_size
-        for cx in range(n_cols):
-            x0 = cx * tile_size
-            patch = luma[y0 : y0 + tile_size, x0 : x0 + tile_size]
-            gx = int(np.abs(patch[:, 1:] - patch[:, :-1]).sum())
-            gy = int(np.abs(patch[1:, :] - patch[:-1, :]).sum())
-            tiles.append((gx + gy, y0, x0))
+    cropped_luma = luma[: n_rows * tile_size, : n_cols * tile_size]
+    blocks = cropped_luma.reshape(n_rows, tile_size, n_cols, tile_size)
+    gx_grid = np.abs(blocks[:, :, :, 1:] - blocks[:, :, :, :-1]).sum(axis=(1, 3))
+    gy_grid = np.abs(blocks[:, 1:, :, :] - blocks[:, :-1, :, :]).sum(axis=(1, 3))
+    energy_grid = (gx_grid + gy_grid).tolist()
+    tiles: list[tuple[int, int, int]] = [
+        (int(energy_grid[ry][cx]), ry * tile_size, cx * tile_size)
+        for ry in range(n_rows)
+        for cx in range(n_cols)
+    ]
 
     if select == "poor":
         ordered = sorted(tiles, key=lambda item: (item[0], item[1], item[2]))
