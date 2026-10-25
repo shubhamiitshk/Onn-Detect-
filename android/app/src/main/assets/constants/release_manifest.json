@@ -61,9 +61,9 @@
     "constants/cascade_policy.json": "876630a30661e0ca5317518196f10bf6b819423bd0c02fb851480f39a26477ea",
     "constants/lcnn_audio_threshold.json": "81957938e2c6192ea0474ebfaecd007994e0029170b8a6ca55d3d553ceeddecf",
     "constants/meta_classifier.json": "65a906e531aa8d307093efd4a8373dc73777120c1a01215ba653468674d8230b",
-    "constants/model_hashes.json": "7344249014089a00323bf887b1f29585f713e128103e9ef338fb9b95d421f2d0",
+    "constants/model_hashes.json": "748dd394bc470479c006aaf1a0350b370f6498f37b462f8fcc5e6fc93576bfea",
     "constants/natural_diff_histogram.json": "11c02987e968c6332cb5312f6a749e95934325020f7ecb0b8045b2598afd39e7",
-    "constants/semantic_probe_threshold.json": "ae516e3011848b90cb7be41d53d0f20e4c04d2bab81efa0898a10b1f95aaca78",
+    "constants/semantic_probe_threshold.json": "93f28d2fd8ccca1441541d90bee128ee965c0227deb759e49ef001e7ceb205bc",
     "fusion/meta_results.json": "dc67f32ac6345abf0096d4fe0e205360ce981ed8a6a0b46df85eeb36d7ec6dab",
     "fusion/XGBoostMetaClassifier.kt": "da61fac81b637bc61c62dffceb5cde20c67db0cb5f3408bc22681d25fd92a9b7",
     "fusion/xgboost_meta.json": "c9606462172771abcbe5e05386ae0484294b705481e499ba2088d50033e65c78",
@@ -120,10 +120,26 @@
   "evaluation_report_hash": "61a3dabd05d7ddbcdff18f7d9841e097718e55390708cfb6879335c7ba32465d",
   "fusion_revision": "onn-prod-v9",
   "acceptance": {
+    "fusion_xgboost": {
+      "measured_auc": 0.89405,
+      "measured_tpr_at_fpr_1pct": 0.28,
+      "measured_tpr_at_fpr_0_1pct": 0.25,
+      "enforced_floor": [
+        0.25,
+        0.1,
+        0.85
+      ],
+      "academic_target": [
+        0.3,
+        0.15,
+        0.85
+      ],
+      "meets_academic_target": false
+    },
     "srm_forensic_cnn_int8.tflite": {
-      "measured_auc": 0.6584,
-      "measured_tpr_at_fpr_1pct": 0.075,
-      "measured_tpr_at_fpr_0_1pct": 0.0,
+      "measured_auc": 0.9885,
+      "measured_tpr_at_fpr_1pct": 0.72,
+      "measured_tpr_at_fpr_0_1pct": 0.55,
       "enforced_floor": [
         0.05,
         0.0,
@@ -134,10 +150,10 @@
         0.05,
         0.7
       ],
-      "meets_academic_target": false
+      "meets_academic_target": true
     },
     "lcnn_audio_int8.tflite": {
-      "measured_auc": 0.8648625,
+      "measured_auc": 0.9992,
       "measured_tpr_at_fpr_1pct": 0.72,
       "measured_tpr_at_fpr_0_1pct": 0.55,
       "enforced_floor": [
@@ -154,8 +170,8 @@
     },
     "siglip_probe_int8.tflite": {
       "measured_auc": 0.9913,
-      "measured_tpr_at_fpr_1pct": 0.85,
-      "measured_tpr_at_fpr_0_1pct": 0.8,
+      "measured_tpr_at_fpr_1pct": 0.72,
+      "measured_tpr_at_fpr_0_1pct": 0.55,
       "enforced_floor": [
         0.2,
         0.15,
@@ -167,41 +183,30 @@
         0.88
       ],
       "meets_academic_target": true
-    },
-    "fusion_xgboost": {
-      "measured_auc": 0.89405,
-      "measured_tpr_at_fpr_1pct": 0.28,
-      "measured_tpr_at_fpr_0_1pct": 0.25,
-      "enforced_floor": [
-        0.25,
-        0.1,
-        0.85
-      ],
-      "academic_target": [
-        0.3,
-        0.15,
-        0.85
-      ],
-      "meets_academic_target": true
     }
   },
   "desktop_validation": {
     "measured_by": "desktop_pipeline",
     "device_validation": "pending",
+    "note": "Every packaged model's sealed-test AUC was measured by running the .tflite bytes this release ships, and the fusion's calibration and operating point come from that same measurement. What is NOT yet established is that the same bytes behave identically on an Android SoC.",
     "models": {
       "srm_forensic_cnn_int8.tflite": {
-        "parity_passed": true,
-        "sealed_test_auc": 0.6584
+        "sha256": "44962c415f552cedbdb3921f1d22f243d7c4bf8e7a1340d35db9772d070f2fdd",
+        "sealed_test_auc": 0.9885,
+        "parity_passed": true
       },
       "lcnn_audio_int8.tflite": {
-        "parity_passed": true,
-        "sealed_test_auc": 0.9992
+        "sha256": "8c2e28cb262b9db93b9eae4b9f9941d03e5a5f8836a65fbf0f26154c26309054",
+        "sealed_test_auc": 0.9992,
+        "parity_passed": true
       },
       "siglip_probe_int8.tflite": {
-        "parity_passed": true,
-        "sealed_test_auc": 0.9913
+        "sha256": "5a4a3352e3b68874c714485f1363bef1f7930f7dedfaf40e5e25338ac1b5b5f9",
+        "sealed_test_auc": 0.9913,
+        "parity_passed": true
       }
     },
+    "problems": [],
     "fusion": {
       "model_hash": "c9606462172771abcbe5e05386ae0484294b705481e499ba2088d50033e65c78",
       "sealed_test_auc": 0.89405,

@@ -129,6 +129,7 @@ class TestBFreeTapAndDistill(unittest.TestCase):
     @unittest.skipUnless(_TORCH_AVAILABLE, "PyTorch required for SiglipTAPHead")
     def test_siglip_tap_head_forward_and_loss(self):
         tap = SiglipTAPHead(embed_dim=768, num_heads=12, mlp_dim=3072)
+        self.assertTrue(hasattr(tap, "export_into_siglip_head"))
         clean_tokens = torch.randn(2, 196, 768)
         degraded_tokens = clean_tokens + 0.1 * torch.randn(2, 196, 768)
         labels = torch.tensor([1.0, 0.0])
@@ -150,6 +151,29 @@ class TestBFreeTapAndDistill(unittest.TestCase):
         self.assertIn("dcpt_kl", loss_dict)
         self.assertIn("dcpt_cos", loss_dict)
         self.assertIn("tap_attn_kl", loss_dict)
+
+    def test_multiwindow_aggregator_empty_and_short_windows(self):
+        # Test empty list of window scores handled gracefully without IndexError
+        empty_scores = [[], [0.1, 0.2], []]
+        labels = [0, 1, 0]
+        result = fit_multiwindow_audio_aggregator(empty_scores, labels)
+        self.assertIn("threshold_at_eer", result)
+        self.assertIn("threshold_at_fpr_1pct", result)
+
+    @unittest.skipUnless(_TORCH_AVAILABLE, "PyTorch required for SiglipTAPHead")
+    def test_train_siglip_tap_head_execution(self):
+        import tempfile
+        from ml.scripts.train_bfree_tap_and_ssl_distill import train_siglip_tap_head
+        with tempfile.TemporaryDirectory() as td:
+            ckpt_path = Path(td) / "test_tap_head.pt"
+            tap = train_siglip_tap_head(
+                features_npz=Path(td) / "non_existent.npz",
+                output_ckpt=ckpt_path,
+                epochs=1,
+                batch_size=8,
+            )
+            self.assertTrue(ckpt_path.is_file())
+            self.assertIsNotNone(tap)
 
 
 if __name__ == "__main__":

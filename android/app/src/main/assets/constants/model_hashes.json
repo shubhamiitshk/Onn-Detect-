@@ -2,7 +2,7 @@
   "algorithm": "sha256",
   "models": {
     "srm_forensic_cnn_int8.tflite": "44962c415f552cedbdb3921f1d22f243d7c4bf8e7a1340d35db9772d070f2fdd",
-    "siglip_probe_int8.tflite": "5a4a3352e3b68874c714485f1363bef1f7930f7dedfaf40e5e25338ac1b5b5f9",
-    "lcnn_audio_int8.tflite": "8c2e28cb262b9db93b9eae4b9f9941d03e5a5f8836a65fbf0f26154c26309054"
+    "lcnn_audio_int8.tflite": "8c2e28cb262b9db93b9eae4b9f9941d03e5a5f8836a65fbf0f26154c26309054",
+    "siglip_probe_int8.tflite": "5a4a3352e3b68874c714485f1363bef1f7930f7dedfaf40e5e25338ac1b5b5f9"
   }
 }

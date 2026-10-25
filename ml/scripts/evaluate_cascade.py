@@ -94,11 +94,31 @@ def _predict(booster, X: np.ndarray, base_margin_mode: str = "probe") -> np.ndar
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--fusion-dir", required=True, help="Directory written by train_xgboost_meta.py")
+    parser.add_argument("--fusion-dir", default=None, help="Directory written by train_xgboost_meta.py")
+    parser.add_argument("--config", default=None, help="Optional config YAML to locate fusion directory")
     parser.add_argument("--output", default=None, help="Optional path for the JSON report")
     args = parser.parse_args()
 
-    fusion_dir = Path(args.fusion_dir).resolve()
+    fusion_dir = None
+    if args.fusion_dir:
+        fusion_dir = Path(args.fusion_dir).resolve()
+    elif args.config:
+        cfg_path = Path(args.config).resolve()
+        candidates = [
+            cfg_path.parent / "exported",
+            Path("release_v9/fusion").resolve(),
+            Path("fusion").resolve(),
+        ]
+        for c in candidates:
+            if (c / "meta_features_cache.npz").is_file():
+                fusion_dir = c
+                break
+    if fusion_dir is None:
+        if Path("release_v9/fusion/meta_features_cache.npz").is_file():
+            fusion_dir = Path("release_v9/fusion").resolve()
+        else:
+            raise SystemExit("Missing --fusion-dir or --config pointing to a directory with meta_features_cache.npz")
+
     cache_path = fusion_dir / "meta_features_cache.npz"
     if not cache_path.is_file():
         raise SystemExit(f"Missing {cache_path}; run train_xgboost_meta.py first")

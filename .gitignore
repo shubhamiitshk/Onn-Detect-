@@ -30,4 +30,5 @@ ml/resolved-requirements.txt
 ml/export/
 release_models/
 release_v9/
+exported/
 

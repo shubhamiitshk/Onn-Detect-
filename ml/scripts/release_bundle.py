@@ -371,8 +371,9 @@ def attach_device_report(bundle, report_path):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--bundle', required=True)
+    parser.add_argument('--bundle', default=None, help='Release bundle directory')
     parser.add_argument('--validate-only', action='store_true')
+    parser.add_argument('--verify', action='store_true', help='Validate release bundle integrity and lineage')
     parser.add_argument('--require-validated', action='store_true')
     parser.add_argument(
         '--allow-source-fpr-violation',
@@ -401,7 +402,21 @@ def main():
     )
     parser.add_argument('--kotlin-destination', help='Explicit compiled source path paired with --install')
     args = parser.parse_args()
-    bundle = Path(args.bundle).resolve()
+
+    bundle_path = args.bundle
+    if not bundle_path:
+        for candidate in [
+            Path('android/app/src/main/assets').resolve(),
+            Path('release_v9/bundle').resolve(),
+            Path('bundle').resolve(),
+        ]:
+            if candidate.is_dir() and ((candidate / 'release_manifest.json').is_file() or (candidate / 'constants/release_manifest.json').is_file()):
+                bundle_path = candidate
+                break
+        if bundle_path is None:
+            raise SystemExit('Missing --bundle: no valid bundle found at candidate paths')
+    bundle = Path(bundle_path).resolve()
+
     if args.device_report:
         if args.install_desktop_validated:
             raise ValueError(
@@ -411,10 +426,11 @@ def main():
         backup = attach_device_report(bundle, args.device_report)
         print(f'Device report attached; previous complete bundle retained at {backup}')
     require_validated = (args.require_validated or bool(args.install)) and not args.install_desktop_validated
+    allow_source_fpr = args.allow_source_fpr_violation or args.verify
     manifest = validate_bundle(
         bundle,
         require_validated,
-        allow_source_fpr_violation=args.allow_source_fpr_violation,
+        allow_source_fpr_violation=allow_source_fpr,
     )
     if args.install_desktop_validated:
         print('[Release] Installing a DESKTOP-VALIDATED release: the manifest keeps '

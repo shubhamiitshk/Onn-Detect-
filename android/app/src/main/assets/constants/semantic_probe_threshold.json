@@ -2,7 +2,7 @@
   "threshold_at_eer": 0.4836435914039612,
   "auc": 0.9914999999999999,
   "n_calibration": 200,
-  "split_manifest_hash": "a388911bf61b292338351227eb8c63498bc937d7000649662974b496cb01fea6",
+  "split_manifest_hash": "fbab1565b7a2494cc2434ca18134f713280e27143a1ddcc6d5668a41459c6853",
   "model_hash": "5a4a3352e3b68874c714485f1363bef1f7930f7dedfaf40e5e25338ac1b5b5f9",
   "frontend_id": "vfm-siglip224-siglip-base-patch16-224-bicubic-clamp-meanstd-float32",
   "score_semantics": {

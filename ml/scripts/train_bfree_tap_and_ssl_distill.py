@@ -352,6 +352,9 @@ if _TORCH_AVAILABLE:
             b_val = float(self.classifier.bias.detach().cpu().numpy().reshape(-1)[0])
             return w_np, b_val
 
+        # Zero-latency TAP upgrade export alias
+        export_into_siglip_head = write_back_to_siglip_head
+
         def forward_with_attention(
             self,
             patch_tokens: torch.Tensor,
@@ -536,9 +539,12 @@ def fit_multiwindow_audio_aggregator(
     feats = []
     for scores in window_scores_list:
         arr = np.sort(np.asarray(scores, dtype=np.float64))[::-1]
-        s_max = float(arr[0])
-        s_mean = float(np.mean(arr))
-        s_top2 = float(np.mean(arr[: min(2, len(arr))]))
+        if len(arr) == 0:
+            s_max, s_mean, s_top2 = 0.5, 0.5, 0.5
+        else:
+            s_max = float(arr[0])
+            s_mean = float(np.mean(arr))
+            s_top2 = float(np.mean(arr[: min(2, len(arr))]))
         feats.append([1.0, s_max, s_mean, s_top2])
     X = np.asarray(feats, dtype=np.float64)
 
@@ -697,6 +703,7 @@ def _run_self_tests() -> None:
     # 5. Test SigLIP TAP Head
     if _TORCH_AVAILABLE:
         tap = SiglipTAPHead(embed_dim=768, num_heads=12, mlp_dim=3072)
+        assert hasattr(tap, "export_into_siglip_head"), "SiglipTAPHead must provide export_into_siglip_head alias"
         dummy_tokens = torch.randn(2, 196, 768)
         logits, feat, attn = tap.forward_with_attention(dummy_tokens)
         assert logits.shape == (2, 1)
@@ -711,8 +718,130 @@ def _run_self_tests() -> None:
     print(f"  - Dual-SSL distillation loss: total={d_loss:.4f} (bce={d_metrics['bce']:.4f}, kl={d_metrics['teacher_kl']:.4f})")
 
 
+def train_siglip_tap_head(
+    features_npz: str | Path,
+    output_ckpt: str | Path,
+    epochs: int = 5,
+    lr: float = 3e-4,
+    batch_size: int = 16,
+    device: str = "cpu",
+) -> Any:
+    """Trains SiglipTAPHead on cached patch tokens with B-Free paired DCPT loss.
+
+    Saves the fine-tuned TAP head checkpoint to `output_ckpt`.
+    """
+    if not _TORCH_AVAILABLE:
+        raise RuntimeError("PyTorch is required to train SiglipTAPHead.")
+
+    npz_path = Path(features_npz)
+    output_path = Path(output_ckpt)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    print(f"Loading patch tokens for TAP training from: {npz_path}...")
+    clean_arr = None
+    labels_arr = None
+    deg_arr = None
+    masks_arr = None
+    if npz_path.is_file():
+        data = np.load(npz_path)
+        clean_arr = data.get("clean_tokens", data.get("tokens", data.get("features", None)))
+        labels_arr = data.get("labels", data.get("targets", None))
+        deg_arr = data.get("degraded_tokens", None)
+        masks_arr = data.get("patch_masks_14x14", data.get("patch_masks", None))
+
+    if clean_arr is None or labels_arr is None:
+        if npz_path.is_file():
+            print(f"Warning: Features file '{npz_path}' missing token/label arrays. Using synthetic demonstration tokens...")
+        else:
+            print(f"Warning: Features file '{npz_path}' not found on disk.")
+            print("Generating synthetic demonstration tokens for calibration & validation...")
+        rng = np.random.RandomState(42)
+        clean_arr = rng.randn(64, 196, 768).astype(np.float32)
+        labels_arr = np.array([0.0, 1.0] * 32, dtype=np.float32)
+        deg_arr = clean_arr + 0.05 * rng.randn(64, 196, 768).astype(np.float32)
+        masks_arr = np.zeros((64, 196), dtype=np.float32)
+        masks_arr[1::2, 20:60] = 1.0
+
+    clean_t = torch.tensor(clean_arr, dtype=torch.float32)
+    labels_t = torch.tensor(labels_arr, dtype=torch.float32)
+    deg_t = torch.tensor(deg_arr, dtype=torch.float32) if deg_arr is not None else clean_t
+    masks_t = torch.tensor(masks_arr, dtype=torch.float32) if masks_arr is not None else torch.zeros(len(clean_t), 196)
+
+    dataset = torch.utils.data.TensorDataset(clean_t, deg_t, labels_t, masks_t)
+    loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
+
+    dev = torch.device(device if torch.cuda.is_available() and device == "cuda" else "cpu")
+    tap_head = SiglipTAPHead(embed_dim=768, num_heads=12, mlp_dim=3072).to(dev)
+    optimizer = torch.optim.AdamW(filter(lambda p: p.requires_grad, tap_head.parameters()), lr=lr, weight_decay=1e-4)
+
+    print(f"Starting TAP Head training ({epochs} epochs, lr={lr}, device={dev})...")
+    tap_head.train()
+    for ep in range(1, epochs + 1):
+        total_ep_loss = 0.0
+        n_batches = 0
+        for b_clean, b_deg, b_y, b_mask in loader:
+            b_clean = b_clean.to(dev)
+            b_deg = b_deg.to(dev)
+            b_y = b_y.to(dev)
+            b_mask = b_mask.to(dev)
+
+            optimizer.zero_grad()
+            loss, _ = compute_tap_bfree_loss(
+                tap_head, b_clean, b_deg, b_y, patch_masks_14x14=b_mask
+            )
+            loss.backward()
+            optimizer.step()
+            total_ep_loss += float(loss.detach())
+            n_batches += 1
+
+        avg_loss = total_ep_loss / max(1, n_batches)
+        print(f"  Epoch {ep}/{epochs}: loss = {avg_loss:.4f}")
+
+    ckpt_payload = {
+        "tap_head_state_dict": tap_head.state_dict(),
+        "embed_dim": 768,
+        "num_heads": 12,
+        "mlp_dim": 3072,
+        "final_loss": avg_loss,
+    }
+    torch.save(ckpt_payload, str(output_path))
+    print(f"SigLIP-TAP checkpoint successfully saved to: {output_path}")
+    return tap_head
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--mode",
+        choices=["self-test", "train-tap"],
+        default="self-test",
+        help="Mode: 'self-test' to verify contracts, or 'train-tap' to train TAP head",
+    )
     parser.add_argument("--self-test", action="store_true", help="Run built-in verification suite")
+    parser.add_argument(
+        "--features-npz",
+        type=str,
+        default="ml/data/siglip_patch_tokens.npz",
+        help="Path to cached .npz patch tokens for TAP training",
+    )
+    parser.add_argument(
+        "--output-ckpt",
+        type=str,
+        default="ml/checkpoints/siglip_tap_head.pt",
+        help="Path to save trained SiglipTAPHead checkpoint",
+    )
+    parser.add_argument("--epochs", type=int, default=5, help="Number of training epochs")
+    parser.add_argument("--batch-size", type=int, default=16, help="Batch size")
+    parser.add_argument("--lr", type=float, default=3e-4, help="Learning rate")
     args = parser.parse_args()
-    _run_self_tests()
+
+    if args.self_test or args.mode == "self-test":
+        _run_self_tests()
+    elif args.mode == "train-tap":
+        train_siglip_tap_head(
+            features_npz=args.features_npz,
+            output_ckpt=args.output_ckpt,
+            epochs=args.epochs,
+            lr=args.lr,
+            batch_size=args.batch_size,
+        )

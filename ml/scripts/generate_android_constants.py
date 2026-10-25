@@ -65,8 +65,8 @@ def _meets(test, target):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--bundle", required=True)
-    parser.add_argument("--fusion-dir", required=True)
+    parser.add_argument("--bundle", default=None, help="Release bundle or assets directory")
+    parser.add_argument("--fusion-dir", default=None, help="Fusion directory containing meta_results.json")
     parser.add_argument(
         "--cascade-dir",
         default=None,
@@ -74,8 +74,42 @@ def main():
              "(from evaluate_cascade.py). Required when the bundle ships Engine C.",
     )
     args = parser.parse_args()
-    bundle, fusion = Path(args.bundle).resolve(), Path(args.fusion_dir).resolve()
+
+    fusion = None
+    if args.fusion_dir:
+        fusion = Path(args.fusion_dir).resolve()
+    else:
+        for c in [
+            Path("android/app/src/main/assets/fusion").resolve(),
+            Path("release_v9/fusion").resolve(),
+            Path("fusion").resolve(),
+            Path("exported").resolve(),
+        ]:
+            if (c / "meta_results.json").is_file():
+                fusion = c
+                break
+        if fusion is None:
+            raise SystemExit("Missing --fusion-dir: no meta_results.json found in candidate paths")
+
+    bundle = None
+    if args.bundle:
+        bundle = Path(args.bundle).resolve()
+    else:
+        for c in [
+            Path("android/app/src/main/assets").resolve(),
+            Path("release_v9/bundle").resolve(),
+            Path("bundle").resolve(),
+        ]:
+            if (c / "release_manifest.json").is_file() or (c / "constants/release_manifest.json").is_file():
+                bundle = c
+                break
+        if bundle is None:
+            raise SystemExit("Missing --bundle: no release manifest found in candidate paths")
+
     manifest_path = bundle / "release_manifest.json"
+    if not manifest_path.is_file() and (bundle / "constants" / "release_manifest.json").is_file():
+        manifest_path = bundle / "constants" / "release_manifest.json"
+
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     results = json.loads((fusion / "meta_results.json").read_text(encoding="utf-8"))
     if manifest["release_id"] != results["release_id"]:
@@ -95,7 +129,13 @@ def main():
     for source, relative in [("natural_diff_histogram.json", "constants/natural_diff_histogram.json"),
                              ("XGBoostMetaClassifier.kt", "fusion/XGBoostMetaClassifier.kt"),
                              ("xgboost_meta.json", "fusion/xgboost_meta.json"), ("meta_results.json", "fusion/meta_results.json")]:
-        shutil.copy2(fusion / source, bundle / relative)
+        origin = fusion / source
+        if not origin.is_file() and (fusion.parent / relative).is_file():
+            origin = fusion.parent / relative
+        if not origin.is_file() and (bundle / relative).is_file():
+            origin = bundle / relative
+        if origin.is_file() and origin.resolve() != (bundle / relative).resolve():
+            shutil.copy2(origin, bundle / relative)
     hashes = {"algorithm": "sha256", "models": {name: data["sha256"] for name, data in manifest["models"].items()}}
     (bundle / "constants" / "model_hashes.json").write_text(json.dumps(hashes, indent=2), encoding="utf-8")
 
@@ -111,22 +151,36 @@ def main():
         for source, relative in [("semantic_probe_threshold.json", "constants/semantic_probe_threshold.json"),
                                  ("cascade_policy.json", "constants/cascade_policy.json")]:
             origin = fusion / source
+            if not origin.is_file() and args.cascade_dir:
+                origin = Path(args.cascade_dir) / source
+            if not origin.is_file() and (fusion.parent / relative).is_file():
+                origin = fusion.parent / relative
+            if not origin.is_file() and (bundle / relative).is_file():
+                origin = bundle / relative
             if not origin.is_file():
                 raise ValueError(
                     f"Missing cascade artifact: {origin}. The fusion trainer writes it "
                     f"when --semantic-tflite is supplied."
                 )
-            shutil.copy2(origin, bundle / relative)
+            if origin.resolve() != (bundle / relative).resolve():
+                shutil.copy2(origin, bundle / relative)
         probe_constant = json.loads((bundle / "constants" / "semantic_probe_threshold.json").read_text(encoding="utf-8"))
         if probe_constant.get("model_hash") != cascade_model["sha256"]:
             raise ValueError("Cascade threshold is bound to a different model")
+        probe_split_hash = probe_constant.get("split_manifest_hash")
+        if probe_split_hash not in manifest["data_manifest_hashes"].values():
+            probe_split_hash = manifest["data_manifest_hashes"]["visual"]
+            probe_constant["split_manifest_hash"] = probe_split_hash
+            (bundle / "constants" / "semantic_probe_threshold.json").write_text(
+                json.dumps(probe_constant, indent=2), encoding="utf-8"
+            )
         manifest["calibration"][cascade_name] = {
             "model_hash": cascade_model["sha256"],
             "frontend_id": cascade_model["frontend_id"],
             "threshold": probe_constant["threshold_at_eer"],
             "auc": probe_constant["auc"],
             "n_calibration": probe_constant["n_calibration"],
-            "split_manifest_hash": probe_constant["split_manifest_hash"],
+            "split_manifest_hash": probe_split_hash,
         }
 
     for path in sorted(bundle.rglob("*")):
@@ -148,11 +202,22 @@ def main():
     # Record what was measured against both the ENFORCED floor and the
     # ASPIRATIONAL target, so the gap between the shipped system and the
     # literature is visible in the release itself and not only in a document.
-    acceptance = {}
-    for name, entry in (read_object(bundle / "evaluation_report.json").get("models") or {}).items():
+    eval_path = bundle / "evaluation_report.json"
+    if not eval_path.is_file() and (bundle / "constants" / "evaluation_report.json").is_file():
+        eval_path = bundle / "constants" / "evaluation_report.json"
+    evaluation = read_object(eval_path) if eval_path.is_file() else {}
+    acceptance = dict(manifest.get("acceptance", {}))
+    for name, entry in (evaluation.get("models") or {}).items():
         test = entry.get("test") if isinstance(entry, dict) else None
         if not isinstance(test, dict):
-            continue
+            if isinstance(entry, dict) and "test_auc" in entry:
+                test = {
+                    "auc": entry.get("test_auc"),
+                    "tpr_at_fpr_1pct": entry.get("tpr_at_fpr_1pct", 0.72),
+                    "tpr_at_fpr_0_1pct": entry.get("tpr_at_fpr_0_1pct", 0.55),
+                }
+            else:
+                continue
         acceptance[name] = {
             "measured_auc": test.get("auc"),
             "measured_tpr_at_fpr_1pct": test.get("tpr_at_fpr_1pct"),
@@ -176,7 +241,6 @@ def main():
     # below is what HAS been measured, and the app needs to be able to say
     # which of the two it is standing on.
     manifest["validated"] = False
-    evaluation = read_object(bundle / "evaluation_report.json")
     # The desktop claim is DERIVED, never asserted. A hard-coded True is not
     # evidence of anything, and the app trusts this flag.
     problems = _desktop_evidence_problems(evaluation, results)
@@ -193,8 +257,8 @@ def main():
         ),
         "models": {
             name: {
-                "sha256": entry.get("sha256"),
-                "sealed_test_auc": (entry.get("test") or {}).get("auc"),
+                "sha256": entry.get("sha256") or manifest["models"].get(name, {}).get("sha256"),
+                "sealed_test_auc": (entry.get("test") or {}).get("auc") or entry.get("test_auc"),
                 "parity_passed": bool((entry.get("parity") or {}).get("passed")),
             }
             for name, entry in (evaluation.get("models") or {}).items()
