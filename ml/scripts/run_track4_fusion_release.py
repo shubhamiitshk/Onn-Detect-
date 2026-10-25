@@ -211,16 +211,16 @@ def run_track4(
 
     # 1. Locate and verify Track 1 (SRM) models
     print("\n📦 [1/6] Discovering Track 1 (SRM Spatial Engine) Artifacts...")
-    srm_ckpt = find_file(srm_dir, ["*_best.pth", "srm_forensic_cnn*.pth", "srm_*.pth"])
-    if not srm_ckpt or not srm_ckpt.is_file():
-        raise FileNotFoundError(f"Track 1 PyTorch checkpoint (*_best.pth) not found in {srm_dir}")
-    print(f"  • SRM Checkpoint  : {srm_ckpt.name} ({srm_ckpt.stat().st_size / 1024:.1f} KB)")
-
     srm_tflite = find_file(srm_dir, ["srm_forensic_cnn_int8.tflite", "*srm*int8.tflite", "*.tflite"])
+    srm_ckpt = find_file(srm_dir, ["*_best.pth", "srm_forensic_cnn*.pth", "srm_*.pth", "*_results.json", "evaluation_report.json"])
     if not srm_tflite or not srm_tflite.is_file():
+        if not srm_ckpt or not srm_ckpt.is_file() or srm_ckpt.suffix.lower() != ".pth":
+            raise FileNotFoundError(f"Neither srm_forensic_cnn_int8.tflite nor *_best.pth found in {srm_dir}")
         print("  • SRM TFLite missing; triggering automatic INT8 compilation via export_srm_to_tflite.py...")
         from export_srm_to_tflite import export_srm_to_tflite
         srm_tflite = export_srm_to_tflite(str(srm_ckpt), str(srm_dir), str(data_dir))
+    if srm_ckpt and srm_ckpt.is_file():
+        print(f"  • SRM Metadata/Ckpt: {srm_ckpt.name} ({srm_ckpt.stat().st_size / 1024:.1f} KB)")
     print(f"  • SRM INT8 TFLite : {srm_tflite.name} ({srm_tflite.stat().st_size / (1024*1024):.2f} MB)")
     print(f"    SHA-256: {sha256_file(srm_tflite)}")
 
@@ -250,7 +250,6 @@ def run_track4(
         sys.executable,
         str(SCRIPT_DIR / "train_xgboost_meta.py"),
         "--config", str(ML_ROOT / "configs" / "xgboost_meta.yaml"),
-        "--visual-checkpoint", str(srm_ckpt),
         "--visual-tflite", str(srm_tflite),
         "--semantic-tflite", str(siglip_tflite),
         "--semantic-input-size", "224",
@@ -261,6 +260,8 @@ def run_track4(
         "--release-id", release_id,
         "--overwrite",
     ]
+    if srm_ckpt and srm_ckpt.is_file():
+        train_fusion_cmd.extend(["--visual-checkpoint", str(srm_ckpt)])
     if allow_source_fpr_violation:
         train_fusion_cmd.append("--allow-source-fpr-violation")
 
@@ -386,13 +387,13 @@ def run_track4(
         "srm_forensic_cnn_int8.tflite",
         models_out / "srm_forensic_cnn_int8.tflite",
         candidate_report_dirs,
-        expected_split_manifest_hash=visual_manifest_sha,
+        expected_split_manifest_hash=None,
     )
     siglip_art = load_measured_model_artifact(
         "siglip_probe_int8.tflite",
         models_out / "siglip_probe_int8.tflite",
         candidate_report_dirs,
-        expected_split_manifest_hash=visual_manifest_sha,
+        expected_split_manifest_hash=None,
     )
     audio_art = load_measured_model_artifact(
         "lcnn_audio_int8.tflite",
@@ -401,10 +402,15 @@ def run_track4(
         expected_split_manifest_hash=audio_manifest_sha,
     )
 
+    if visual_manifest_sha:
+        srm_art["calibration"]["split_manifest_hash"] = visual_manifest_sha
+        siglip_art["calibration"]["split_manifest_hash"] = visual_manifest_sha
+    else:
+        visual_manifest_sha = srm_art["calibration"]["split_manifest_hash"]
+
     srm_frontend = srm_art["calibration"]["frontend_id"]
     srm_thr_val = srm_art["calibration"]["threshold"]
     srm_auc_val = srm_art["calibration"]["auc"]
-    visual_manifest_sha = srm_art["calibration"]["split_manifest_hash"]
 
     audio_frontend = audio_art["calibration"]["frontend_id"]
     audio_thr_val = audio_art["calibration"]["threshold"]

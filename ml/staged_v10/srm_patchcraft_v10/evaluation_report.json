@@ -1,0 +1,27 @@
+{
+  "models": {
+    "srm_forensic_cnn_int8.tflite": {
+      "fp32_max_error": 0.036999,
+      "parity": {
+        "passed": true,
+        "agreement": 1.0,
+        "mae": 0.036999,
+        "max_error": 0.036999
+      },
+      "calibration": {
+        "model_hash": "08397e56b53e506ef89b290f114f167babb2ca530a52320ec770b519bf307ca1",
+        "frontend_id": "rgb-exif-srgb-whitealpha-pow2cap1024-bilinear-square-v2-size128-float32-patchcraft-mosaic-tile32",
+        "threshold": 0.5,
+        "auc": 0.965524,
+        "n_calibration": 300,
+        "split_manifest_hash": "940bedf7412f383be7ed6f2f425b6208b02cf7de29f66bc3a37386ce9aa17505"
+      },
+      "checkpoint_sha256": "f3b8cad9f5337ea1fecdb57b1c545f0a6576fdf55e3ffe698d0b0d9a80cbfba2",
+      "test_auc": 0.965524,
+      "test_eer": 0.097143,
+      "test_accuracy": 0.891429,
+      "tpr_at_fpr_1pct": 0.531429,
+      "tpr_at_fpr_0_1pct": 0.265715
+    }
+  }
+}

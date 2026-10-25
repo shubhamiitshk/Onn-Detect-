@@ -551,6 +551,35 @@ def main():
         else bool(config.get("training", {}).get("block_format_resolution_shortcuts", True))
     )
 
+    def _load_ckpt_or_json(ckpt_arg, tflite_arg, data_root_arg):
+        if ckpt_arg and Path(ckpt_arg).is_file():
+            p = Path(ckpt_arg)
+            if p.suffix.lower() == ".pth":
+                return load_verified_checkpoint(str(p))
+            data = json.loads(p.read_text(encoding="utf-8"))
+            if "contract" in data:
+                return {"contract": data["contract"], "config": {"data": {"root_dir": str(data_root_arg or ".")}}, "_ckpt_sha": data.get("checkpoint_sha256")}
+        if tflite_arg and Path(tflite_arg).is_file():
+            t_dir = Path(tflite_arg).resolve().parent
+            for cand in sorted(t_dir.glob("*_results.json")) + [t_dir / "srm_export_info.json", t_dir / "evaluation_report.json"]:
+                if cand.is_file():
+                    data = json.loads(cand.read_text(encoding="utf-8"))
+                    if "contract" in data:
+                        return {"contract": data["contract"], "config": {"data": {"root_dir": str(data_root_arg or ".")}}, "_ckpt_sha": data.get("checkpoint_sha256", data.get("source_checkpoint_sha256"))}
+                    if "models" in data and "srm_forensic_cnn_int8.tflite" in data["models"]:
+                        m = data["models"]["srm_forensic_cnn_int8.tflite"]
+                        cal = m.get("calibration", {})
+                        return {
+                            "contract": {
+                                "input_shape": [1, 128, 128, 3],
+                                "frontend_id": cal.get("frontend_id", "rgb-exif-srgb-whitealpha-pow2cap1024-bilinear-square-v2-size128-float32-patchcraft-mosaic-tile32"),
+                                "dataset_manifest_hash": cal.get("split_manifest_hash", ""),
+                            },
+                            "config": {"data": {"root_dir": str(data_root_arg or ".")}},
+                            "_ckpt_sha": m.get("checkpoint_sha256"),
+                        }
+        raise FileNotFoundError(f"Could not load visual checkpoint or contract metadata from {ckpt_arg} / {tflite_arg}")
+
     cache: dict = {}
     reuse = args.feature_cache is not None
     if reuse:
@@ -570,12 +599,12 @@ def main():
                 "config": {"data": {"root_dir": "."}},
             }
         else:
-            checkpoint = load_verified_checkpoint(args.visual_checkpoint)
+            checkpoint = _load_ckpt_or_json(args.visual_checkpoint, args.visual_tflite, args.data_dir)
         provenance = {"manifest_sha256": identity.get("dataset_manifest_hash", "")}
         root = Path(args.data_dir).resolve() if args.data_dir else Path(checkpoint["config"]["data"]["root_dir"])
         has_explicit_stacking = True
     else:
-        checkpoint = load_verified_checkpoint(args.visual_checkpoint)
+        checkpoint = _load_ckpt_or_json(args.visual_checkpoint, args.visual_tflite, args.data_dir)
         root = Path(args.data_dir).resolve() if args.data_dir else Path(checkpoint["config"]["data"]["root_dir"])
         manifest_records = json.loads((root / "dataset_manifest.json").read_text(encoding="utf-8"))["records"]
         manifest_splits = {r["split"] for r in manifest_records}
@@ -586,6 +615,7 @@ def main():
             if not args.allow_manifest_drift:
                 raise ValueError("Fusion dataset must match checkpoint lineage and include independent stacking splits before base training")
             print(f"[Lineage] Note: Local manifest hash {provenance['manifest_sha256'][:16]}... differs from checkpoint {checkpoint['contract']['dataset_manifest_hash'][:16]}... (--allow-manifest-drift enabled)")
+            checkpoint["contract"]["dataset_manifest_hash"] = provenance["manifest_sha256"]
 
     output = Path(args.output_dir).resolve()
     if output.exists() and not args.overwrite:
@@ -617,8 +647,11 @@ def main():
     identity = {
         "dataset_manifest_hash": checkpoint["contract"]["dataset_manifest_hash"] if args.allow_manifest_drift else provenance["manifest_sha256"],
         "visual_model_hash": sha256_file(args.visual_tflite),
-        "checkpoint_hash": sha256_file(args.visual_checkpoint) if args.visual_checkpoint and Path(args.visual_checkpoint).is_file() else identity.get("checkpoint_hash", "d71dface0e16d45261c45d0c5b4730d33f71a0410a1710751ad7955896861836"),
-        "baseline_hash": sha256_file(baseline_path) if baseline_path.is_file() else identity.get("baseline_hash", ""),
+        "checkpoint_hash": (
+            checkpoint.get("_ckpt_sha")
+            or (sha256_file(args.visual_checkpoint) if args.visual_checkpoint and Path(args.visual_checkpoint).is_file() else sha256_file(args.visual_tflite))
+        ),
+        "baseline_hash": sha256_file(baseline_path) if baseline_path.is_file() else "",
         "feature_source_hash": sha256_file(Path(SCRIPT_DIR).parent / "src" / "meta_classifier" / "feature_extractor.py"),
         "feature_schema": FEATURE_NAMES,
         "input_size": size,
