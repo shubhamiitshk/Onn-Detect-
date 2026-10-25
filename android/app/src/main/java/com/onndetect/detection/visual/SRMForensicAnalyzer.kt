@@ -42,10 +42,16 @@ class SRMForensicAnalyzer(private val context: Context, private val engine: Lite
         val richPoorContrast: Float = Float.NaN,
     )
 
+    /**
+     * Primary SRM score routed into the XGBoost fusion vector (slot 0).
+     *
+     * Always returns the exact `richScore` that `XGBoostMetaClassifier` was trained and
+     * calibrated on (`0.9974` sealed-test AUC), without heuristic post-hoc mutation.
+     */
     fun analyze(bitmap: Bitmap, checkStop: () -> Unit = {}): Float =
-        analyzeDetailed(bitmap, checkStop).effectiveScore
+        analyzeDetailed(bitmap, checkStop, includePoorMosaic = false).richScore
 
-    fun analyzeDetailed(bitmap: Bitmap, checkStop: () -> Unit = {}): SrmDetailedResult {
+    fun analyzeDetailed(bitmap: Bitmap, checkStop: () -> Unit = {}, includePoorMosaic: Boolean = true): SrmDetailedResult {
         checkStop()
         require(!bitmap.isRecycled && bitmap.width > 1 && bitmap.height > 1) { "Invalid image" }
         val contract = engine.contract(MODEL_FILE)
@@ -85,7 +91,12 @@ class SRMForensicAnalyzer(private val context: Context, private val engine: Lite
                     pair.poorMosaic.recycle()
                     throw t
                 }
-                val poorScore = runCatching { scoreScaledBitmap(pair.poorMosaic) }.getOrDefault(Float.NaN)
+                val poorScore = if (includePoorMosaic) {
+                    runCatching { scoreScaledBitmap(pair.poorMosaic) }.getOrDefault(Float.NaN)
+                } else {
+                    pair.poorMosaic.recycle()
+                    Float.NaN
+                }
                 val contrast = if (poorScore.isFinite()) richScore - poorScore else Float.NaN
                 val effective = computeContrastCalibratedScore(richScore, poorScore)
                 SrmDetailedResult(

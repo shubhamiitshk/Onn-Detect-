@@ -123,22 +123,18 @@ class BioLipLandmarkAnalyzer(private val context: Context) {
             )
         }
 
-        val rawJitterScore = PerioralLandmarkAnalyzer.computeJitterScore(landmarks)
+        // Keep `landmarkJitter` as the pure geometric BioLip acceleration measurement
+        // so it is never diluted by sparse-frame rPPG noise; expose `rppgAnomaly`
+        // separately as an experimental diagnostic field.
+        val jitterScore = PerioralLandmarkAnalyzer.computeJitterScore(landmarks)
         val rppgAnomaly = PerioralLandmarkAnalyzer.computeRppgBilateralPhaseAnomaly(frames, landmarks)
-        val jitterScore = when {
-            rawJitterScore.isFinite() && rppgAnomaly.isFinite() ->
-                (0.72f * rawJitterScore + 0.28f * rppgAnomaly).coerceIn(0f, 1f)
-            rawJitterScore.isFinite() -> rawJitterScore
-            rppgAnomaly.isFinite() -> rppgAnomaly
-            else -> Float.NaN
-        }
         val marSeries = PerioralLandmarkAnalyzer.extractMarSeries(landmarks)
         val hasFace = landmarks.any { it != null && it.size > 415 }
 
         return BioLipResult(
             landmarkJitter = jitterScore,
             hasFace = hasFace,
-            notes = if (hasFace) "BioLip + rPPG bilateral phase analysis complete" else "No face detected in frames",
+            notes = if (hasFace) "BioLip analysis complete" else "No face detected in frames",
             marSeries = marSeries,
             rppgPhaseAnomaly = rppgAnomaly,
         )

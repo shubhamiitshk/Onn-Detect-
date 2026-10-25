@@ -1,5 +1,6 @@
 package com.onndetect
 
+import com.onndetect.detection.video.VideoScorePolicy
 import com.onndetect.detection.visual.PerioralLandmarkAnalyzer
 import com.onndetect.detection.visual.ResidualHeatmapExtractor
 import com.onndetect.detection.visual.SRMForensicAnalyzer
@@ -76,5 +77,49 @@ class DeepThinkAlgorithmsTest {
         val right = doubleArrayOf(0.345, 0.339, 0.347, 0.338, 0.348, 0.336, 0.347, 0.338)
         val anomaly = PerioralLandmarkAnalyzer.computeRppgAnomalyFromSeries(left, right)
         assertTrue("Anti-phase synthetic cheeks should trigger high rPPG anomaly, got $anomaly", anomaly >= 0.85f)
+    }
+
+    @Test
+    fun `ai video with real music and smooth motion is not dragged below visual threshold`() {
+        val threshold = 0.5782f
+        val score = VideoScorePolicy.combineMultimodalScore(
+            visualScore = 0.78f,
+            visualThreshold = threshold,
+            audioScore = 0.05f,
+            audioValidatedSuccess = true,
+            temporalScore = 0.02f,
+            lipSyncAnomaly = 0f,
+        )
+        assertTrue("AI visual score 0.78 must remain >= threshold ($threshold) even with real audio, got $score", score >= 0.78f)
+    }
+
+    @Test
+    fun `real video with ai voice clone escalates above visual threshold`() {
+        val threshold = 0.5782f
+        val score = VideoScorePolicy.combineMultimodalScore(
+            visualScore = 0.12f,
+            visualThreshold = threshold,
+            audioScore = 0.88f,
+            audioValidatedSuccess = true,
+            audioThreshold = 0.3555f,
+            temporalScore = 0.04f,
+            lipSyncAnomaly = 0f,
+        )
+        assertTrue("Real video dubbed with AI voice (0.88) should escalate above $threshold, got $score", score >= threshold)
+    }
+
+    @Test
+    fun `authentic video with authentic audio stays authentic`() {
+        val threshold = 0.5782f
+        val score = VideoScorePolicy.combineMultimodalScore(
+            visualScore = 0.14f,
+            visualThreshold = threshold,
+            audioScore = 0.08f,
+            audioValidatedSuccess = true,
+            audioThreshold = 0.3555f,
+            temporalScore = 0.05f,
+            lipSyncAnomaly = 0f,
+        )
+        assertEquals(0.14f, score, 1e-4f)
     }
 }

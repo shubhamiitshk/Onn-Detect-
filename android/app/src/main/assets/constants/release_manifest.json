@@ -56,8 +56,8 @@
     }
   },
   "artifacts": {
-    "evaluation_report.json": "503022659bf4876ece62391d7810931e1600a5b40b7930da43723120d4986afc",
-    "source_snapshot.json": "528e548efc172b847f304179b68430f988fd83df7fe7adfd6fd457e05b89d9eb",
+    "evaluation_report.json": "2e87fa4b42066b26aedb102533916b429b21a8409c395d3d2ca576b3e61950e6",
+    "source_snapshot.json": "7c93e267a8f00a5a14f52441f6120e140bf452328eb2da1b57b6c016e40ddb23",
     "constants/cascade_policy.json": "ebc1b125769624ba8572eccc06680b88e0d4c5b4c11a512a61acc80cd4f33fd7",
     "constants/lcnn_audio_threshold.json": "a794c69ec718fea1db6da8d23b3bceb2db44ab548a987f1f8b7f53346029c7f6",
     "constants/meta_classifier.json": "c8ca4222ce769fa9f21d55d1cfc0ed9945e1a1795b2d4e4ec79231d880ff6cdd",
@@ -113,10 +113,10 @@
   "device_validation": {
     "passed": false
   },
-  "source_commit": "1a20b62db620067620d60a5c6f61e12a22d2d488",
+  "source_commit": "47671f4d03f32726f124627a7964d224ea9450ff",
   "source_dirty": true,
-  "source_snapshot_sha256": "528e548efc172b847f304179b68430f988fd83df7fe7adfd6fd457e05b89d9eb",
-  "evaluation_report_hash": "503022659bf4876ece62391d7810931e1600a5b40b7930da43723120d4986afc",
+  "source_snapshot_sha256": "7c93e267a8f00a5a14f52441f6120e140bf452328eb2da1b57b6c016e40ddb23",
+  "evaluation_report_hash": "2e87fa4b42066b26aedb102533916b429b21a8409c395d3d2ca576b3e61950e6",
   "fusion_revision": "onn-prod-v10",
   "acceptance": {
     "srm_forensic_cnn_int8.tflite": {

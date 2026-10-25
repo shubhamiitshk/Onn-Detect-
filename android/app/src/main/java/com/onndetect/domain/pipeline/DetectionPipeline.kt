@@ -213,9 +213,6 @@ class DetectionPipeline @Inject constructor(
                             }.getOrDefault(Float.NaN)
                             if (roiScore.isFinite() && roiScore in 0f..1f) {
                                 signals = signals.copy(perturbationScore = roiScore)
-                                if (roiScore > srm + 0.16f) {
-                                    srm = max(srm, (0.45f * srm + 0.55f * roiScore).coerceIn(0f, 1f))
-                                }
                             }
                         }
                     }

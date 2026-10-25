@@ -20,30 +20,61 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Weights for the video-level decision.
+ * Weights for the provisional multimodal video-level decision.
  *
- * A video generator's artifacts are temporal, so the video route needs its
- * OWN operating point rather than the still-image fusion's. These weights
- * and the video threshold are placeholders until a video-level calibration
- * set exists; `TEMPORAL_WEIGHT` is therefore ZERO, because an uncalibrated
- * term in the score is worse than no term at all.
- *
- * To enable the temporal term:
- *   1. assemble a video-level calibration split with real and generated
- *      videos, labelled at the FILE level;
- *   2. fit the weights that maximise the video-level operating point on
- *      that split only;
- *   3. write the fitted weights and the threshold into the release's
- *      calibration asset and re-stage the bundle;
- *   4. set TEMPORAL_WEIGHT to the fitted value here.
- *
- * Until then the temporal signal is computed and REPORTED (it is visible in
- * the signal breakdown) but does not move the verdict.
+ * Visual frame scores come from the calibrated `XGBoostMetaClassifier` (`threshold = 0.5782`).
+ * Audio scores come from `LCNN-MFM` (`audioThreshold = 0.3555`).
+ * Temporal cosine discontinuity and BioLip mouth acceleration act as one-sided positive
+ * anomaly boosters so that smooth motion (`temporal == 0f`) or real background music never
+ * penalize a visually synthetic video below the decision threshold.
  */
 object VideoScorePolicy {
     const val FRAME_WEIGHT = 0.65f
     const val AUDIO_WEIGHT = 0.20f
     const val TEMPORAL_WEIGHT = 0.15f
+
+    /**
+     * Computes the multimodal video synthetic score in `[0, 1]` without allowing an authentic
+     * secondary track (e.g. real background music on a Sora/Runway AI video, or smooth frame-to-frame
+     * motion) to drag `visualScore` below `visualThreshold`.
+     */
+    fun combineMultimodalScore(
+        visualScore: Float,
+        visualThreshold: Float,
+        audioScore: Float,
+        audioValidatedSuccess: Boolean,
+        audioThreshold: Float = 0.35546875f,
+        temporalScore: Float = -1f,
+        lipSyncAnomaly: Float = 0f,
+    ): Float {
+        var base = visualScore.coerceIn(0f, 1f)
+
+        // 1. Audio escalation: if the audio track is synthetic (above its calibrated EER threshold),
+        // map it into the visual threshold space so a real video with an AI-cloned voice crosses
+        // `visualThreshold`. If the audio track is authentic, do NOT penalize `visualScore`.
+        if (audioScore in 0f..1f && audioScore >= audioThreshold) {
+            val mappedAudio = if (audioThreshold < 0.99f) {
+                visualThreshold + ((audioScore - audioThreshold) / (1f - audioThreshold)) * (1f - visualThreshold)
+            } else {
+                audioScore
+            }
+            val weight = if (audioValidatedSuccess) 0.70f else 0.35f
+            base = maxOf(base, (1f - weight) * base + weight * mappedAudio.coerceIn(0f, 1f))
+        }
+
+        // 2. One-sided temporal & BioLip anomaly boost: high frame-to-frame discontinuity (> 0.30)
+        // or high perioral landmark acceleration jitter boosts suspicion toward 1.0, while 0.0
+        // (smooth video / no jitter) leaves `base` untouched.
+        val tempAnomaly = if (temporalScore.isFinite() && temporalScore > 0.30f) {
+            ((temporalScore - 0.30f) / 0.70f).coerceIn(0f, 1f)
+        } else 0f
+        val lipAnomaly = if (lipSyncAnomaly.isFinite() && lipSyncAnomaly > 0f) {
+            lipSyncAnomaly.coerceIn(0f, 1f)
+        } else 0f
+
+        val boost = (TEMPORAL_WEIGHT * tempAnomaly + 0.15f * lipAnomaly).coerceIn(0f, 0.30f)
+        return (base + (1f - base) * boost).coerceIn(0f, 1f)
+    }
 }
 
 /** Sampled-frame and sampled-audio diagnostics, without an untrained video verdict. */
@@ -277,37 +308,18 @@ class VideoForensicAnalyzer @Inject constructor(private val context: Context,
                     } else 0f
 
                     // Multimodal blending across visual, audio, temporal, and biomechanical lip sync
-                    val overall = when {
-                        audioValidatedSuccess && temporal >= 0f -> {
-                            val lipW = if (lipSyncAnomaly > 0f) 0.10f else 0.0f
-                            val fW = VideoScorePolicy.FRAME_WEIGHT - (lipW / 2)
-                            val aW = VideoScorePolicy.AUDIO_WEIGHT - (lipW / 2)
-                            val tW = VideoScorePolicy.TEMPORAL_WEIGHT
-                            (fW * visualScore + aW * audioScore + tW * kotlin.math.max(temporal, 0f) + lipW * lipSyncAnomaly).coerceIn(0f, 1f)
-                        }
-                        audioValidatedSuccess -> {
-                            val lipW = if (lipSyncAnomaly > 0f) 0.10f else 0.0f
-                            val fW = 0.70f - lipW
-                            val aW = 0.30f
-                            (fW * visualScore + aW * audioScore + lipW * lipSyncAnomaly).coerceIn(0f, 1f)
-                        }
-                        temporal >= 0f -> {
-                            val lipW = if (lipSyncAnomaly > 0f) 0.12f else 0.0f
-                            val fW = 0.80f - lipW
-                            val tW = 0.20f
-                            val base = (fW * visualScore + tW * temporal + lipW * lipSyncAnomaly)
-                            // If audio model reported a synthetic score above threshold even with noisy background
-                            if (audioScore in 0.355f..1f && !audioValidatedSuccess) {
-                                (0.85f * base + 0.15f * audioScore).coerceIn(0f, 1f)
-                            } else {
-                                base.coerceIn(0f, 1f)
-                            }
-                        }
-                        else -> {
-                            val lipW = if (lipSyncAnomaly > 0f) 0.15f else 0.0f
-                            ( (1f - lipW) * visualScore + lipW * lipSyncAnomaly ).coerceIn(0f, 1f)
-                        }
-                    }
+                    val audioThr = runCatching {
+                        com.onndetect.detection.visual.CalibrationStore.audioThreshold(context)
+                    }.getOrDefault(0.35546875f)
+                    val overall = VideoScorePolicy.combineMultimodalScore(
+                        visualScore = visualScore,
+                        visualThreshold = threshold,
+                        audioScore = audioScore,
+                        audioValidatedSuccess = audioValidatedSuccess,
+                        audioThreshold = audioThr,
+                        temporalScore = temporal,
+                        lipSyncAnomaly = lipSyncAnomaly,
+                    )
                     val provisionalNotice = "Provisional video verdict: heuristic multimodal temporal blend without dedicated video calibration"
                     val note = (listOf(provisionalNotice) + issues).distinct().joinToString("; ")
                     return Outcome(overall, overall >= threshold, 0f, avg(srmScores), avg(fftScores), avg(klScores),
