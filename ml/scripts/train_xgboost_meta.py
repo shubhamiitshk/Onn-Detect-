@@ -551,6 +551,7 @@ def main():
         else bool(config.get("training", {}).get("block_format_resolution_shortcuts", True))
     )
 
+    cache: dict = {}
     reuse = args.feature_cache is not None
     if reuse:
         source_cache = Path(args.feature_cache).resolve()
@@ -627,7 +628,8 @@ def main():
     }
 
     split_samples = {}
-    limit = int(config.get("data", {}).get("samples_per_split", 8000))
+    cfg_limit = int(config.get("data", {}).get("samples_per_split", 400))
+    limit = cfg_limit if reuse else min(400, cfg_limit)
     if reuse:
         if identity.get("visual_model_hash") != sha256_file(args.visual_tflite):
             raise ValueError("Cached fusion features were extracted with a different visual model")
@@ -656,16 +658,16 @@ def main():
             split_samples["stacking"] = val_samples[:half]
             split_samples["fusion_val"] = val_samples[half:]
             split_samples["calibration"] = balanced_subset(discover_samples(root, "calibration", IMAGE_EXTS), limit)
-            split_samples["test"] = (
-                discover_samples(root, "test", IMAGE_EXTS)
-                if args.test_samples is None
-                else balanced_subset(discover_samples(root, "test", IMAGE_EXTS), args.test_samples)
+            split_samples["test"] = balanced_subset(
+                discover_samples(root, "test", IMAGE_EXTS),
+                args.test_samples if args.test_samples is not None else limit,
             )
 
     for split in (() if reuse else ("stacking", "fusion_val", "calibration", "test")):
         samples = split_samples[split]
+        print(f"[Fusion] Extracting 10-feature vectors for split '{split}' ({len(samples)} images)...", flush=True)
         rows = []
-        for path, _ in samples:
+        for idx_s, (path, _) in enumerate(samples, 1):
             try:
                 vec = extract_visual_features(str(path), model, torch.device("cpu"), baseline, input_size=size, frontend_id=checkpoint["contract"].get("frontend_id"))
                 if args.semantic_tflite:
@@ -684,6 +686,8 @@ def main():
                         )
                     vec[SEMANTIC_PROBE_INDEX] = float(_run_tflite(args.semantic_tflite, sem_t))
                 rows.append(vec)
+                if idx_s % 50 == 0 or idx_s == len(samples):
+                    print(f"  -> [{split}] {idx_s}/{len(samples)} extracted", flush=True)
             except Exception as exc:
                 raise ValueError(f"Unusable visual evidence for {path.relative_to(root).as_posix()}: {exc}") from exc
         X = np.stack(rows)
