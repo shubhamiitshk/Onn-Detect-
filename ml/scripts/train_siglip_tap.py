@@ -558,7 +558,7 @@ def train_siglip_tap(
         (output_dir / "siglip_probe_export.json").write_text(json.dumps(export_summary, indent=2))
 
         from data.contracts import sha256_file
-        from data.image_frontend import siglip_frontend_id
+        from export.vfm_frontend import vfm_frontend_id
 
         tflite_sha = sha256_file(tflite_path)
         ckpt_sha = sha256_file(best_ckpt_path) if best_ckpt_path.is_file() else tflite_sha
@@ -578,7 +578,7 @@ def train_siglip_tap(
             },
             "calibration": {
                 "model_hash": tflite_sha,
-                "frontend_id": siglip_frontend_id(SIGLIP_INPUT_SIZE),
+                "frontend_id": vfm_frontend_id(SIGLIP_INPUT_SIZE),
                 "threshold": round(float(thr_1pct), 6),
                 "auc": round(max(0.5001, float(best_val_auc)), 6),
                 "n_calibration": int(n_cal_count),
