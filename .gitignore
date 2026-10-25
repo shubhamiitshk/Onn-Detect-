@@ -28,3 +28,6 @@ ml/resolved-requirements.txt
 *.npz
 .kotlin/
 ml/export/
+release_models/
+release_v9/
+
