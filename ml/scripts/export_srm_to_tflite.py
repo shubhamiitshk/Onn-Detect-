@@ -155,7 +155,7 @@ def main():
     parser.add_argument("--output-dir", default=None, help="Directory to save exported TFLite")
     parser.add_argument("--output", default=None, help="Output path (directory or .tflite file)")
     parser.add_argument("--data-dir", default=None, help="Optional dataset directory for calibration images")
-    parser.add_argument("--limit", type=int, default=150, help="Number of calibration samples")
+    parser.add_argument("--num-calibration-samples", "--limit", dest="limit", type=int, default=150, help="Number of calibration samples")
     args = parser.parse_args()
 
     out = args.output or args.output_dir or str(ML_ROOT / "export" / "srm_tflite")
