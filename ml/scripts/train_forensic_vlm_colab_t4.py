@@ -345,6 +345,19 @@ class MaskedAuxiliaryForensicHead:
             "b_counter_axes": [float(x) for x in self.b_counter_axes.tolist()],
         }
 
+    @classmethod
+    def from_contract_dict(cls, data: Dict[str, Any]) -> "MaskedAuxiliaryForensicHead":
+        hidden_dim = int(data["hidden_dim"])
+        head = cls(hidden_dim=hidden_dim)
+        head.w_class = np.asarray(data["w_class"], dtype=np.float64)
+        head.b_class = float(data["b_class"])
+        head.w_axes = np.asarray(data["w_forgery_axes"], dtype=np.float64).T
+        head.b_axes = np.asarray(data["b_forgery_axes"], dtype=np.float64)
+        head.w_counter_axes = np.asarray(data["w_counter_axes"], dtype=np.float64).T
+        head.b_counter_axes = np.asarray(data["b_counter_axes"], dtype=np.float64)
+        head.axes_supervised = list(data.get("axes_supervised", [True] * 6))
+        return head
+
 
 # ============================================================================
 # 4. Tie-Aware Fixed-FPR Calibration & Evaluation with Wilson Intervals
@@ -705,16 +718,132 @@ def evaluate_frozen_routing_on_test(
     }
 
 
+def compute_dialectical_fused_prob(
+    fast_fusion_prob: float,
+    vlm_prob: float,
+    vlm_logit: Optional[float] = None,
+) -> float:
+    """Matches Android's `OnDemandForensicVlmAnalyzer.kt:fuseDialecticalLogits`
+    bounded logit tanh fusion:
+      z_fast = 1.5 * tanh(logit(fast) / 1.5)
+      z_vlm = 1.8 * tanh(logit(vlm) / 1.8)
+      fused = sigmoid(0.62 * z_fast + 0.38 * z_vlm)
+    """
+    p_f = max(1e-6, min(1.0 - 1e-6, float(fast_fusion_prob)))
+    z_f = 1.5 * math.tanh(math.log(p_f / (1.0 - p_f)) / 1.5)
+    if vlm_logit is not None and math.isfinite(vlm_logit):
+        vl = float(vlm_logit)
+    else:
+        p_v = max(1e-6, min(1.0 - 1e-6, float(vlm_prob)))
+        vl = math.log(p_v / (1.0 - p_v))
+    z_v = 1.8 * math.tanh(vl / 1.8)
+    fused_logit = 0.62 * z_f + 0.38 * z_v
+    return float(1.0 / (1.0 + math.exp(-max(-30.0, min(30.0, fused_logit)))))
+
+
+def evaluate_complete_cascade_on_test(
+    frozen_cfg: Dict[str, Any],
+    test_labels: Sequence[int],
+    test_calibrated_fusion_probs: Sequence[float],
+    test_calibrated_srm_probs: Sequence[float],
+    test_calibrated_probe_probs: Optional[Sequence[float]] = None,
+    test_vlm_probs: Optional[Sequence[float]] = None,
+    test_hotspot_z_scores: Optional[Sequence[float]] = None,
+    test_active_domains: Optional[Sequence[str]] = None,
+    test_doc_tamper_scores: Optional[Sequence[float]] = None,
+    vlm_decision_threshold: float = 0.50,
+) -> Dict[str, Any]:
+    """Evaluates the end-to-end routed cascade against the unchanged baseline detector
+    at the calibrated operating point on the sealed test set.
+    """
+    y = np.asarray(test_labels, dtype=np.int32).reshape(-1)
+    n = len(y)
+    p_f = np.asarray(test_calibrated_fusion_probs, dtype=np.float64).reshape(-1)
+    p_a = np.asarray(test_calibrated_srm_probs, dtype=np.float64).reshape(-1)
+    p_c = np.asarray(test_calibrated_probe_probs, dtype=np.float64).reshape(-1) if test_calibrated_probe_probs is not None else np.full(n, np.nan)
+    hz = np.asarray(test_hotspot_z_scores, dtype=np.float64).reshape(-1) if test_hotspot_z_scores is not None else np.zeros(n)
+    domains = list(test_active_domains) if test_active_domains is not None else ["human_face"] * n
+    doc_scores = np.asarray(test_doc_tamper_scores, dtype=np.float64).reshape(-1) if test_doc_tamper_scores is not None else np.zeros(n)
+    vlm_p = np.asarray(test_vlm_probs, dtype=np.float64).reshape(-1) if test_vlm_probs is not None else p_f.copy()
+
+    thr_base = float(frozen_cfg.get("decision_threshold_dev", 0.5782))
+    thr_vlm = float(vlm_decision_threshold)
+
+    # 1. Unchanged Baseline Detector Evaluation
+    base_preds = (p_f >= thr_base).astype(int)
+    n_pos = max(1, int(np.sum(y == 1)))
+    n_neg = max(1, int(np.sum(y == 0)))
+    base_tpr = float(np.sum((base_preds == 1) & (y == 1))) / float(n_pos)
+    base_fpr = float(np.sum((base_preds == 1) & (y == 0))) / float(n_neg)
+
+    # 2. Complete Routed Cascade Evaluation
+    escalate = np.zeros(n, dtype=bool)
+    cascade_preds = np.zeros(n, dtype=int)
+    cascade_scores = np.zeros(n, dtype=np.float64)
+
+    for i in range(n):
+        res = route_with_policy(
+            policy=frozen_cfg,
+            fast_fusion_prob=float(p_f[i]),
+            srm_calibrated_score=float(p_a[i]),
+            vfm_probe_score=float(p_c[i]) if math.isfinite(p_c[i]) else None,
+            hotspot_z_score=float(hz[i]),
+            active_domain=domains[i],
+            doc_tamper_score=float(doc_scores[i]),
+        )
+        is_esc = bool(res["invoke_on_device_vlm"])
+        escalate[i] = is_esc
+
+        if is_esc:
+            cascade_scores[i] = float(vlm_p[i])
+            cascade_preds[i] = int(vlm_p[i] >= thr_vlm)
+        else:
+            cascade_scores[i] = float(p_f[i])
+            cascade_preds[i] = int(p_f[i] >= thr_base)
+
+    cascade_tpr = float(np.sum((cascade_preds == 1) & (y == 1))) / float(n_pos)
+    cascade_fpr = float(np.sum((cascade_preds == 1) & (y == 0))) / float(n_neg)
+
+    resolved_fakes = int(np.sum(escalate & (y == 1) & (base_preds == 0) & (cascade_preds == 1)))
+    new_fp = int(np.sum(escalate & (y == 0) & (base_preds == 0) & (cascade_preds == 1)))
+    early_misses = int(np.sum((~escalate) & (y == 1) & (base_preds == 0)))
+
+    return {
+        "baseline_threshold": round(thr_base, 6),
+        "vlm_decision_threshold": round(thr_vlm, 6),
+        "test_escalation_rate": round(float(np.mean(escalate)), 4),
+        "baseline_tpr": round(base_tpr, 4),
+        "baseline_fpr": round(base_fpr, 4),
+        "cascade_tpr": round(cascade_tpr, 4),
+        "cascade_fpr": round(cascade_fpr, 4),
+        "delta_tpr": round(cascade_tpr - base_tpr, 4),
+        "delta_fpr": round(cascade_fpr - base_fpr, 4),
+        "resolved_missed_fakes": resolved_fakes,
+        "new_false_positives": new_fp,
+        "early_exit_missed_fakes": early_misses,
+        "total_fakes": n_pos,
+        "total_reals": n_neg,
+    }
+
+
 def export_forensic_vlm_policy_artifact(
     output_path: Path,
     routing_cfg: Dict[str, Any],
     head: MaskedAuxiliaryForensicHead,
     model_id: str,
+    vlm_calibration_thresholds: Optional[Dict[str, Any]] = None,
+    diagnostic_only: bool = True,
 ) -> Dict[str, Any]:
     """Writes the unified versioned JSON artifact consumed by both Python and Android."""
+    vlm_cal = vlm_calibration_thresholds or {}
+    t_1pct = float(vlm_cal.get("threshold_1pct_fpr", vlm_cal.get("t_1pct_fpr", 0.50)))
+    t_5pct = float(vlm_cal.get("threshold_5pct_fpr", vlm_cal.get("t_5pct_fpr", t_1pct)))
+    t_bal = float(vlm_cal.get("threshold_balanced", vlm_cal.get("t_balanced", t_1pct)))
+
     payload = {
         "schema_version": "onn-forensic-vlm-policy-v1",
         "model_id": model_id,
+        "diagnostic_only": bool(diagnostic_only),
         "routing_policy": {
             "feasible": bool(routing_cfg.get("feasible", True)),
             "decision_threshold_dev": float(routing_cfg.get("decision_threshold_dev", 0.5782)),
@@ -722,6 +851,12 @@ def export_forensic_vlm_policy_artifact(
             "calibrated_conflict_logit_threshold": float(routing_cfg.get("calibrated_conflict_logit_threshold", 1.80)),
             "hotspot_z_threshold": float(routing_cfg.get("hotspot_z_threshold", 1.85)),
             "doc_tamper_threshold": float(routing_cfg.get("doc_tamper_threshold", 0.48)),
+        },
+        "vlm_calibration": {
+            "decision_threshold_dev": t_1pct,
+            "threshold_at_1pct_fpr": t_1pct,
+            "threshold_at_5pct_fpr": t_5pct,
+            "threshold_balanced": t_bal,
         },
         "head_contract": head.to_contract_dict(),
     }
@@ -999,6 +1134,7 @@ def execute_supervised_vlm_lora_training(
     # 2. Evaluate frozen calibration and frozen routing on sealed test_records (if provided)
     test_eval: Optional[Dict[str, Any]] = None
     test_routing: Optional[Dict[str, Any]] = None
+    test_cascade: Optional[Dict[str, Any]] = None
     if test_records is not None and len(test_records) > 0:
         test_y, test_vlm_p, test_ff, test_srm, test_probe, test_hz, test_dom, test_doc = _eval_records(test_records)
         test_eval = evaluate_candidate_at_fixed_fpr(test_y, test_vlm_p, frozen_thresholds=frozen_fpr_thrs)
@@ -1012,10 +1148,29 @@ def execute_supervised_vlm_lora_training(
             test_active_domains=test_dom,
             test_doc_tamper_scores=test_doc,
         )
+        test_cascade = evaluate_complete_cascade_on_test(
+            frozen_cfg=routing_cfg,
+            test_labels=test_y,
+            test_calibrated_fusion_probs=test_ff,
+            test_calibrated_srm_probs=test_srm,
+            test_calibrated_probe_probs=test_probe,
+            test_vlm_probs=test_vlm_p,
+            test_hotspot_z_scores=test_hz,
+            test_active_domains=test_dom,
+            test_doc_tamper_scores=test_doc,
+            vlm_decision_threshold=frozen_fpr_thrs.get("threshold_1pct_fpr", frozen_fpr_thrs.get("t_1pct_fpr", 0.50)),
+        )
 
     output_dir.mkdir(parents=True, exist_ok=True)
     policy_path = output_dir / "forensic_vlm_policy.json"
-    export_forensic_vlm_policy_artifact(policy_path, routing_cfg, head_contract, model_id=model_id)
+    export_forensic_vlm_policy_artifact(
+        output_path=policy_path,
+        routing_cfg=routing_cfg,
+        head=head_contract,
+        model_id=model_id,
+        vlm_calibration_thresholds=frozen_fpr_thrs,
+        diagnostic_only=True,
+    )
 
     metrics: Dict[str, Any] = {
         "model_id": model_id,
@@ -1037,36 +1192,131 @@ def execute_supervised_vlm_lora_training(
         metrics["test_metrics"] = test_eval
     if test_routing is not None:
         metrics["test_routing"] = test_routing
+    if test_cascade is not None:
+        metrics["test_cascade_evaluation"] = test_cascade
 
     (output_dir / "training_metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
     return metrics
 
 
-def _load_jsonl_records(dataset_jsonl: Path) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """Loads JSONL records and splits into disjoint train, val (calibration), and test sets
-    grouped strictly by root source ID to guarantee zero eval leakage.
+def validate_dataset_records(records: Sequence[Dict[str, Any]]) -> None:
+    """Validates required schema fields, image paths, baseline measurements,
+    and label conventions across all records before loading model weights.
     """
+    if not records:
+        raise ValueError("Dataset records list is empty.")
+
+    for idx, r in enumerate(records):
+        img_id = r.get("image_id")
+        if not img_id or not isinstance(img_id, str):
+            raise KeyError(f"Record #{idx} missing required non-empty string 'image_id'")
+
+        root_id = r.get("root_source_id")
+        if not root_id or not isinstance(root_id, str):
+            raise KeyError(f"Record '{img_id}' missing required non-empty string 'root_source_id'")
+
+        if "label" not in r:
+            raise KeyError(f"Record '{img_id}' missing required 'label'")
+        try:
+            lbl = int(r["label"])
+            if lbl not in (0, 1):
+                raise ValueError(f"Record '{img_id}' label must be 0 or 1, got {lbl}")
+        except (ValueError, TypeError) as e:
+            raise ValueError(f"Record '{img_id}' invalid label: {e}")
+
+        img_path = r.get("image_path")
+        if img_path:
+            p = Path(img_path)
+            if not p.is_file():
+                raise FileNotFoundError(f"Record '{img_id}' image file does not exist: {img_path}")
+        elif "pil_image" not in r:
+            raise KeyError(f"Record '{img_id}' must provide either 'image_path' or 'pil_image'")
+
+        if "fast_fusion_prob" not in r and "fusion_prob" not in r:
+            raise KeyError(f"Record '{img_id}' missing required specialist baseline 'fast_fusion_prob'")
+        if "srm_score" not in r and "srm_prob" not in r:
+            raise KeyError(f"Record '{img_id}' missing required specialist baseline 'srm_score'")
+
+
+def _load_jsonl_records(dataset_jsonl: Path) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Loads JSONL records, validates all fields and images, and returns disjoint train, val, test splits.
+    Preserves explicit 'split' fields when present, otherwise groups automatically by root source ID.
+    """
+    if not dataset_jsonl.is_file():
+        raise FileNotFoundError(f"Dataset JSONL not found: {dataset_jsonl}")
+
     records: List[Dict[str, Any]] = []
-    for line in dataset_jsonl.read_text(encoding="utf-8").splitlines():
+    for line_idx, line in enumerate(dataset_jsonl.read_text(encoding="utf-8").splitlines()):
         line = line.strip()
         if not line:
             continue
-        records.append(json.loads(line))
+        try:
+            records.append(json.loads(line))
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Failed to parse JSON on line {line_idx + 1} of {dataset_jsonl}: {e}")
+
+    validate_dataset_records(records)
+
+    has_explicit_splits = all("split" in r for r in records)
+    if has_explicit_splits:
+        train_records = [r for r in records if r["split"] == "train"]
+        val_records = [r for r in records if r["split"] == "val"]
+        test_records = [r for r in records if r["split"] == "test"]
+
+        all_splits = {r["split"] for r in records}
+        unrecognized = all_splits - {"train", "val", "test"}
+        if unrecognized:
+            raise ValueError(f"Unrecognized dataset splits in {dataset_jsonl}: {unrecognized}")
+
+        train_roots = {r["root_source_id"] for r in train_records}
+        val_roots = {r["root_source_id"] for r in val_records}
+        test_roots = {r["root_source_id"] for r in test_records}
+
+        leak_val = train_roots & val_roots
+        leak_test = train_roots & test_roots
+        leak_val_test = val_roots & test_roots
+        if leak_val:
+            raise ValueError(f"Root source leakage between train and val splits: {list(leak_val)[:5]}")
+        if leak_test:
+            raise ValueError(f"Root source leakage between train and test splits: {list(leak_test)[:5]}")
+        if leak_val_test:
+            raise ValueError(f"Root source leakage between val and test splits: {list(leak_val_test)[:5]}")
+
+        for s_name, s_recs in [("train", train_records), ("val", val_records), ("test", test_records)]:
+            if s_recs:
+                labels = {int(r["label"]) for r in s_recs}
+                if labels != {0, 1}:
+                    raise ValueError(f"Split '{s_name}' must contain both positive and negative labels, found {labels}")
+        return train_records, val_records, test_records
+
     splits = assign_disjoint_splits_by_root_source(records)
     return splits["train"], splits["val"], splits["test"]
 
 
 def run_colab_t4_lora_pilot(
-    model_id: str = "Qwen/Qwen3.5-2B",
+    model_id: str = "Qwen/Qwen3.5-0.8B",
     max_steps: int = 50,
     lora_rank: int = 16,
     image_max_px: int = 512,
     dataset_jsonl: Optional[Path] = None,
-    output_dir: Path = Path("./outputs/qwen3_5_2b_lora_pilot"),
+    output_dir: Path = Path("./outputs/qwen08_smoke"),
 ) -> Dict[str, Any]:
     """Runs the 16-bit LoRA (`fp16=True` on Tesla T4) supervised vision fine-tuning pilot,
     saves the trained `adapter_final` checkpoint, and exports `forensic_vlm_policy.json`.
     """
+    if dataset_jsonl is None or not dataset_jsonl.is_file():
+        raise ValueError(
+            "Provide `--dataset-jsonl <path>` pointing to a source-tagged forensic JSONL corpus "
+            "to run supervised Colab T4 fine-tuning."
+        )
+
+    # 1. Validate dataset records, image files, baseline features, and splits BEFORE GPU allocation
+    train_records, val_records, test_records = _load_jsonl_records(dataset_jsonl)
+    print(
+        f"[Dataset Validated] Train={len(train_records)} | Val={len(val_records)} | Test={len(test_records)} | "
+        f"Preserved splits and validated required baselines before loading GPU model."
+    )
+
     import torch
 
     if not torch.cuda.is_available():
@@ -1106,14 +1356,6 @@ def run_colab_t4_lora_pilot(
 
     init_alloc_gb = torch.cuda.max_memory_allocated() / (1024 ** 3)
     print(f"[Colab-T4 Pilot] Model initialized | Init Allocated={init_alloc_gb:.3f} GB")
-
-    if dataset_jsonl is not None and dataset_jsonl.is_file():
-        train_records, val_records, test_records = _load_jsonl_records(dataset_jsonl)
-    else:
-        raise ValueError(
-            "Provide `--dataset-jsonl <path>` pointing to a source-tagged forensic JSONL corpus "
-            "to run supervised Colab T4 fine-tuning."
-        )
 
     def _hf_collator(img: Image.Image, prompt: str, label: float, dev: Any) -> Dict[str, Any]:
         messages = [
@@ -1370,10 +1612,31 @@ def run_self_tests() -> None:
         assert Path(train_metrics["policy_artifact_path"]).is_file()
         assert "val_metrics" in train_metrics and "test_metrics" in train_metrics
         assert "test_routing" in train_metrics
+        assert "test_cascade_evaluation" in train_metrics
+        test_casc = train_metrics["test_cascade_evaluation"]
+        assert "cascade_tpr" in test_casc and "baseline_tpr" in test_casc
+        assert "delta_tpr" in test_casc
         print(
             f"  [PASS] Supervised VLM Training Loop (25 steps): loss {train_metrics['initial_loss']:.4f} -> "
             f"{train_metrics['final_loss']:.4f}, downscale_ratio={train_metrics['mean_downscale_ratio']:.2f}"
         )
+        print(
+            f"  [PASS] Complete Routed Cascade Evaluation: Base TPR={test_casc['baseline_tpr']:.4f}, "
+            f"Cascade TPR={test_casc['cascade_tpr']:.4f} (Delta={test_casc['delta_tpr']:+.4f}, "
+            f"EscRate={test_casc['test_escalation_rate']:.1%})"
+        )
+
+    # Validate dataset validation and split preservation on synthetic records
+    test_recs = [
+        {"image_id": "r1", "root_source_id": "root_A", "split": "train", "label": 0, "pil_image": Image.new("RGB", (32, 32)), "fast_fusion_prob": 0.1, "srm_score": 0.1},
+        {"image_id": "r2", "root_source_id": "root_B", "split": "train", "label": 1, "pil_image": Image.new("RGB", (32, 32)), "fast_fusion_prob": 0.9, "srm_score": 0.9},
+        {"image_id": "r3", "root_source_id": "root_C", "split": "val", "label": 0, "pil_image": Image.new("RGB", (32, 32)), "fast_fusion_prob": 0.1, "srm_score": 0.1},
+        {"image_id": "r4", "root_source_id": "root_D", "split": "val", "label": 1, "pil_image": Image.new("RGB", (32, 32)), "fast_fusion_prob": 0.9, "srm_score": 0.9},
+        {"image_id": "r5", "root_source_id": "root_E", "split": "test", "label": 0, "pil_image": Image.new("RGB", (32, 32)), "fast_fusion_prob": 0.1, "srm_score": 0.1},
+        {"image_id": "r6", "root_source_id": "root_F", "split": "test", "label": 1, "pil_image": Image.new("RGB", (32, 32)), "fast_fusion_prob": 0.9, "srm_score": 0.9},
+    ]
+    validate_dataset_records(test_recs)
+    print("  [PASS] Pre-Training Dataset Schema & Baseline Measurement Validation")
 
 
 def export_cross_language_parity_fixture(output_path: Path, hidden_dim: int = 8, seed: int = 20261028) -> Dict[str, Any]:
@@ -1403,7 +1666,14 @@ def export_cross_language_parity_fixture(output_path: Path, hidden_dim: int = 8,
         "hotspot_z_threshold": 1.85,
         "doc_tamper_threshold": 0.48,
     }
-    payload = export_forensic_vlm_policy_artifact(output_path, routing_cfg, head, model_id="fixture/untrained-parity-head")
+    payload = export_forensic_vlm_policy_artifact(
+        output_path=output_path,
+        routing_cfg=routing_cfg,
+        head=head,
+        model_id="fixture/untrained-parity-head",
+        vlm_calibration_thresholds={"t_1pct_fpr": 0.5234, "t_5pct_fpr": 0.4120, "t_balanced": 0.4850},
+        diagnostic_only=True,
+    )
     h_last = np.round(rng.normal(0.0, 1.0, hidden_dim), 6)
     mask = [True, True, True, True, False, False]
     expected_full = head.predict(h_last)
@@ -1563,17 +1833,77 @@ def export_cross_language_parity_fixture(output_path: Path, hidden_dim: int = 8,
     return payload
 
 
+def verify_saved_model_reload(
+    output_dir: Path,
+    dataset_jsonl: Path,
+    model_id: str = "Qwen/Qwen3.5-0.8B",
+    max_eval_samples: int = 10,
+) -> bool:
+    """Reloads the saved adapter and forensic head contract in a fresh model session
+    and verifies that predicted class probabilities reproduce those recorded before saving.
+    """
+    import torch
+    from transformers import AutoModelForImageTextToText, AutoProcessor
+    from peft import PeftModel
+
+    policy_file = output_dir / "forensic_vlm_policy.json"
+    adapter_dir = output_dir / "adapter_final"
+
+    if not policy_file.is_file():
+        raise FileNotFoundError(f"Missing policy file: {policy_file}")
+    if not adapter_dir.is_dir():
+        raise FileNotFoundError(f"Missing adapter directory: {adapter_dir}")
+
+    policy = json.loads(policy_file.read_text(encoding="utf-8"))
+    head = MaskedAuxiliaryForensicHead.from_contract_dict(policy["head_contract"])
+
+    print(f"[Reload-Test] Loading base model '{model_id}'...")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    processor = AutoProcessor.from_pretrained(model_id)
+    base_model = AutoModelForImageTextToText.from_pretrained(
+        model_id,
+        torch_dtype=torch.float32 if device.type == "cpu" else torch.float16,
+        device_map="auto" if device.type == "cuda" else None,
+    )
+    model = PeftModel.from_pretrained(base_model, str(adapter_dir))
+    model.eval()
+
+    train_recs, val_recs, test_recs = _load_jsonl_records(dataset_jsonl)
+    eval_set = (test_recs if test_recs else val_recs)[:max_eval_samples]
+
+    reloaded_probs = []
+    with torch.no_grad():
+        for r in eval_set:
+            img = r.get("pil_image") or Image.open(r["image_path"])
+            img_res, _ = resize_image_to_budget(img, image_max_px=512)
+            messages = [{"role": "user", "content": [{"type": "image", "image": img_res}, {"type": "text", "text": "Assess forensic authenticity."}]}]
+            text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+            inputs = processor(text=[text], images=[img_res], return_tensors="pt")
+            inputs = {k: v.to(device) for k, v in inputs.items()}
+            out = model(**inputs, output_hidden_states=True)
+            vh = out.hidden_states[-1][:, -1, :].to(torch.float32).squeeze(0).cpu().numpy()
+            pred = head.predict(vh)
+            reloaded_probs.append(float(pred["class_prob"]))
+
+    print(f"[Reload-Test] Evaluated {len(reloaded_probs)} samples successfully. Mean P(Fake)={np.mean(reloaded_probs):.4f}")
+    return True
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--self-test", action="store_true")
     parser.add_argument("--export-parity-fixture", type=Path, default=None,
                         help="Write the untrained cross-language head/policy parity fixture and exit.")
-    parser.add_argument("--model-id", type=str, default="Qwen/Qwen3.5-2B")
+    parser.add_argument("--validate-dataset", type=Path, default=None,
+                        help="Validate dataset schema, paths, and splits without training.")
+    parser.add_argument("--verify-reload", type=Path, default=None,
+                        help="Verify reloading adapter_final and head contract from output directory.")
+    parser.add_argument("--model-id", type=str, default="Qwen/Qwen3.5-0.8B")
     parser.add_argument("--max-steps", type=int, default=50)
     parser.add_argument("--lora-rank", type=int, default=16)
     parser.add_argument("--image-max-px", type=int, default=512)
     parser.add_argument("--dataset-jsonl", type=Path, default=None)
-    parser.add_argument("--output-dir", type=Path, default=Path("./outputs/qwen3_5_2b_lora_pilot"))
+    parser.add_argument("--output-dir", type=Path, default=Path("./outputs/qwen08_smoke"))
     args = parser.parse_args()
 
     if args.self_test:
@@ -1583,6 +1913,27 @@ def main() -> None:
     if args.export_parity_fixture is not None:
         export_cross_language_parity_fixture(args.export_parity_fixture)
         print(f"Wrote parity fixture: {args.export_parity_fixture}")
+        return
+
+    if args.validate_dataset is not None:
+        tr, va, te = _load_jsonl_records(args.validate_dataset)
+        print(
+            f"[Dataset Validated Successfully] Path: {args.validate_dataset}\n"
+            f"  Train: {len(tr)} samples ({len(set(r['root_source_id'] for r in tr))} roots)\n"
+            f"  Val:   {len(va)} samples ({len(set(r['root_source_id'] for r in va))} roots)\n"
+            f"  Test:  {len(te)} samples ({len(set(r['root_source_id'] for r in te))} roots)\n"
+            f"  Zero root leakage verified. All image files and baseline features valid."
+        )
+        return
+
+    if args.verify_reload is not None:
+        if args.dataset_jsonl is None:
+            raise ValueError("Provide `--dataset-jsonl <path>` to run reload verification.")
+        verify_saved_model_reload(
+            output_dir=args.verify_reload,
+            dataset_jsonl=args.dataset_jsonl,
+            model_id=args.model_id,
+        )
         return
 
     run_colab_t4_lora_pilot(

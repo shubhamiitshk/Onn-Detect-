@@ -1,6 +1,7 @@
 {
   "schema_version": "onn-forensic-vlm-policy-v1",
   "model_id": "fixture/untrained-parity-head",
+  "diagnostic_only": true,
   "routing_policy": {
     "feasible": true,
     "decision_threshold_dev": 0.5782,
@@ -8,6 +9,12 @@
     "calibrated_conflict_logit_threshold": 1.8,
     "hotspot_z_threshold": 1.85,
     "doc_tamper_threshold": 0.48
+  },
+  "vlm_calibration": {
+    "decision_threshold_dev": 0.5234,
+    "threshold_at_1pct_fpr": 0.5234,
+    "threshold_at_5pct_fpr": 0.412,
+    "threshold_balanced": 0.485
   },
   "head_contract": {
     "hidden_dim": 8,

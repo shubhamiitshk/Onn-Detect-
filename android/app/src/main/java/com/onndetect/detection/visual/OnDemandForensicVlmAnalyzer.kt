@@ -252,11 +252,20 @@ object OnDemandForensicVlmAnalyzer {
         val authenticCounterLogits6d: FloatArray,
     )
 
+    data class VlmCalibrationConfig(
+        val decisionThresholdDev: Float = 0.50f,
+        val thresholdAt1PctFpr: Float = 0.50f,
+        val thresholdAt5PctFpr: Float = 0.50f,
+        val thresholdBalanced: Float = 0.50f,
+    )
+
     data class PolicyBundle(
         val schemaVersion: String,
         val modelId: String,
         val routingPolicy: RoutingPolicyConfig,
         val headContract: HeadContractWeights?,
+        val vlmCalibration: VlmCalibrationConfig = VlmCalibrationConfig(),
+        val diagnosticOnly: Boolean = false,
     ) {
         companion object {
             fun fromJson(jsonString: String): PolicyBundle {
@@ -323,7 +332,26 @@ object OnDemandForensicVlmAnalyzer {
                 } else {
                     null
                 }
-                return PolicyBundle(schema, modelId, routing, head)
+                val vlmCalObj = root.optJSONObject("vlm_calibration")
+                val vlmCalibration = if (vlmCalObj != null) {
+                    VlmCalibrationConfig(
+                        decisionThresholdDev = vlmCalObj.optDouble("decision_threshold_dev", 0.50).toFloat(),
+                        thresholdAt1PctFpr = vlmCalObj.optDouble("threshold_at_1pct_fpr", 0.50).toFloat(),
+                        thresholdAt5PctFpr = vlmCalObj.optDouble("threshold_at_5pct_fpr", 0.50).toFloat(),
+                        thresholdBalanced = vlmCalObj.optDouble("threshold_balanced", 0.50).toFloat(),
+                    )
+                } else {
+                    VlmCalibrationConfig()
+                }
+                val diagnosticOnly = root.optBoolean("diagnostic_only", true)
+                return PolicyBundle(
+                    schemaVersion = schema,
+                    modelId = modelId,
+                    routingPolicy = routing,
+                    headContract = head,
+                    vlmCalibration = vlmCalibration,
+                    diagnosticOnly = diagnosticOnly,
+                )
             }
         }
     }
@@ -600,6 +628,7 @@ object OnDemandForensicVlmAnalyzer {
         hotspotZScore: Float = 0f,
         activeDomain: String = "human_face",
         decisionThreshold: Float = 0.5782f,
+        vlmDecisionThreshold: Float = 0.50f,
         cropDownscaleRatio: Float = Float.NaN,
         diagnosticOnly: Boolean = false,
         vlmClassProb: Float = Float.NaN,
@@ -641,9 +670,14 @@ object OnDemandForensicVlmAnalyzer {
                 fastFusionProb
             }
             val postProb = if (diagnosticOnly) fastFusionProb else fusedProb
-            val isFake = (if (vlmClassProb.isFinite()) fusedProb else fastFusionProb) >= decisionThreshold
+            val isFake = if (vlmClassProb.isFinite()) {
+                vlmClassProb >= vlmDecisionThreshold
+            } else {
+                (if (fusedProb.isFinite()) fusedProb else fastFusionProb) >= decisionThreshold
+            }
+            val diagPrefix = if (diagnosticOnly) "[DiagnosticOnly] true | " else ""
             val explanation = if (vlmClassProb.isFinite()) {
-                "<think>[Domain] $activeDomain | [SupervisedRubric] none | [VlmClassProb] ${"%.4f".format(vlmClassProb)} " +
+                "<think>$diagPrefix[Domain] $activeDomain | [SupervisedRubric] none | [VlmClassProb] ${"%.4f".format(vlmClassProb)} " +
                     "(fastProb=${"%.3f".format(fastFusionProb)})</think><answer>${if (isFake) "Fake" else "Real"}</answer>"
             } else {
                 "No observable VLM axes applicable; specialist baseline retained."
@@ -707,15 +741,20 @@ object OnDemandForensicVlmAnalyzer {
         val fusedProb = sigmoid(0.62f * zFast + 0.38f * zVlm)
         val postProb = if (diagnosticOnly) fastFusionProb else fusedProb
 
-        val isFake = fusedProb >= decisionThreshold
+        val isFake = if (vlmClassProb.isFinite()) {
+            vlmClassProb >= vlmDecisionThreshold
+        } else {
+            fusedProb >= decisionThreshold
+        }
         val flawAxis = if (isFake) RUBRIC_AXES[bestIdx] else "none"
         val axesSummary = evaluated.joinToString(",")
+        val diagPrefix = if (diagnosticOnly) "[DiagnosticOnly] true | " else ""
         val explanation = if (isFake) {
-            "<think>[Domain] $activeDomain | [EvaluatedAxes] $axesSummary | " +
+            "<think>$diagPrefix[Domain] $activeDomain | [EvaluatedAxes] $axesSummary | " +
                 "[PeakAxis] $flawAxis (deltaLogit=${"%.2f".format(peakCalibratedDiff)}, " +
                 "fastProb=${"%.3f".format(fastFusionProb)}, vlmProb=${"%.3f".format(vlmProb)})</think><answer>Fake</answer>"
         } else {
-            "<think>[Domain] $activeDomain | [EvaluatedAxes] $axesSummary | " +
+            "<think>$diagPrefix[Domain] $activeDomain | [EvaluatedAxes] $axesSummary | " +
                 "[PeakDeltaLogit] ${"%.2f".format(peakCalibratedDiff)} " +
                 "(fastProb=${"%.3f".format(fastFusionProb)}, vlmProb=${"%.3f".format(vlmProb)})</think><answer>Real</answer>"
         }
@@ -837,8 +876,9 @@ object OnDemandForensicVlmAnalyzer {
                 hotspotZScore = hotspotZScore,
                 activeDomain = activeDomain,
                 decisionThreshold = policyBundle.routingPolicy.decisionThresholdDev,
+                vlmDecisionThreshold = policyBundle.vlmCalibration.decisionThresholdDev,
                 cropDownscaleRatio = cropDownscaleRatioProvider(),
-                diagnosticOnly = diagnosticOnly,
+                diagnosticOnly = policyBundle.diagnosticOnly || diagnosticOnly,
                 vlmClassProb = projected.classProb,
                 vlmClassLogit = projected.classLogit,
             )

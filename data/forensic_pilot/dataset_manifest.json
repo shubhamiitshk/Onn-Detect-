@@ -1,0 +1,26 @@
+{
+  "schema_version": "onn-forensic-pilot-corpus-v1",
+  "total_records": 145,
+  "total_roots": 120,
+  "splits": {
+    "train": {
+      "records": 87,
+      "roots": 72,
+      "fakes": 43,
+      "reals": 44
+    },
+    "val": {
+      "records": 29,
+      "roots": 24,
+      "fakes": 14,
+      "reals": 15
+    },
+    "test": {
+      "records": 29,
+      "roots": 24,
+      "fakes": 14,
+      "reals": 15
+    }
+  },
+  "records_file": "data\\forensic_pilot\\forensic_pilot.jsonl"
+}
