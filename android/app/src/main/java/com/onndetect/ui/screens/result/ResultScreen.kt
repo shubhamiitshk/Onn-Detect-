@@ -94,7 +94,7 @@ fun ResultScreen(navController: NavController, viewModel: ResultViewModel = hilt
                             onClick = { navController.popBackStack() },
                             colors = ButtonDefaults.buttonColors(containerColor = SurfaceElevated)
                         ) {
-                            Text(stringResource(R.string.back), color = CyberCyan)
+                            Text(stringResource(R.string.done), color = CyberCyan)
                         }
                     }
                 }

@@ -14,6 +14,7 @@ import com.onndetect.detection.visual.ContrastivePatchCraftROI
 import com.onndetect.detection.visual.VfmProbeAnalyzer
 import com.onndetect.detection.visual.CalibrationStore
 import com.onndetect.detection.visual.ResidualHeatmapExtractor
+import com.onndetect.detection.visual.OnDemandForensicVlmAnalyzer
 import com.onndetect.inference.ModelIntegrityChecker
 import com.onndetect.inference.ModelIntegrityGate
 import com.onndetect.domain.models.*
@@ -93,6 +94,8 @@ class DetectionPipeline @Inject constructor(
         var quality = QualityInfo(originalMinEdge ?: 0, isCompressed, null, false, false)
         var residualHeatmap: FloatArray? = null
         var docReport: com.onndetect.detection.document.DocumentForgeryReport? = null
+        var vlmRoute: OnDemandForensicVlmAnalyzer.EscalationRoute? = null
+        var vlmOutcome: OnDemandForensicVlmAnalyzer.DialecticalVlmOutcome? = null
         // Provenance evidence is collected independently of the statistical
         // detectors and NEVER enters the score. It is categorical: a
         // VERIFIED claim or a significant watermark detection is a
@@ -143,7 +146,9 @@ class DetectionPipeline @Inject constructor(
                 verdictConfidence = confidence, provenanceEvidence = provenanceEvidence,
                 mediaSha256 = mediaSha256,
                 releaseDeviceValidated = report?.deviceValidated == true,
-                documentForgeryReport = docReport)
+                documentForgeryReport = docReport,
+                forensicVlmRoute = vlmRoute,
+                forensicVlmOutcome = vlmOutcome)
         }
         try {
             emit(ScanProgress("Validating input...", 5f))
@@ -189,6 +194,8 @@ class DetectionPipeline @Inject constructor(
             var srm = -1f
             var richPoorContrast = Float.NaN
             var roiHotspotScore = Float.NaN
+            var hotspotZ = 0f
+            var hotspotNormBox: FloatArray? = null
             if (budget != DegradationLevel.ABSTAIN) {
                 emit(ScanProgress("Decomposing 20-ch high-pass residuals…", 20f))
                 val srmDetailed = srmAnalyzer.analyzeDetailed(
@@ -202,10 +209,22 @@ class DetectionPipeline @Inject constructor(
                 // do not alter the calibrated operating point until a new fusion model is fitted.
                 srm = srmDetailed.richScore
                 val hm = residualHeatmap
-                if (budget == DegradationLevel.FULL && hm != null && hm.isNotEmpty() && srm in 0.12f..0.72f &&
+                val extractedHotspot = if (hm != null && hm.isNotEmpty()) {
+                    ResidualHeatmapExtractor.extractHotspotBoundingBox(hm, 32, 8)
+                } else null
+                if (extractedHotspot != null) {
+                    hotspotZ = extractedHotspot.zScore
+                    hotspotNormBox = floatArrayOf(
+                        extractedHotspot.normX0,
+                        extractedHotspot.normY0,
+                        extractedHotspot.normX1,
+                        extractedHotspot.normY1,
+                    )
+                }
+                if (budget == DegradationLevel.FULL && extractedHotspot != null && srm in 0.12f..0.72f &&
                     bitmap.width >= 256 && bitmap.height >= 256) {
-                    val hotspot = ResidualHeatmapExtractor.extractHotspotBoundingBox(hm, 32, 8)
-                    if (hotspot != null && hotspot.zScore >= 1.85f) {
+                    val hotspot = extractedHotspot
+                    if (hotspot.zScore >= 1.85f) {
                         val x0 = (hotspot.normX0 * bitmap.width).toInt().coerceIn(0, bitmap.width - 128)
                         val y0 = (hotspot.normY0 * bitmap.height).toInt().coerceIn(0, bitmap.height - 128)
                         val cropW = max(128, ((hotspot.normX1 - hotspot.normX0) * bitmap.width).toInt()).coerceAtMost(bitmap.width - x0)
@@ -333,6 +352,71 @@ class DetectionPipeline @Inject constructor(
                     escalated = false,
                     reason = "Single-engine fusion",
                 )
+            }
+
+            val vlmPolicyBundle = OnDemandForensicVlmAnalyzer.loadInstalledPolicyBundleOrNull(appContext)
+            // ── Optional Tier-2 on-device VLM escalation (Engine D) ───────────
+            // Routing is always computed and recorded so the escalation rate can
+            // be measured on real traffic. The VLM itself only runs when the
+            // experimental flag is on, an imported policy bundle with a head
+            // contract is installed, and a prefill backend is registered. Its
+            // outcome is recorded on the result and never replaces the
+            // calibrated specialist verdict until a device-validated pack is
+            // promoted through the release manifest.
+            val docTamper = docReport?.takeIf { it.isDocumentOrScreenshot }?.forgeryScore ?: 0f
+            val activeDomain = OnDemandForensicVlmAnalyzer.inferForensicDomain(
+                docTamperScore = docTamper,
+                hasFaceLandmarks = signals.landmarkJitter.isFinite() && signals.landmarkJitter >= 0f,
+                richPoorContrast = if (richPoorContrast.isFinite()) richPoorContrast else 0.5f,
+            )
+            val am = appContext.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            vlmRoute = if (vlmPolicyBundle != null) {
+                OnDemandForensicVlmAnalyzer.routeWithPolicy(
+                    policy = vlmPolicyBundle.routingPolicy,
+                    fastFusionProb = fusedScore,
+                    srmCalibratedScore = srm,
+                    vfmProbeScore = engineCScore,
+                    hotspotZScore = hotspotZ,
+                    activeDomain = activeDomain,
+                    docTamperScore = docTamper,
+                    availableHeapMb = am.memoryClass,
+                )
+            } else {
+                OnDemandForensicVlmAnalyzer.routeAsPerNeed(
+                    fastFusionProb = fusedScore,
+                    decisionThreshold = decisionThreshold,
+                    srmCalibratedScore = srm,
+                    vfmProbeScore = engineCScore,
+                    hotspotZScore = hotspotZ,
+                    activeDomain = activeDomain,
+                    docTamperScore = docTamper,
+                    availableHeapMb = am.memoryClass,
+                )
+            }
+            val prefillBackend = OnDemandForensicVlmAnalyzer.activePrefillBackend
+            if (OnDemandForensicVlmAnalyzer.experimentalVlmCascadeEnabled &&
+                vlmRoute?.invokeOnDeviceVlm == true &&
+                vlmPolicyBundle?.headContract != null &&
+                prefillBackend != null
+            ) {
+                checkStop()
+                emit(ScanProgress("Running experimental Tier-2 VLM forensic check…", 95f))
+                vlmOutcome = runCatching {
+                    OnDemandForensicVlmAnalyzer.executeEscalatedDeepScan(
+                        context = appContext,
+                        inferenceEngine = vfmProbe.inferenceEngine,
+                        policyBundle = vlmPolicyBundle,
+                        backend = prefillBackend,
+                        fullBitmap = bitmap,
+                        sourceUri = sourceUri,
+                        hotspotNormBox = hotspotNormBox,
+                        fastFusionProb = decision.score,
+                        hotspotZScore = hotspotZ,
+                        activeDomain = activeDomain,
+                        applicableMask6d = booleanArrayOf(true, true, true, true, activeDomain == "document_text", false),
+                        diagnosticOnly = OnDemandForensicVlmAnalyzer.experimentalDiagnosticOnly,
+                    )
+                }.getOrNull()
             }
 
             if (decision.verdict == DetectionVerdict.INCONCLUSIVE) {

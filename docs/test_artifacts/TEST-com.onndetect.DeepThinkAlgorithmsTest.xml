@@ -1,20 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.onndetect.DeepThinkAlgorithmsTest" tests="14" skipped="0" failures="0" errors="0" timestamp="2026-10-27T19:36:55.890Z" hostname="SHK-PC" time="0.048">
+<testsuite name="com.onndetect.DeepThinkAlgorithmsTest" tests="14" skipped="0" failures="0" errors="0" timestamp="2026-10-27T20:19:13.614Z" hostname="SHK-PC" time="0.061">
   <properties/>
-  <testcase name="onDemandForensicVlmRoutesAndFusesDialectically" classname="com.onndetect.DeepThinkAlgorithmsTest" time="0.023"/>
+  <testcase name="onDemandForensicVlmRoutesAndFusesDialectically" classname="com.onndetect.DeepThinkAlgorithmsTest" time="0.037"/>
   <testcase name="authentic video with authentic audio stays authentic" classname="com.onndetect.DeepThinkAlgorithmsTest" time="0.002"/>
   <testcase name="uniform diffusion residual across rich and poor mosaics is reinforced" classname="com.onndetect.DeepThinkAlgorithmsTest" time="0.003"/>
-  <testcase name="uniform heatmap produces near-zero z-score" classname="com.onndetect.DeepThinkAlgorithmsTest" time="0.004"/>
-  <testcase name="portrait mode bokeh with low poor-mosaic residual is dampened" classname="com.onndetect.DeepThinkAlgorithmsTest" time="0.0"/>
-  <testcase name="ai video with real music and smooth motion is not dragged below visual threshold" classname="com.onndetect.DeepThinkAlgorithmsTest" time="0.0"/>
-  <testcase name="bilateral rppg phase-locked malar pulses yield low anomaly" classname="com.onndetect.DeepThinkAlgorithmsTest" time="0.003"/>
-  <testcase name="v11 multi-window audio combiner protects low-anomaly noisy speech and boosts synthetic" classname="com.onndetect.DeepThinkAlgorithmsTest" time="0.002"/>
-  <testcase name="v11 bilateral rppg phase anomaly boosts borderline talking-head video score" classname="com.onndetect.DeepThinkAlgorithmsTest" time="0.001"/>
+  <testcase name="uniform heatmap produces near-zero z-score" classname="com.onndetect.DeepThinkAlgorithmsTest" time="0.003"/>
+  <testcase name="portrait mode bokeh with low poor-mosaic residual is dampened" classname="com.onndetect.DeepThinkAlgorithmsTest" time="0.001"/>
+  <testcase name="ai video with real music and smooth motion is not dragged below visual threshold" classname="com.onndetect.DeepThinkAlgorithmsTest" time="0.001"/>
+  <testcase name="bilateral rppg phase-locked malar pulses yield low anomaly" classname="com.onndetect.DeepThinkAlgorithmsTest" time="0.002"/>
+  <testcase name="v11 multi-window audio combiner protects low-anomaly noisy speech and boosts synthetic" classname="com.onndetect.DeepThinkAlgorithmsTest" time="0.001"/>
+  <testcase name="v11 bilateral rppg phase anomaly boosts borderline talking-head video score" classname="com.onndetect.DeepThinkAlgorithmsTest" time="0.0"/>
   <testcase name="desynchronized synthetic malar chromaticity yields high rppg anomaly" classname="com.onndetect.DeepThinkAlgorithmsTest" time="0.0"/>
   <testcase name="real video with ai voice clone escalates above visual threshold" classname="com.onndetect.DeepThinkAlgorithmsTest" time="0.0"/>
-  <testcase name="v11 localized ROI splice with high hotspot z-score boosts calibrated SRM score" classname="com.onndetect.DeepThinkAlgorithmsTest" time="0.001"/>
-  <testcase name="v11 VFM temporal acceleration detects oscillating jerky synthetic trajectories" classname="com.onndetect.DeepThinkAlgorithmsTest" time="0.005"/>
-  <testcase name="hotspot extractor pinpoints localized 8x8 tampering cluster with high z-score" classname="com.onndetect.DeepThinkAlgorithmsTest" time="0.003"/>
+  <testcase name="v11 localized ROI splice with high hotspot z-score boosts calibrated SRM score" classname="com.onndetect.DeepThinkAlgorithmsTest" time="0.0"/>
+  <testcase name="v11 VFM temporal acceleration detects oscillating jerky synthetic trajectories" classname="com.onndetect.DeepThinkAlgorithmsTest" time="0.006"/>
+  <testcase name="hotspot extractor pinpoints localized 8x8 tampering cluster with high z-score" classname="com.onndetect.DeepThinkAlgorithmsTest" time="0.002"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>

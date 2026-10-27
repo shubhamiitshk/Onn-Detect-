@@ -77,6 +77,10 @@ data class ScanResult(
     val kycInjectionReport: com.onndetect.detection.kyc.KycInjectionReport? = null,
     /** Family Safe-Voice Vault speaker verification and identity matching report. */
     val voiceMatchReport: com.onndetect.detection.audio.VoiceMatchReport? = null,
+    /** Learned routing decision for optional Tier-2 on-device VLM escalation. */
+    val forensicVlmRoute: com.onndetect.detection.visual.OnDemandForensicVlmAnalyzer.EscalationRoute? = null,
+    /** Optional Tier-2 on-device VLM deep-scan outcome when experimental escalation is enabled. */
+    val forensicVlmOutcome: com.onndetect.detection.visual.OnDemandForensicVlmAnalyzer.DialecticalVlmOutcome? = null,
 ) {
     init {
         require(overallScore.isNaN() || overallScore == -1f || overallScore in 0f..1f)

@@ -1,5 +1,14 @@
 package com.onndetect.detection.visual
 
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.BitmapRegionDecoder
+import android.graphics.Rect
+import android.net.Uri
+import com.onndetect.inference.LiteRTInferenceEngine
+import org.json.JSONObject
+import java.io.File
 import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.ln
@@ -8,27 +17,70 @@ import kotlin.math.min
 import kotlin.math.tanh
 
 /**
- * Engine D: On-Demand Second-Stage Forensic VLM Router, Pack Contract & Calibration Layer.
+ * Second-Stage On-Device Forensic VLM Escalation & Unified Policy/Head Engine (`Engine D`).
  *
- * Designed in accordance with the 28 October 2026 ONN-DETECT VLM Research Audit:
- * 1. **Explicit Separation of Evidence**:
- *    - Provenance (C2PA/EXIF cryptographic binding) is categorical and never enters statistical scores.
- *    - Specialist detectors (`SigLIP/TAP` + `SRM/PatchCraft`) remain the primary baseline.
- *    - The on-device VLM runs strictly as an optional second-stage deep scan when escalated,
- *      defaulting to `diagnosticOnly = true` (shadow mode) until device validation and
- *      held-out recall gains at fixed 1% / 0.1% FPR are established.
- * 2. **Complete Multimodal Pack Accounting (`language GGUF + mmproj GGUF`)**:
- *    - Accounts for both the language backbone and the required vision encoder/projector (`mmproj`)
- *      component across the prioritized candidate shortlist:
- *        (a) `Qwen/Qwen3.5-2B` (`1,280 MB` Q4_K_M + `668 MB` FP16 mmproj = `1,948 MB`) — First quality candidate
- *        (b) `Qwen/Qwen3.5-0.8B` (`533 MB` Q4_K_M + `205 MB` FP16 mmproj = `738 MB`) — Smaller deployment candidate
- *        (c) `HuggingFaceTB/SmolVLM2-500M-Video-Instruct` (`437 MB` Q8_0 + `109 MB` Q8_0 mmproj = `546 MB`) — Compact baseline
- *        (d) `google/gemma-4-E2B-it` — Google LiteRT-LM multimodal alternative
- * 3. **Masked Observable Artifact Axes (`NOT_APPLICABLE` / `NOT_OBSERVABLE`)**:
- *    - Prevents mechanical label inversion (`1 - y`) when scoring auxiliary artifact axes;
- *      axes that do not apply to the image's content domain are explicitly masked (`Float.NaN`).
+ * Implements the unified training/serving contract paired with `ml/scripts/train_forensic_vlm_colab_t4.py`:
+ *
+ * 1. **Versioned Policy & 13-Output Head Contract (`PolicyBundle`)**:
+ *    - Consumes `onn-forensic-vlm-policy-v1` JSON exported by `train_forensic_vlm_colab_t4.py`.
+ *    - Shares the exact 6 observable artifact axes (`RUBRIC_AXES`), routing equations, and
+ *      13-output linear projection (`classLogit` + 6 `forgeryLogits6d` + 6 `authenticCounterLogits6d`).
+ *
+ * 2. **Feasibility-Checked Routing (`routeWithPolicy` / `routeAsPerNeed`)**:
+ *    - Uses the same log-odds uncertainty, calibrated cross-engine disagreement, and ROI hotspot
+ *      equations as Python's `evaluate_frozen_routing_on_test`.
+ *    - Honors `policy.feasible == false` by never escalating when the routing budget was infeasible.
+ *
+ * 3. **Exclusive Memory Lease & Original-Source ROI Cropping (`executeEscalatedDeepScan`)**:
+ *    - Acquires `LiteRTInferenceEngine.acquireExclusiveVlmSession()` so `siglip_probe_int8.tflite`
+ *      is evicted and blocked from reloading for the entire VLM session lifetime.
+ *    - Decodes the high-resolution ROI crop directly from `sourceUri` via `BitmapRegionDecoder`
+ *      using `computeOriginalSourceCropSpec(...)` and records `downscaleRatio`.
+ *
+ * 4. **Evidence-Grounded Explanations**:
+ *    - Reports only the axes that were actually evaluated (finite in `forgeryLogits6d` and
+ *      `authenticCounterLogits6d`) and their measured numeric log-odds differentials, never
+ *      emitting hardcoded claims for unperformed checks.
  */
 object OnDemandForensicVlmAnalyzer {
+
+    const val POLICY_SCHEMA_VERSION = "onn-forensic-vlm-policy-v1"
+
+    /**
+     * Explicit experimental feature flag for invoking the Tier-2 on-device VLM cascade
+     * inside `DetectionPipeline`. Disabled by default until a device-validated VLM pack
+     * is installed and promoted.
+     */
+    @Volatile
+    var experimentalVlmCascadeEnabled: Boolean = false
+
+    /**
+     * When true, `DetectionPipeline` records the escalated VLM outcome as telemetry on
+     * `ScanResult.forensicVlmOutcome` without overriding the calibrated specialist verdict.
+     */
+    @Volatile
+    var experimentalDiagnosticOnly: Boolean = true
+
+    /**
+     * Optional runtime prefill backend (`llama.cpp` `mtmd` JNI, LiteRT-LM session, or test fixture).
+     */
+    @Volatile
+    var activePrefillBackend: VlmPrefillBackend? = null
+
+    /**
+     * Optional in-memory override for the learned `PolicyBundle` (used by tests or dynamic pack loaders).
+     */
+    @Volatile
+    var overridePolicyBundle: PolicyBundle? = null
+
+    val RUBRIC_AXES: List<String> = listOf(
+        "anatomical_geometry",
+        "physics_illumination",
+        "surface_micro_texture",
+        "boundary_halo_seam",
+        "typography_document_layout",
+        "temporal_kinematic_consistency",
+    )
 
     enum class EscalationMode {
         FAST_EXIT_CONFIDENT,
@@ -37,33 +89,20 @@ object OnDemandForensicVlmAnalyzer {
         VLM_FULL_DIALECTICAL_COT,
     }
 
-    enum class AxisObservationStatus {
-        OBSERVED_ARTIFACT,
-        WITHIN_AUTHENTIC_BOUNDS,
-        NOT_APPLICABLE,
-        NOT_OBSERVABLE,
-    }
-
     /**
-     * Explicit label taxonomy distinguishing computational photography and conventional
-     * retouching (Label 0 = Authentic) from generative synthesis and generative region
-     * editing (Label 1 = Generative AI).
+     * Explicit binary label taxonomy so ordinary phone camera ISP processing is never
+     * conflated with generative AI synthesis or generative editing.
      */
     enum class LabelTaxonomyCategory(val binaryLabel: Int) {
-        /** Raw camera capture or standard phone ISP processing (neural denoising, HDR merge, portrait bokeh). */
         AUTHENTIC_CAMERA_OR_ISP(0),
-        /** Non-generative editing (crop, exposure, color grade, resize, recompression) or screenshot of real media. */
         AUTHENTIC_CONVENTIONAL_EDIT_OR_SCREENSHOT(0),
-        /** Localized generative manipulation (diffusion/autoregressive inpainting, object insertion/removal, face swap). */
         GENERATIVE_LOCAL_EDIT(1),
-        /** Full-image generative synthesis (text-to-image, image-to-image diffusion/autoregressive generation). */
         GENERATIVE_FULL_SYNTHESIS(1),
     }
 
     /**
      * Measurable crop geometry from the original unresized source dimensions (`sourceWidth x sourceHeight`
-     * via `sourceUri` / `BitmapRegionDecoder`). Reports `downscaleRatio` so tests can verify whether
-     * small text or local edit regions retain sufficient pixel density before VLM encoding.
+     * via `sourceUri` / `BitmapRegionDecoder`).
      */
     data class OriginalSourceCropSpec(
         val left: Int,
@@ -103,12 +142,6 @@ object OnDemandForensicVlmAnalyzer {
         )
     }
 
-    /**
-     * Published reference artifact configurations (decimal MB, including BOTH language weights
-     * and the required vision/projector `mmproj` file for `llama.cpp` `mtmd` / LiteRT-LM).
-     * Note: Phone compatibility must be validated by profiling full-process PSS/RSS, native
-     * allocations, visual-token buffers, and KV state on target devices rather than Java heap alone.
-     */
     enum class Tier2ModelPack(
         val packId: String,
         val hfModelId: String,
@@ -123,10 +156,10 @@ object OnDemandForensicVlmAnalyzer {
             languageFileMb = 0,
             visionMmprojFileMb = 0,
             combinedDownloadMb = 0,
-            initialTargetDeviceRamMb = 2048,
+            initialTargetDeviceRamMb = 0,
         ),
         SMOLVLM2_500M_VIDEO_Q8(
-            packId = "smolvlm2_500m_video_q8_0",
+            packId = "smolvlm2_500m_video_instruct_q8_0",
             hfModelId = "HuggingFaceTB/SmolVLM2-500M-Video-Instruct",
             languageFileMb = 437,
             visionMmprojFileMb = 109,
@@ -149,8 +182,8 @@ object OnDemandForensicVlmAnalyzer {
             combinedDownloadMb = 1948,
             initialTargetDeviceRamMb = 8192,
         ),
-        LFM2_5_VL_1_6B_GGUF(
-            packId = "lfm2_5_vl_1_6b_gguf",
+        LFM2_5_VL_1_6B_Q4(
+            packId = "lfm2_5_vl_1_6b_q4",
             hfModelId = "LiquidAI/LFM2.5-VL-1.6B",
             languageFileMb = 880,
             visionMmprojFileMb = 270,
@@ -166,15 +199,9 @@ object OnDemandForensicVlmAnalyzer {
             initialTargetDeviceRamMb = 8192,
         );
 
-        /** Backwards-compatible alias for download size in decimal MB. */
         val downloadSizeMb: Int get() = combinedDownloadMb
     }
 
-    /**
-     * Separate image detail, crop, and visual-token budgets so small receipt/document text
-     * and subtle local edits are extracted from the ORIGINAL source resolution before any
-     * global 384-512 px resize.
-     */
     data class ImageDetailBudget(
         val globalMaxEdgePx: Int = 512,
         val originalSourceCropMaxEdgePx: Int = 512,
@@ -183,24 +210,173 @@ object OnDemandForensicVlmAnalyzer {
     )
 
     /**
-     * Learned routing thresholds fitted on held-out calibrated specialist posteriors
-     * (rather than unvalidated fixed constants).
+     * Versioned routing policy matching Python's `learn_routing_thresholds_on_held_out` and
+     * `evaluate_frozen_routing_on_test`.
      */
-    data class LearnedRoutingThresholds(
-        val llrUncertaintyHalfwidth: Float = 2.20f,
+    data class RoutingPolicyConfig(
+        val feasible: Boolean = true,
+        val decisionThresholdDev: Float = 0.5782f,
+        val llrUncertaintyHalfwidth: Float = 0.65f,
         val calibratedConflictLogitThreshold: Float = 1.80f,
         val hotspotZThreshold: Float = 1.85f,
-        val docTamperThreshold: Float = 0.30f,
-        val voiEscalationThreshold: Float = 0.38f,
-        val voiFullExplanationThreshold: Float = 0.68f,
+        val docTamperThreshold: Float = 0.48f,
     )
 
     /**
-     * Signed local model pack contract for offline user-imported VLM bundles.
-     * Because ONN-DETECT forbids `INTERNET` and `ACCESS_NETWORK_STATE`, packs are imported
-     * via the system document picker and must validate both language AND vision (`mmproj`)
-     * hashes before staging. Text-only packs without `visionMmprojSha256` are rejected.
+     * Unified 13-output head contract matching Python's `MaskedAuxiliaryForensicHead.to_contract_dict()`.
      */
+    data class HeadContractWeights(
+        val hiddenDim: Int,
+        val axes: List<String>,
+        val wClass: FloatArray,
+        val bClass: Float,
+        val wForgeryAxes: Array<FloatArray>,
+        val bForgeryAxes: FloatArray,
+        val wCounterAxes: Array<FloatArray>,
+        val bCounterAxes: FloatArray,
+    ) {
+        init {
+            require(hiddenDim > 0) { "hiddenDim must be positive" }
+            require(axes.size == 6) { "Expected 6 rubric axes, got ${axes.size}" }
+            require(wClass.size == hiddenDim) { "wClass size mismatch" }
+            require(wForgeryAxes.size == 6 && bForgeryAxes.size == 6) { "forgery axes size mismatch" }
+            require(wCounterAxes.size == 6 && bCounterAxes.size == 6) { "counter axes size mismatch" }
+        }
+    }
+
+    data class HeadPrediction(
+        val classLogit: Float,
+        val classProb: Float,
+        val forgeryLogits6d: FloatArray,
+        val authenticCounterLogits6d: FloatArray,
+    )
+
+    data class PolicyBundle(
+        val schemaVersion: String,
+        val modelId: String,
+        val routingPolicy: RoutingPolicyConfig,
+        val headContract: HeadContractWeights?,
+    ) {
+        companion object {
+            fun fromJson(jsonString: String): PolicyBundle {
+                val root = JSONObject(jsonString)
+                val schema = root.getString("schema_version")
+                require(schema == POLICY_SCHEMA_VERSION) {
+                    "Unsupported forensic VLM policy schema '$schema' (expected '$POLICY_SCHEMA_VERSION')"
+                }
+                val modelId = root.optString("model_id", "unknown")
+                val rp = root.getJSONObject("routing_policy")
+                val routing = RoutingPolicyConfig(
+                    feasible = rp.optBoolean("feasible", true),
+                    decisionThresholdDev = rp.getDouble("decision_threshold_dev").toFloat(),
+                    llrUncertaintyHalfwidth = rp.getDouble("llr_uncertainty_halfwidth").toFloat(),
+                    calibratedConflictLogitThreshold = rp.getDouble("calibrated_conflict_logit_threshold").toFloat(),
+                    hotspotZThreshold = rp.getDouble("hotspot_z_threshold").toFloat(),
+                    docTamperThreshold = rp.optDouble("doc_tamper_threshold", 0.48).toFloat(),
+                )
+                val hcObj = root.optJSONObject("head_contract")
+                val head = if (hcObj != null) {
+                    val hiddenDim = hcObj.getInt("hidden_dim")
+                    val axesArr = hcObj.getJSONArray("axes")
+                    val axes = List(axesArr.length()) { axesArr.getString(it) }
+                    val wClassArr = hcObj.getJSONArray("w_class")
+                    val wClass = FloatArray(wClassArr.length()) { wClassArr.getDouble(it).toFloat() }
+                    val bClass = hcObj.getDouble("b_class").toFloat()
+
+                    val wForgeryOuter = hcObj.getJSONArray("w_forgery_axes")
+                    val wForgery = Array(6) { axisIdx ->
+                        val row = wForgeryOuter.getJSONArray(axisIdx)
+                        FloatArray(row.length()) { row.getDouble(it).toFloat() }
+                    }
+                    val bForgeryArr = hcObj.getJSONArray("b_forgery_axes")
+                    val bForgery = FloatArray(6) { bForgeryArr.getDouble(it).toFloat() }
+
+                    val wCounterOuter = hcObj.getJSONArray("w_counter_axes")
+                    val wCounter = Array(6) { axisIdx ->
+                        val row = wCounterOuter.getJSONArray(axisIdx)
+                        FloatArray(row.length()) { row.getDouble(it).toFloat() }
+                    }
+                    val bCounterArr = hcObj.getJSONArray("b_counter_axes")
+                    val bCounter = FloatArray(6) { bCounterArr.getDouble(it).toFloat() }
+
+                    HeadContractWeights(
+                        hiddenDim = hiddenDim,
+                        axes = axes,
+                        wClass = wClass,
+                        bClass = bClass,
+                        wForgeryAxes = wForgery,
+                        bForgeryAxes = bForgery,
+                        wCounterAxes = wCounter,
+                        bCounterAxes = bCounter,
+                    )
+                } else {
+                    null
+                }
+                return PolicyBundle(schema, modelId, routing, head)
+            }
+        }
+    }
+
+    /**
+     * Projects the VLM's final prefill hidden state `hLast` through [head], matching Python's
+     * `MaskedAuxiliaryForensicHead.predict` to within floating-point precision.
+     */
+    fun projectWithHeadContract(
+        hLast: FloatArray,
+        head: HeadContractWeights,
+        applicableMask6d: BooleanArray? = null,
+    ): HeadPrediction {
+        require(hLast.size == head.hiddenDim) {
+            "Hidden state dimension ${hLast.size} does not match head contract ${head.hiddenDim}"
+        }
+        var cLogit = head.bClass
+        for (k in 0 until head.hiddenDim) {
+            cLogit += hLast[k] * head.wClass[k]
+        }
+        val cProb = sigmoid(cLogit)
+        val forgeryLogits = FloatArray(6)
+        val counterLogits = FloatArray(6)
+        for (axis in 0 until 6) {
+            if (applicableMask6d != null && axis < applicableMask6d.size && !applicableMask6d[axis]) {
+                forgeryLogits[axis] = Float.NaN
+                counterLogits[axis] = Float.NaN
+                continue
+            }
+            var sumF = head.bForgeryAxes[axis]
+            var sumC = head.bCounterAxes[axis]
+            val wf = head.wForgeryAxes[axis]
+            val wc = head.wCounterAxes[axis]
+            for (k in 0 until head.hiddenDim) {
+                val hv = hLast[k]
+                sumF += hv * wf[k]
+                sumC += hv * wc[k]
+            }
+            forgeryLogits[axis] = sumF
+            counterLogits[axis] = sumC
+        }
+        return HeadPrediction(
+            classLogit = cLogit,
+            classProb = cProb,
+            forgeryLogits6d = forgeryLogits,
+            authenticCounterLogits6d = counterLogits,
+        )
+    }
+
+    /**
+     * Runtime interface for an on-device VLM prefill engine (e.g., `llama.cpp` `mtmd` JNI
+     * or LiteRT-LM multimodal session). Separating the prefill runtime behind this interface
+     * allows `DetectionPipeline` and unit tests to execute the full session-lease, original-crop,
+     * projection, and dialectical fusion flow deterministically.
+     */
+    fun interface VlmPrefillBackend {
+        fun extractFinalHiddenState(
+            fullBitmap: Bitmap,
+            roiCropBitmap: Bitmap?,
+            cropSpec: OriginalSourceCropSpec?,
+            activeDomain: String,
+        ): FloatArray
+    }
+
     data class SignedVlmPackManifest(
         val packId: String,
         val hfModelId: String,
@@ -220,7 +396,6 @@ object OnDemandForensicVlmAnalyzer {
         val hex64 = Regex("^[0-9a-fA-F]{64}$")
         if (!manifest.publisherSignatureValid) return false
         if (!hex64.matches(manifest.languageWeightsSha256)) return false
-        // Vision/projector component is mandatory: a text-only GGUF cannot inspect an image
         if (!hex64.matches(manifest.visionMmprojSha256)) return false
         if (manifest.languageBytes < 50L * 1024 * 1024 || manifest.visionMmprojBytes < 10L * 1024 * 1024) return false
         if (manifest.imageResolutionCapPx !in 224..1024) return false
@@ -229,12 +404,6 @@ object OnDemandForensicVlmAnalyzer {
         return true
     }
 
-    /**
-     * Selects the recommended candidate pack based on initial product targets:
-     * - `Qwen/Qwen3.5-2B` (~1.95 GB combined pack) when a ~2 GB deep-scan pack is allowed (8 GB+ target)
-     * - `Qwen/Qwen3.5-0.8B` (~738 MB combined pack) for tighter storage / 6 GB+ target
-     * - `HuggingFaceTB/SmolVLM2-500M-Video-Instruct` (~546 MB combined pack) as compact baseline
-     */
     fun selectOptimalTier2ModelPack(
         totalDeviceRamMb: Int,
         freeStorageMb: Int,
@@ -250,46 +419,6 @@ object OnDemandForensicVlmAnalyzer {
             Tier2ModelPack.NONE_SPECIALISTS_ONLY
     }
 
-    /**
-     * Projects the VLM's final prefill token hidden state `hLast` (`d_model`) through a
-     * supervised `d_model x 6` auxiliary head (`wFakeFlat`, `bFake6d`) and optional authentic
-     * reference head (`wRealFlat`, `bReal6d`), masking axes listed in [inapplicableAxes].
-     */
-    fun projectSinglePassRubricHead(
-        hLast: FloatArray,
-        wFakeFlat: FloatArray,
-        bFake6d: FloatArray,
-        wRealFlat: FloatArray,
-        bReal6d: FloatArray,
-        inapplicableAxes: BooleanArray? = null,
-    ): Pair<FloatArray, FloatArray> {
-        val d = hLast.size
-        require(wFakeFlat.size == d * 6 && wRealFlat.size == d * 6) {
-            "Expected rubric projection weights of size ${d * 6}"
-        }
-        val fakeLogits = FloatArray(6)
-        val realLogits = FloatArray(6)
-        for (axis in 0 until 6) {
-            if (inapplicableAxes != null && axis < inapplicableAxes.size && inapplicableAxes[axis]) {
-                fakeLogits[axis] = Float.NaN
-                realLogits[axis] = Float.NaN
-                continue
-            }
-            var sumF = bFake6d[axis]
-            var sumR = bReal6d[axis]
-            var idx = axis
-            for (k in 0 until d) {
-                val hVal = hLast[k]
-                sumF += hVal * wFakeFlat[idx]
-                sumR += hVal * wRealFlat[idx]
-                idx += 6
-            }
-            fakeLogits[axis] = sumF
-            realLogits[axis] = sumR
-        }
-        return fakeLogits to realLogits
-    }
-
     data class EscalationRoute(
         val mode: EscalationMode,
         val invokeOnDeviceVlm: Boolean,
@@ -303,6 +432,8 @@ object OnDemandForensicVlmAnalyzer {
         val posteriorProb: Float,
         val dominantFlawAxis: String,
         val dialecticalExplanation: String,
+        val evaluatedAxes: List<String> = emptyList(),
+        val cropDownscaleRatio: Float = Float.NaN,
         val diagnosticOnly: Boolean = false,
     )
 
@@ -318,10 +449,6 @@ object OnDemandForensicVlmAnalyzer {
         return (1.0 / (1.0 + exp(-c.toDouble()))).toFloat()
     }
 
-    /**
-     * Infers the active content domain so inapplicable artifact axes (e.g., typography on a
-     * natural face portrait, or anatomical geometry on a text screenshot) can be masked.
-     */
     fun inferForensicDomain(
         docTamperScore: Float = 0f,
         hasFaceLandmarks: Boolean = false,
@@ -335,9 +462,90 @@ object OnDemandForensicVlmAnalyzer {
     }
 
     /**
-     * Evaluates whether the scan warrants second-stage VLM escalation based on specialist
-     * disagreement, uncertainty near the operating threshold, localized ROI hotspot, or
-     * document/screenshot routing.
+     * Evaluates the learned routing policy using the exact same equations as Python's
+     * `evaluate_frozen_routing_on_test`:
+     *   `escalate = (|z_f - z_thr| < llr_hw) || (|z_a - z_c| > conflict_thr) || (hz >= hz_thr)`
+     * When `policy.feasible` is false, never escalates (`invokeOnDeviceVlm = false`).
+     */
+    fun routeWithPolicy(
+        policy: RoutingPolicyConfig,
+        fastFusionProb: Float,
+        srmCalibratedScore: Float,
+        vfmProbeScore: Float?,
+        hotspotZScore: Float = 0f,
+        activeDomain: String = "human_face",
+        docTamperScore: Float = 0f,
+        availableHeapMb: Int = 256,
+        requireExplanation: Boolean = false,
+    ): EscalationRoute {
+        if (!policy.feasible) {
+            return EscalationRoute(
+                mode = EscalationMode.FAST_EXIT_CONFIDENT,
+                invokeOnDeviceVlm = false,
+                expectedVoiScore = 0f,
+                targetDomain = activeDomain,
+                triggerReason = "routing_policy_infeasible",
+            )
+        }
+        val zF = logit(fastFusionProb)
+        val zThr = logit(policy.decisionThresholdDev)
+        val zA = logit(srmCalibratedScore)
+        val llrDiff = abs(zF - zThr)
+        val nearBoundary = llrDiff < policy.llrUncertaintyHalfwidth
+
+        val conflictDiff = if (vfmProbeScore != null && vfmProbeScore.isFinite()) {
+            abs(zA - logit(vfmProbeScore))
+        } else {
+            0f
+        }
+        val crossEngineConflict = conflictDiff > policy.calibratedConflictLogitThreshold
+        val localizedHotspot = hotspotZScore.isFinite() && hotspotZScore >= policy.hotspotZThreshold
+        val docTamper = activeDomain == "document_text" &&
+            docTamperScore.isFinite() &&
+            docTamperScore >= policy.docTamperThreshold
+
+        val shouldEscalate = requireExplanation || nearBoundary || crossEngineConflict || localizedHotspot || docTamper
+
+        val boundaryScore = if (policy.llrUncertaintyHalfwidth > 0f) {
+            max(0f, 1f - llrDiff / max(0.25f, policy.llrUncertaintyHalfwidth))
+        } else 0f
+        val conflictScore = if (policy.calibratedConflictLogitThreshold < 1e6f) {
+            (conflictDiff / max(0.5f, policy.calibratedConflictLogitThreshold)).coerceIn(0f, 1f)
+        } else 0f
+        val hotspotScore = if (localizedHotspot) {
+            ((hotspotZScore - policy.hotspotZThreshold) / 1.5f + 0.5f).coerceIn(0f, 1f)
+        } else 0f
+        val voi = if (!shouldEscalate) {
+            0.10f * boundaryScore
+        } else {
+            max(0.42f, (0.40f * boundaryScore + 0.35f * conflictScore + 0.25f * hotspotScore).coerceIn(0f, 1f))
+        }
+
+        val reason = when {
+            requireExplanation -> "forensic_explanation_requested"
+            nearBoundary -> "ambiguous_fast_margin"
+            crossEngineConflict -> "cross_engine_disagreement"
+            localizedHotspot -> "localized_roi_hotspot"
+            docTamper -> "specialized_domain_$activeDomain"
+            else -> "fast_tier_confident"
+        }
+
+        if (!shouldEscalate) {
+            return EscalationRoute(EscalationMode.FAST_EXIT_CONFIDENT, false, voi, activeDomain, "fast_tier_confident")
+        }
+        if (availableHeapMb < 96) {
+            return EscalationRoute(EscalationMode.MICRO_MOE_ONLY, false, voi, activeDomain, reason)
+        }
+        val mode = if (requireExplanation || voi >= 0.68f) {
+            EscalationMode.VLM_FULL_DIALECTICAL_COT
+        } else {
+            EscalationMode.VLM_SINGLE_PASS_LOGIT
+        }
+        return EscalationRoute(mode, true, voi, activeDomain, reason)
+    }
+
+    /**
+     * Convenience entry point using default `RoutingPolicyConfig` parameterized by [decisionThreshold].
      */
     fun routeAsPerNeed(
         fastFusionProb: Float,
@@ -350,73 +558,23 @@ object OnDemandForensicVlmAnalyzer {
         avConflictScore: Float = 0f,
         availableHeapMb: Int = 256,
         requireExplanation: Boolean = false,
-    ): EscalationRoute {
-        val llrDist = abs(logit(fastFusionProb) - logit(decisionThreshold.coerceIn(0.05f, 0.95f)))
-        val boundaryUncertainty = max(0f, 1f - llrDist / 2.20f)
-
-        val zA = logit(srmCalibratedScore)
-        val engineConflict = if (vfmProbeScore != null && vfmProbeScore.isFinite()) {
-            val zC = logit(vfmProbeScore)
-            if (zA * zC < 0f || abs(zA - zC) > 1.80f) {
-                (abs(zA - zC) / 3.50f).coerceIn(0f, 1f)
-            } else {
-                0f
-            }
-        } else {
-            0.45f
-        }
-
-        val hotspotNeed = if (hotspotZScore >= 1.85f) {
-            ((hotspotZScore - 1.50f) / 2.0f).coerceIn(0f, 1f)
-        } else {
-            0f
-        }
-
-        var domainNeed = 0f
-        if (activeDomain == "document_text" || docTamperScore >= 0.35f) {
-            domainNeed = max(0.55f, docTamperScore.coerceIn(0f, 1f))
-        }
-        if (avConflictScore >= 0.35f) {
-            domainNeed = max(domainNeed, avConflictScore.coerceIn(0f, 1f))
-        }
-
-        val voi = (
-            0.42f * boundaryUncertainty +
-                0.28f * engineConflict +
-                0.18f * hotspotNeed +
-                0.22f * domainNeed +
-                (if (requireExplanation) 0.35f else 0f)
-            ).coerceIn(0f, 1f)
-
-        val reason = when {
-            requireExplanation -> "forensic_explanation_requested"
-            boundaryUncertainty > 0.45f -> "ambiguous_fast_margin"
-            engineConflict > 0.45f -> "cross_engine_disagreement"
-            hotspotNeed > 0.15f -> "localized_roi_hotspot"
-            domainNeed > 0.30f -> "specialized_domain_$activeDomain"
-            else -> "fast_tier_confident"
-        }
-
-        if (availableHeapMb < 96) {
-            val mode = if (voi >= 0.38f) EscalationMode.MICRO_MOE_ONLY else EscalationMode.FAST_EXIT_CONFIDENT
-            return EscalationRoute(mode, false, voi, activeDomain, reason)
-        }
-
-        return when {
-            requireExplanation || voi >= 0.68f ->
-                EscalationRoute(EscalationMode.VLM_FULL_DIALECTICAL_COT, true, voi, activeDomain, reason)
-            voi >= 0.38f ->
-                EscalationRoute(EscalationMode.VLM_SINGLE_PASS_LOGIT, true, voi, activeDomain, reason)
-            else ->
-                EscalationRoute(EscalationMode.FAST_EXIT_CONFIDENT, false, voi, activeDomain, "fast_tier_confident")
-        }
-    }
+        policy: RoutingPolicyConfig = RoutingPolicyConfig(decisionThresholdDev = decisionThreshold),
+    ): EscalationRoute = routeWithPolicy(
+        policy = policy,
+        fastFusionProb = fastFusionProb,
+        srmCalibratedScore = srmCalibratedScore,
+        vfmProbeScore = vfmProbeScore,
+        hotspotZScore = hotspotZScore,
+        activeDomain = activeDomain,
+        docTamperScore = max(docTamperScore, avConflictScore),
+        availableHeapMb = availableHeapMb,
+        requireExplanation = requireExplanation,
+    )
 
     /**
      * Combines observable artifact axis logits (`Float.NaN` when `NOT_APPLICABLE` or `NOT_OBSERVABLE`)
-     * with the specialist baseline probability. When [diagnosticOnly] is true (shadow evaluation mode),
-     * `posteriorProb` preserves `fastFusionProb` so the public detector's operating point is not
-     * altered before held-out calibration is verified.
+     * with the specialist baseline probability. Explanations cite ONLY the axes that were actually
+     * evaluated (`evaluatedAxes`) and their measured log-odds differentials.
      */
     fun fuseDialecticalLogits(
         fastFusionProb: Float,
@@ -427,6 +585,7 @@ object OnDemandForensicVlmAnalyzer {
         hotspotZScore: Float = 0f,
         activeDomain: String = "human_face",
         decisionThreshold: Float = 0.5782f,
+        cropDownscaleRatio: Float = Float.NaN,
         diagnosticOnly: Boolean = false,
     ): DialecticalVlmOutcome {
         require(forgeryLogits6d.size == 6 && authenticCounterLogits6d.size == 6) {
@@ -439,26 +598,19 @@ object OnDemandForensicVlmAnalyzer {
             "animal_art" -> floatArrayOf(0.28f, 0.32f, 0.18f, 0.16f, 0.02f, 0.04f)
             else -> floatArrayOf(0.32f, 0.26f, 0.18f, 0.10f, 0.02f, 0.12f)
         }
-        val axisNames = arrayOf(
-            "anatomical_geometry",
-            "surface_texture_fidelity",
-            "lighting_shadow_physics",
-            "perspective_boundary_seams",
-            "typography_document_layout",
-            "temporal_audiovisual_sync",
-        )
 
-        val roiW = if (hotspotZScore >= 1.85f) {
+        val roiW = if (hotspotZScore.isFinite() && hotspotZScore >= 1.85f) {
             min(0.65f, 0.35f + 0.12f * (hotspotZScore - 1.85f))
         } else {
             0.20f
         }
 
-        // Normalize weights strictly over applicable/observable (finite) axes
         var activeWeightSum = 0f
+        val evaluated = ArrayList<String>(6)
         for (i in 0 until 6) {
             if (forgeryLogits6d[i].isFinite() && authenticCounterLogits6d[i].isFinite()) {
                 activeWeightSum += rawWeights[i]
+                evaluated += RUBRIC_AXES[i]
             }
         }
         if (activeWeightSum <= 0f) {
@@ -467,6 +619,8 @@ object OnDemandForensicVlmAnalyzer {
                 posteriorProb = fastFusionProb,
                 dominantFlawAxis = "not_observable",
                 dialecticalExplanation = "No observable VLM axes applicable; specialist baseline retained.",
+                evaluatedAxes = emptyList(),
+                cropDownscaleRatio = cropDownscaleRatio,
                 diagnosticOnly = diagnosticOnly,
             )
         }
@@ -507,15 +661,16 @@ object OnDemandForensicVlmAnalyzer {
         val postProb = if (diagnosticOnly) fastFusionProb else fusedProb
 
         val isFake = fusedProb >= decisionThreshold
-        val flawAxis = if (isFake) axisNames[bestIdx] else "none"
+        val flawAxis = if (isFake) RUBRIC_AXES[bestIdx] else "none"
+        val axesSummary = evaluated.joinToString(",")
         val explanation = if (isFake) {
-            "<think>[Clue] Domain='$activeDomain', primary anomaly on '$flawAxis' (Z=${"%.2f".format(peakCalibratedDiff)}). " +
-                "[Why Fake] Observable regional/structural inconsistency on '$flawAxis'. " +
-                "[If Real] Checked against natural optical bokeh, sensor grain, and JPEG quantization.</think><answer>Fake</answer>"
+            "<think>[Domain] $activeDomain | [EvaluatedAxes] $axesSummary | " +
+                "[PeakAxis] $flawAxis (deltaLogit=${"%.2f".format(peakCalibratedDiff)}, " +
+                "fastProb=${"%.3f".format(fastFusionProb)}, vlmProb=${"%.3f".format(vlmProb)})</think><answer>Fake</answer>"
         } else {
-            "<think>[Clue] Domain='$activeDomain', observable axes within authentic bounds. " +
-                "[Why Real] Lighting, geometry, and surface details are consistent with optical capture. " +
-                "[If Fake] High-frequency variations consistent with camera ISP or compression.</think><answer>Real</answer>"
+            "<think>[Domain] $activeDomain | [EvaluatedAxes] $axesSummary | " +
+                "[PeakDeltaLogit] ${"%.2f".format(peakCalibratedDiff)} " +
+                "(fastProb=${"%.3f".format(fastFusionProb)}, vlmProb=${"%.3f".format(vlmProb)})</think><answer>Real</answer>"
         }
 
         return DialecticalVlmOutcome(
@@ -523,7 +678,132 @@ object OnDemandForensicVlmAnalyzer {
             posteriorProb = postProb,
             dominantFlawAxis = flawAxis,
             dialecticalExplanation = explanation,
+            evaluatedAxes = evaluated,
+            cropDownscaleRatio = cropDownscaleRatio,
             diagnosticOnly = diagnosticOnly,
         )
+    }
+
+    /**
+     * End-to-end execution of an escalated Tier-2 VLM deep scan:
+     * 1. Acquires an exclusive session lease on [inferenceEngine] so `siglip_probe_int8.tflite`
+     *    is evicted and blocked from reloading while the VLM runs.
+     * 2. Decodes the original-source ROI crop from [sourceUri] via [BitmapRegionDecoder] when
+     *    available, computing `OriginalSourceCropSpec.downscaleRatio`.
+     * 3. Runs [backend] and projects `hLast` through [policyBundle]'s `headContract`.
+     * 4. Fuses the resulting 6-axis forgery and counter-evidence logits with [fastFusionProb].
+     */
+    fun executeEscalatedDeepScan(
+        context: Context?,
+        inferenceEngine: LiteRTInferenceEngine,
+        policyBundle: PolicyBundle,
+        backend: VlmPrefillBackend,
+        fullBitmap: Bitmap,
+        sourceUri: Uri? = null,
+        hotspotNormBox: FloatArray? = null,
+        fastFusionProb: Float,
+        hotspotZScore: Float = 0f,
+        activeDomain: String = "human_face",
+        applicableMask6d: BooleanArray? = null,
+        diagnosticOnly: Boolean = true,
+    ): DialecticalVlmOutcome {
+        requireNotNull(policyBundle.headContract) {
+            "PolicyBundle '${policyBundle.modelId}' does not contain a head_contract"
+        }
+        var roiBitmap: Bitmap? = null
+        var cropSpec: OriginalSourceCropSpec? = null
+        try {
+            return executeLeasedProjection(
+                inferenceEngine = inferenceEngine,
+                policyBundle = policyBundle,
+                fastFusionProb = fastFusionProb,
+                hotspotZScore = hotspotZScore,
+                activeDomain = activeDomain,
+                applicableMask6d = applicableMask6d,
+                diagnosticOnly = diagnosticOnly,
+                cropDownscaleRatioProvider = { cropSpec?.downscaleRatio ?: 1.0f },
+            ) {
+                if (context != null && sourceUri != null && hotspotNormBox != null && hotspotNormBox.size == 4) {
+                    runCatching {
+                        context.contentResolver.openInputStream(sourceUri)?.use { stream ->
+                            @Suppress("DEPRECATION")
+                            val decoder = BitmapRegionDecoder.newInstance(stream, false)
+                            if (decoder != null) {
+                                try {
+                                    val spec = computeOriginalSourceCropSpec(
+                                        sourceWidth = decoder.width,
+                                        sourceHeight = decoder.height,
+                                        normX0 = hotspotNormBox[0],
+                                        normY0 = hotspotNormBox[1],
+                                        normX1 = hotspotNormBox[2],
+                                        normY1 = hotspotNormBox[3],
+                                    )
+                                    cropSpec = spec
+                                    val rect = Rect(spec.left, spec.top, spec.left + spec.width, spec.top + spec.height)
+                                    roiBitmap = decoder.decodeRegion(rect, BitmapFactory.Options())
+                                } finally {
+                                    decoder.recycle()
+                                }
+                            }
+                        }
+                    }
+                }
+                backend.extractFinalHiddenState(fullBitmap, roiBitmap, cropSpec, activeDomain)
+            }
+        } finally {
+            val roi = roiBitmap
+            if (roi != null && roi !== fullBitmap && !roi.isRecycled) {
+                roi.recycle()
+            }
+        }
+    }
+
+    /**
+     * Bitmap-independent core of [executeEscalatedDeepScan]. Holds an exclusive session lease on
+     * [inferenceEngine] for the whole duration of [extractHiddenState], projects the returned
+     * final hidden state through the policy's 13-output head contract, and fuses the axes.
+     * The lease is always released, including when [extractHiddenState] throws.
+     */
+    fun executeLeasedProjection(
+        inferenceEngine: LiteRTInferenceEngine,
+        policyBundle: PolicyBundle,
+        fastFusionProb: Float,
+        hotspotZScore: Float = 0f,
+        activeDomain: String = "human_face",
+        applicableMask6d: BooleanArray? = null,
+        diagnosticOnly: Boolean = true,
+        cropDownscaleRatioProvider: () -> Float = { 1.0f },
+        extractHiddenState: () -> FloatArray,
+    ): DialecticalVlmOutcome {
+        val head = requireNotNull(policyBundle.headContract) {
+            "PolicyBundle '${policyBundle.modelId}' does not contain a head_contract"
+        }
+        return inferenceEngine.acquireExclusiveVlmSession().use { _ ->
+            val hLast = extractHiddenState()
+            val projected = projectWithHeadContract(hLast, head, applicableMask6d)
+            fuseDialecticalLogits(
+                fastFusionProb = fastFusionProb,
+                forgeryLogits6d = projected.forgeryLogits6d,
+                authenticCounterLogits6d = projected.authenticCounterLogits6d,
+                hotspotZScore = hotspotZScore,
+                activeDomain = activeDomain,
+                decisionThreshold = policyBundle.routingPolicy.decisionThresholdDev,
+                cropDownscaleRatio = cropDownscaleRatioProvider(),
+                diagnosticOnly = diagnosticOnly,
+            )
+        }
+    }
+
+    /**
+     * Loads an optional user-imported local policy bundle from `<filesDir>/vlm_packs/forensic_vlm_policy.json`
+     * when present on device.
+     */
+    fun loadInstalledPolicyBundleOrNull(context: Context): PolicyBundle? {
+        overridePolicyBundle?.let { return it }
+        return runCatching {
+            val policyFile = File(File(context.filesDir, "vlm_packs"), "forensic_vlm_policy.json")
+            if (!policyFile.isFile) return null
+            PolicyBundle.fromJson(policyFile.readText(Charsets.UTF_8))
+        }.getOrNull()
     }
 }

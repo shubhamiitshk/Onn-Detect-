@@ -62,6 +62,7 @@ class VfmProbeAnalyzer @Inject constructor(
     private val context: Context,
     private val engine: LiteRTInferenceEngine,
 ) {
+    internal val inferenceEngine: LiteRTInferenceEngine get() = engine
 
     companion object {
         /** The SigLIP-B/16 probe graph. */

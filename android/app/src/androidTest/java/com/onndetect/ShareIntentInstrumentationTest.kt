@@ -84,9 +84,9 @@ class ShareIntentInstrumentationTest {
         assertNull(SharedMediaIntents.consume(null))
     }
 
-    @Test fun theAppIsOfferedAsAShareTargetForImagesAndAudio() {
+    @Test fun theAppIsOfferedAsAShareTargetForImagesAudioAndVideo() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        for (type in listOf("image/jpeg", "audio/mp4")) {
+        for (type in listOf("image/jpeg", "audio/mp4", "video/mp4")) {
             val intent = Intent(Intent.ACTION_SEND).apply { this.type = type }
             val handlers = context.packageManager.queryIntentActivities(
                 intent, PackageManager.MATCH_DEFAULT_ONLY,
@@ -104,15 +104,12 @@ class ShareIntentInstrumentationTest {
         }
     }
 
-    @Test fun theAppIsNOTOfferedAsAShareTargetForVideo() {
-        // The video-level blend is not calibrated on a video split, so the
-        // app must not appear in a video share sheet and then return a
-        // verdict it has not validated.
+    @Test fun theAppIsNOTOfferedAsAShareTargetForPlainText() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val intent = Intent(Intent.ACTION_SEND).apply { type = "video/mp4" }
+        val intent = Intent(Intent.ACTION_SEND).apply { type = "text/plain" }
         val ours = context.packageManager
             .queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY)
             .filter { it.activityInfo.packageName == context.packageName }
-        assertTrue("the app must not claim to be a video share target", ours.isEmpty())
+        assertTrue("the app must not claim to be a text/plain share target", ours.isEmpty())
     }
 }

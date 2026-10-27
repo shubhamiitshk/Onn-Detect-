@@ -1,5 +1,5 @@
 {
-  "generated_at_utc": "2026-10-27T19:38:00Z",
+  "generated_at_utc": "2026-10-27T20:21:00Z",
   "base_commit": "3da11a3d13690a1d3c550410e797030517a8756b",
   "review_branch": "review/qwen35-vlm-cascade-ci-fix",
   "selected_experiment_matrix": [
@@ -31,12 +31,19 @@
     "onn_release_lineage_gate": "PASSED",
     "check_android_consistency": "PASSED (90 Kotlin sources, 10 features in order, 0 errors)",
     "verify_workflow_syntax": "PASSED (build-android.yml, evaluate-models.yml, train-models.yml)",
-    "verify_front_end_parity": "PASSED (max|diff| stationary=2.359e-07, dynamic=4.415e-07)",
-    "gen_lfcc_golden_check": "PASSED (max |numpy - torch| = 0.00e+00)",
-    "verify_fft_parity": "PASSED (max delta score=1.55e-15, flatness=7.37e-18)",
-    "scripts_unittest_suite": "PASSED (62 tests in 11.321s)",
-    "ml_pytest_suite": "PASSED (230 passed, 1 skipped, 3 subtests passed)",
-    "android_testDebugUnitTest": "PASSED (BUILD SUCCESSFUL, DeepThinkAlgorithmsTest 14/14 passed)"
+    "scripts_unittest_suite": "PASSED (62 tests)",
+    "ml_pytest_suite": "PASSED (`pytest ml`: 168 passed, 1 skipped, 3 subtests passed)",
+    "train_forensic_vlm_colab_t4_self_test": "PASSED (dedup, 13-output head, tie-aware FPR, feasibility router, 25-step supervised loop on a stub model)",
+    "train_siglip_tap_self_test": "PASSED",
+    "android_testDebugUnitTest": "PASSED (380 tests, 0 failures; DeepThinkAlgorithmsTest 14/14, OnDemandForensicVlmAnalyzerContractTest 8/8)",
+    "android_assembleDebugAndroidTest": "PASSED (BUILD SUCCESSFUL)"
   },
-  "evidence_status_note": "The unit-test and --self-test outputs verify mathematical invariants, contract enforcement, source-level deduplication, masked loss handling, and routing mechanics on synthetic test inputs. Actual Qwen3.5-0.8B and Qwen3.5-2B detection metrics (TPR @ 1% FPR,TPR @ 5% FPR, conditional and total early-exit miss rates) require executing the Colab T4 training-and-export pilot on held-out forensic splits."
+  "not_rerun_in_this_revision": [
+    "verify_front_end_parity",
+    "gen_lfcc_golden_check",
+    "verify_fft_parity",
+    "connectedDebugAndroidTest (emulator instrumentation; runs in CI)"
+  ],
+  "vlm_integration_scope": "DetectionPipeline computes and records the learned (or default) VLM routing decision on every validated image scan (ScanResult.forensicVlmRoute). The VLM deep scan runs only when OnDemandForensicVlmAnalyzer.experimentalVlmCascadeEnabled is true, an imported policy bundle with a head_contract exists at <filesDir>/vlm_packs/forensic_vlm_policy.json, and a VlmPrefillBackend is registered. No native VLM runtime (llama.cpp mtmd / LiteRT-LM) ships in this revision, so on a stock build the deep scan never executes, and its outcome never replaces the calibrated specialist verdict.",
+  "evidence_status_note": "The unit-test and --self-test outputs verify mathematical invariants, contract enforcement, Python/Kotlin head-projection parity (untrained random-weight fixture), source-level deduplication, masked loss handling, lease exclusivity, and routing mechanics on synthetic test inputs. Actual Qwen3.5-0.8B and Qwen3.5-2B detection metrics (TPR @ 1% FPR, TPR @ 5% FPR, conditional and total early-exit miss rates) require executing the Colab T4 training-and-export pilot on held-out forensic splits."
 }

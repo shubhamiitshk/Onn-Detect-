@@ -480,11 +480,47 @@ def train_siglip_tap(
     print(f"\n🏆 Training Complete! Best Validation AUC: {best_val_auc:.4f} at Epoch {best_epoch}.")
     print(f"💾 Best checkpoint saved to {best_ckpt_path}")
 
-    # 6. Load best model and evaluate on held-out test split
+    # 6. Load best model, optionally apply Fisher source debiasing BEFORE calibration/test
+    # evaluation so the evaluated predictor is identical to the exported TFLite predictor.
     print("\n🔒 Evaluating Best Model on Sealed Held-Out Test Split...")
     best_ckpt = torch.load(best_ckpt_path, map_location=device)
     tap_head.load_state_dict(best_ckpt["tap_head_state_dict"])
     tap_head.eval()
+
+    try:
+        val_features = []
+        val_sources = []
+        with torch.no_grad():
+            for v_path, v_label in splits["val"]:
+                if int(v_label) != 0:
+                    continue
+                v_img = decode_image(str(v_path)).image.convert("RGB")
+                v_np = preprocess_siglip_chw(v_img)
+                v_tokens = vm(pixel_values=torch.from_numpy(v_np[None]).to(device)).last_hidden_state
+                _, _, pooled_norm = tap_head.forward_with_attention(v_tokens)
+                val_features.append(pooled_norm.squeeze(0).cpu().numpy().astype(np.float64))
+                val_sources.append(v_path.parent.name)
+        if len(val_features) >= 4 and len(set(val_sources)) >= 2:
+            w_cur = tap_head.classifier.weight.detach().cpu().numpy().astype(np.float64)
+            projector = FisherSourceSubspaceProjector(embed_dim=w_cur.shape[1], max_rank=3)
+            projector.fit_real_sources(np.stack(val_features), val_sources)
+            w_proj = projector.project(w_cur).astype(np.float32)
+            with torch.no_grad():
+                tap_head.classifier.weight.copy_(torch.from_numpy(w_proj).to(device))
+            # Recompute val_probs_arr on the post-projection predictor so fallback thresholds match
+            val_probs_proj: List[float] = []
+            with torch.no_grad():
+                for v_clean_b, _, _ in val_loader:
+                    v_clean_b = v_clean_b.to(device, non_blocking=True)
+                    with autocast("cuda", enabled=(use_amp and device.type == "cuda")):
+                        v_tokens = vm(pixel_values=v_clean_b).last_hidden_state
+                        v_logits, _, _ = tap_head.forward_with_attention(v_tokens)
+                    val_probs_proj.extend(torch.sigmoid(v_logits).squeeze(-1).cpu().numpy().tolist())
+            val_probs_arr = np.asarray(val_probs_proj)
+            removed_rank = len(projector.basis_removed) if projector.basis_removed is not None else 0
+            print(f"  • Fisher source subspace applied prior to calibration/test evaluation (removed_rank={removed_rank})")
+    except Exception as e:
+        print(f"  • Fisher source debiasing skipped ({e}); evaluating raw TAP weights")
 
     test_dataset = SiglipStreamingDataset(splits["test"], p_degrade=0.0)
     test_loader = DataLoader(
@@ -583,49 +619,22 @@ def train_siglip_tap(
         print("\n📦 Folding Trained TAP Weights into SigLIP and Exporting INT8 TFLite...")
         from export.keras_vfm_probe import build_keras_vfm_probe, export_keras_vfm_to_tflite
 
+        # Write folded TAP weights back into SigLIP MAP head (exact 1-to-1 graph match)
         tower_cpu = tower.cpu()
         tap_head_cpu = tap_head.cpu()
         w_np, b_val = tap_head_cpu.write_back_to_siglip_head(tower_cpu)
         print(f"  • Successfully folded weights: w_np={w_np.shape}, b_val={b_val:.4f}")
 
-        # v11 PRISM: Fit Fisher between-source nuisance subspace on real validation
-        # features and fold P_perp directly into w_patch (0 runtime FLOPs).
-        # Source is inferred from the parent directory name of each validation sample.
-        try:
-            val_features = []
-            val_sources = []
-            tap_head_cpu.eval()
-            with torch.no_grad():
-                for v_path, v_label in splits["val"]:
-                    if int(v_label) != 0:
-                        continue  # Fit projector on real samples only
-                    v_img = decode_image(str(v_path)).image.convert("RGB")
-                    v_np = preprocess_siglip_chw(v_img)
-                    v_tokens = tower_cpu(pixel_values=torch.from_numpy(v_np[None])).last_hidden_state
-                    # Mean-pool patch tokens -> (D,) source centroid component
-                    pooled = v_tokens.mean(dim=1).squeeze(0).cpu().numpy().astype(np.float64)
-                    val_features.append(pooled)
-                    val_sources.append(v_path.parent.name)
-            if len(val_features) >= 4:
-                projector = FisherSourceSubspaceProjector(embed_dim=w_np.shape[0], max_rank=3)
-                projector.fit_real_sources(np.stack(val_features), val_sources)
-                w_np = projector.project(w_np[None, :])[0]
-                removed_rank = len(projector.basis_removed) if projector.basis_removed is not None else 0
-                print(f"  • Fisher source subspace fitted: removed_rank={removed_rank}, "
-                      f"w_patch projected (P_perp @ w), {removed_rank} dims nulled out of {w_np.shape[0]}")
-            else:
-                print(f"  • Skipping Fisher projector: only {len(val_features)} real validation samples (need >= 4)")
-        except Exception as e:
-            print(f"  • Warning: Fisher source debiasing skipped ({e}); using raw w_patch")
-
-        # Build Keras mirror
+        # Build Keras mirror with the exact same architecture as the trained PyTorch tower + MAP head.
+        # `use_spatial_2d=False` ensures no post-training spatial layer is inserted that was absent
+        # during PyTorch training, calibration, and test evaluation.
         keras_model = build_keras_vfm_probe(
             tower_cpu,
             probe_weight=w_np,
             probe_bias=b_val,
             input_size=SIGLIP_INPUT_SIZE,
             l2_normalize=True,
-            use_spatial_2d=True,
+            use_spatial_2d=False,
         )
         print(f"  • Keras mirror constructed: {keras_model.input_shape} -> {keras_model.output_shape}")
 

@@ -9,7 +9,7 @@ import javax.inject.Singleton
 
 /** All interpreter access, invocation and closing have one exclusive owner. */
 @Singleton
-class LiteRTInferenceEngine @Inject constructor(private val loader: MemoryMappedModelLoader) : AutoCloseable {
+class LiteRTInferenceEngine @Inject constructor(private val loader: ModelLoader) : AutoCloseable {
     private data class Loaded(val interpreter: Interpreter, val holder: DelegateHolder, val mapped: MappedModel)
     data class Contract(val inputShape: IntArray, val outputShape: IntArray, val inputBytes: Int)
     private val loaded = HashMap<String, Loaded>()
@@ -28,14 +28,22 @@ class LiteRTInferenceEngine @Inject constructor(private val loader: MemoryMapped
      */
     private val modelLocks = java.util.concurrent.ConcurrentHashMap<String, Any>()
 
-    /** Guards the `loaded` MAP and `blockedModels` set only. Never held during model construction. */
+    /** Guards the `loaded` MAP, `blockedModelRefCounts`, and `activeExclusiveLease` only. */
     private val mapLock = Any()
 
     /**
-     * Models temporarily locked out from loading while an exclusive Tier-2 VLM session holds
-     * native memory (e.g. `siglip_probe_int8.tflite`). Guarded by [mapLock].
+     * Reference-counted model lockouts held by an active [ExclusiveSessionLease].
+     * A model is blocked from loading whenever `(blockedModelRefCounts[modelFile] ?: 0) > 0`.
+     * Guarded by [mapLock].
      */
-    private val blockedModels = HashSet<String>()
+    private val blockedModelRefCounts = HashMap<String, Int>()
+
+    /**
+     * Single active exclusive VLM session owner. Enforces mutual exclusion so two VLM sessions
+     * cannot overlap and prematurely unblock models while another session is still running.
+     * Guarded by [mapLock].
+     */
+    private var activeExclusiveLease: ExclusiveSessionLease? = null
 
     /**
      * Detailed result of evicting a model from the interpreter cache, distinguishing cache
@@ -80,10 +88,20 @@ class LiteRTInferenceEngine @Inject constructor(private val loader: MemoryMapped
             get() = evictionReports.values.all { it.resourcesCleanlyReleased }
 
         override fun close() {
-            if (!isActive) return
             synchronized(mapLock) {
-                blockedModels.removeAll(lockedOutModels)
+                if (!isActive) return
                 isActive = false
+                if (activeExclusiveLease === this) {
+                    activeExclusiveLease = null
+                }
+                for (modelFile in lockedOutModels) {
+                    val nextCount = (blockedModelRefCounts[modelFile] ?: 1) - 1
+                    if (nextCount <= 0) {
+                        blockedModelRefCounts.remove(modelFile)
+                    } else {
+                        blockedModelRefCounts[modelFile] = nextCount
+                    }
+                }
             }
         }
     }
@@ -98,7 +116,7 @@ class LiteRTInferenceEngine @Inject constructor(private val loader: MemoryMapped
         // stall another model's first load.
         synchronized(lockFor(modelFile)) {
             synchronized(mapLock) {
-                if (modelFile in blockedModels) {
+                if ((blockedModelRefCounts[modelFile] ?: 0) > 0) {
                     throw ModelContractException(
                         "Model '$modelFile' is locked out by an active exclusive VLM session lease"
                     )
@@ -247,33 +265,38 @@ class LiteRTInferenceEngine @Inject constructor(private val loader: MemoryMapped
 
     /**
      * Acquires an exclusive session lease for a Tier-2 on-device VLM invocation.
-     * Blocks any concurrent/subsequent reload of [modelsToEvictAndBlock] first, then evicts
-     * any cached instances in deterministic lock order.
+     * Rejects overlapping exclusive sessions, increments per-model lockout reference counts
+     * first, and then evicts any cached instances in deterministic lock order.
      */
     fun acquireExclusiveVlmSession(
         modelsToEvictAndBlock: Set<String> = setOf("siglip_probe_int8.tflite"),
     ): ExclusiveSessionLease {
         val ordered = modelsToEvictAndBlock.sortedBy { lockFor(it).hashCode() }
-        synchronized(mapLock) {
-            blockedModels.addAll(ordered)
-        }
         val reports = LinkedHashMap<String, EvictionReport>()
+        val lease = ExclusiveSessionLease(ordered.toSet(), reports)
+        synchronized(mapLock) {
+            check(activeExclusiveLease == null) {
+                "An exclusive VLM session lease is already active; concurrent VLM sessions are not permitted"
+            }
+            activeExclusiveLease = lease
+            for (modelFile in ordered) {
+                blockedModelRefCounts[modelFile] = (blockedModelRefCounts[modelFile] ?: 0) + 1
+            }
+        }
         try {
             for (modelFile in ordered) {
                 reports[modelFile] = evictModelWithReport(modelFile)
             }
         } catch (t: Throwable) {
-            synchronized(mapLock) {
-                blockedModels.removeAll(ordered.toSet())
-            }
+            lease.close()
             throw t
         }
-        return ExclusiveSessionLease(ordered.toSet(), reports)
+        return lease
     }
 
     /** Returns true if [modelFile] is currently locked out by an active [ExclusiveSessionLease]. */
     fun isModelBlocked(modelFile: String): Boolean =
-        synchronized(mapLock) { modelFile in blockedModels }
+        synchronized(mapLock) { (blockedModelRefCounts[modelFile] ?: 0) > 0 }
 
     /** Returns true if [modelFile] currently has an active cached interpreter in memory. */
     fun isModelLoaded(modelFile: String): Boolean =
