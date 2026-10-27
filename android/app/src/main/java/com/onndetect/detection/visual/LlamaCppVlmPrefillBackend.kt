@@ -66,13 +66,52 @@ class LlamaCppVlmPrefillBackend(
                 "Vision mmproj file does not exist at path: $mmprojPath"
             }
         }
-        if (libraryLoaded && testMockDelegate == null) {
-            nativeContextHandle = nativeInitContext(modelPath, mmprojPath ?: "", hiddenDim)
-        }
+        // Context is NOT allocated in init: model weights remain unmapped until explicit
+        // lease acquisition (loadNativeContext), preventing memory coexistence with SigLIP.
     }
 
     val isContextInitialized: Boolean
         get() = nativeContextHandle != 0L || testMockDelegate != null
+
+    /**
+     * Explicitly loads the native model context inside an active exclusive memory lease.
+     */
+    @Synchronized
+    fun loadNativeContext(): Long {
+        if (testMockDelegate != null) return 1L
+        check(libraryLoaded) {
+            "Native shared library '$JNI_LIB_NAME' is not available. Ensure 'lib$JNI_LIB_NAME.so' is packaged in APK."
+        }
+        if (nativeContextHandle == 0L) {
+            nativeContextHandle = nativeInitContext(modelPath, mmprojPath ?: "", hiddenDim)
+            check(nativeContextHandle != 0L) { "Failed to allocate native llama context for model: $modelPath" }
+        }
+        return nativeContextHandle
+    }
+
+    /**
+     * Explicitly unloads the native model context, freeing all accelerator memory,
+     * KV buffers, and memory-mapped weight handles before the lease releases.
+     */
+    @Synchronized
+    fun unloadNativeContext() {
+        if (nativeContextHandle != 0L) {
+            nativeFreeContext(nativeContextHandle)
+            nativeContextHandle = 0L
+        }
+    }
+
+    /**
+     * Scopes native model residency strictly to [block], ensuring complete deallocation.
+     */
+    inline fun <R> withLeasedContext(block: () -> R): R {
+        loadNativeContext()
+        try {
+            return block()
+        } finally {
+            unloadNativeContext()
+        }
+    }
 
     override fun extractFinalHiddenState(
         fullBitmap: Bitmap,
@@ -87,6 +126,9 @@ class LlamaCppVlmPrefillBackend(
 
         check(libraryLoaded) {
             "Native shared library '$JNI_LIB_NAME' is not available. Ensure 'lib$JNI_LIB_NAME.so' is packaged in jniLibs."
+        }
+        if (nativeContextHandle == 0L) {
+            loadNativeContext()
         }
         check(nativeContextHandle != 0L) {
             "Native llama context handle is null/closed."

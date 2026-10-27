@@ -115,4 +115,27 @@ class LlamaCppVlmPrefillBackendTest {
         assertEquals(expectedVector[5], result[5], 1e-6f)
         backend.close()
     }
+
+    @Test
+    fun nativeContextLifecycleScopedToLeaseAndUnloadsExplicitly() {
+        val tempModel = File.createTempFile("mock_vlm", ".gguf").apply { deleteOnExit() }
+        val backend = LlamaCppVlmPrefillBackend(modelPath = tempModel.absolutePath, hiddenDim = 1536)
+
+        // 1. Constructor must NOT load native context
+        assertFalse("Native context must remain uninitialized on construction to avoid coexisting with SigLIP",
+            backend.isContextInitialized && LlamaCppVlmPrefillBackend.isNativeLibraryLoaded())
+
+        // 2. withLeasedContext scopes allocation
+        LlamaCppVlmPrefillBackend.testMockDelegate = { _, _, _, _ -> FloatArray(1536) }
+        var executed = false
+        backend.withLeasedContext {
+            executed = true
+            assertTrue("Context must be active during leased block", backend.isContextInitialized)
+        }
+        assertTrue("Leased block must have executed", executed)
+
+        // 3. Explicit unload
+        backend.unloadNativeContext()
+        backend.close()
+    }
 }

@@ -257,4 +257,70 @@ class OnDemandForensicVlmAnalyzerContractTest {
         val fprParsed = fpCountParsed.toFloat() / negatives.size.toFloat()
         assertEquals("Parsed threshold must maintain 1% FPR and not collapse to 100%", 0.01f, fprParsed, 1e-6f)
     }
+
+    @Test
+    fun signedManifestCryptographicallyVerifiedAndTamperingRejected() {
+        val kpg = java.security.KeyPairGenerator.getInstance("Ed25519")
+        val keyPair = kpg.generateKeyPair()
+
+        val encodedPub = keyPair.public.encoded
+        val rawPub = encodedPub.copyOfRange(encodedPub.size - 32, encodedPub.size)
+        val pubHex = rawPub.joinToString("") { "%02x".format(it) }
+
+        val langBytes = 55L * 1024 * 1024
+        val visBytes = 12L * 1024 * 1024
+
+        val baseManifest = OnDemandForensicVlmAnalyzer.SignedVlmPackManifest(
+            packId = "smolvlm2_500m_video_instruct_q8_0",
+            hfModelId = "HuggingFaceTB/SmolVLM2-500M-Video-Instruct",
+            languageWeightsSha256 = "a".repeat(64),
+            visionMmprojSha256 = "b".repeat(64),
+            policySha256 = "c".repeat(64),
+            languageBytes = langBytes,
+            visionMmprojBytes = visBytes,
+            processorVersion = "transformers-4.48.0",
+            chatTemplateId = "smolvlm_default",
+            imageResolutionCapPx = 512,
+            maxVisualTokens = 512,
+            publisherPublicKeyHex = pubHex,
+            publisherSignatureHex = "",
+            publisherSignatureValid = true,
+        )
+
+        val payload = OnDemandForensicVlmAnalyzer.computeCanonicalManifestPayload(baseManifest)
+        val signer = java.security.Signature.getInstance("Ed25519")
+        signer.initSign(keyPair.private)
+        signer.update(payload)
+        val sigBytes = signer.sign()
+        val sigHex = sigBytes.joinToString("") { "%02x".format(it) }
+
+        val validManifest = baseManifest.copy(publisherSignatureHex = sigHex)
+
+        assertTrue(
+            "Genuine Ed25519 manifest must pass verification",
+            OnDemandForensicVlmAnalyzer.verifySignedPackContract(validManifest)
+        )
+        assertTrue(
+            "Manifest must pass when pinned public key matches",
+            OnDemandForensicVlmAnalyzer.verifySignedPackContract(validManifest, expectedPublisherPublicKeyHex = pubHex)
+        )
+
+        val wrongKeyHex = "0".repeat(64)
+        assertFalse(
+            "Manifest must fail when pinned key does not match",
+            OnDemandForensicVlmAnalyzer.verifySignedPackContract(validManifest, expectedPublisherPublicKeyHex = wrongKeyHex)
+        )
+
+        val tamperedManifest = validManifest.copy(languageWeightsSha256 = "f".repeat(64))
+        assertFalse(
+            "Tampered manifest must fail verification",
+            OnDemandForensicVlmAnalyzer.verifySignedPackContract(tamperedManifest)
+        )
+
+        val tinyManifest = validManifest.copy(languageBytes = 1000L)
+        assertFalse(
+            "Manifest with < 50MB language file must be rejected",
+            OnDemandForensicVlmAnalyzer.verifySignedPackContract(tinyManifest)
+        )
+    }
 }

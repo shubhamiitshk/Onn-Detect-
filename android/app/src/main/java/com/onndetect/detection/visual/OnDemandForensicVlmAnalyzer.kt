@@ -423,25 +423,89 @@ object OnDemandForensicVlmAnalyzer {
         val hfModelId: String,
         val languageWeightsSha256: String,
         val visionMmprojSha256: String,
+        val policySha256: String = "",
         val languageBytes: Long,
         val visionMmprojBytes: Long,
         val processorVersion: String,
         val chatTemplateId: String,
         val imageResolutionCapPx: Int,
         val maxVisualTokens: Int,
-        val publisherSignatureValid: Boolean,
+        val publisherPublicKeyHex: String = "",
+        val publisherSignatureHex: String = "",
+        val publisherSignatureValid: Boolean = false,
         val diagnosticOnly: Boolean = true,
     )
 
-    fun verifySignedPackContract(manifest: SignedVlmPackManifest): Boolean {
+    fun computeCanonicalManifestPayload(manifest: SignedVlmPackManifest): ByteArray {
+        val canonicalStr = "${manifest.packId}|${manifest.hfModelId}|${manifest.languageWeightsSha256}|" +
+            "${manifest.visionMmprojSha256}|${manifest.policySha256}|${manifest.languageBytes}|" +
+            "${manifest.visionMmprojBytes}|${manifest.imageResolutionCapPx}|${manifest.maxVisualTokens}"
+        return canonicalStr.toByteArray(Charsets.UTF_8)
+    }
+
+    fun verifyEd25519Signature(publicKeyHex: String, signatureHex: String, payload: ByteArray): Boolean {
+        return try {
+            val hex2bin: (String) -> ByteArray = { s ->
+                ByteArray(s.length / 2) { i ->
+                    s.substring(i * 2, i * 2 + 2).toInt(16).toByte()
+                }
+            }
+            val pubBytes = hex2bin(publicKeyHex)
+            val sigBytes = hex2bin(signatureHex)
+            if (pubBytes.size != 32 || sigBytes.size != 64) return false
+
+            val x509Prefix = byteArrayOf(
+                0x30.toByte(), 0x2a.toByte(), 0x30.toByte(), 0x05.toByte(),
+                0x06.toByte(), 0x03.toByte(), 0x2b.toByte(), 0x65.toByte(),
+                0x70.toByte(), 0x03.toByte(), 0x21.toByte(), 0x00.toByte()
+            )
+            val x509Key = ByteArray(x509Prefix.size + pubBytes.size)
+            System.arraycopy(x509Prefix, 0, x509Key, 0, x509Prefix.size)
+            System.arraycopy(pubBytes, 0, x509Key, x509Prefix.size, pubBytes.size)
+
+            val kf = java.security.KeyFactory.getInstance("Ed25519")
+            val pk = kf.generatePublic(java.security.spec.X509EncodedKeySpec(x509Key))
+
+            val verifier = java.security.Signature.getInstance("Ed25519")
+            verifier.initVerify(pk)
+            verifier.update(payload)
+            verifier.verify(sigBytes)
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    fun verifySignedPackContract(
+        manifest: SignedVlmPackManifest,
+        expectedPublisherPublicKeyHex: String? = null,
+    ): Boolean {
         val hex64 = Regex("^[0-9a-fA-F]{64}$")
-        if (!manifest.publisherSignatureValid) return false
+        val hex128 = Regex("^[0-9a-fA-F]{128}$")
+
         if (!hex64.matches(manifest.languageWeightsSha256)) return false
         if (!hex64.matches(manifest.visionMmprojSha256)) return false
+        if (manifest.policySha256.isNotEmpty() && !hex64.matches(manifest.policySha256)) return false
         if (manifest.languageBytes < 50L * 1024 * 1024 || manifest.visionMmprojBytes < 10L * 1024 * 1024) return false
         if (manifest.imageResolutionCapPx !in 224..1024) return false
         if (manifest.maxVisualTokens !in 64..2048) return false
         if (manifest.processorVersion.isBlank() || manifest.chatTemplateId.isBlank()) return false
+
+        // Cryptographic Ed25519 verification if signature fields are populated
+        if (manifest.publisherPublicKeyHex.isNotEmpty() || manifest.publisherSignatureHex.isNotEmpty()) {
+            if (!hex64.matches(manifest.publisherPublicKeyHex)) return false
+            if (!hex128.matches(manifest.publisherSignatureHex)) return false
+            if (expectedPublisherPublicKeyHex != null &&
+                !manifest.publisherPublicKeyHex.equals(expectedPublisherPublicKeyHex, ignoreCase = true)) {
+                return false
+            }
+            val payload = computeCanonicalManifestPayload(manifest)
+            if (!verifyEd25519Signature(manifest.publisherPublicKeyHex, manifest.publisherSignatureHex, payload)) {
+                return false
+            }
+        } else {
+            // Unsigned legacy manifests must explicitly match publisherSignatureValid
+            if (!manifest.publisherSignatureValid) return false
+        }
         return true
     }
 
@@ -836,7 +900,16 @@ object OnDemandForensicVlmAnalyzer {
                         }
                     }
                 }
-                backend.extractFinalHiddenState(fullBitmap, roiBitmap, cropSpec, activeDomain)
+                if (backend is LlamaCppVlmPrefillBackend) {
+                    backend.loadNativeContext()
+                }
+                try {
+                    backend.extractFinalHiddenState(fullBitmap, roiBitmap, cropSpec, activeDomain)
+                } finally {
+                    if (backend is LlamaCppVlmPrefillBackend) {
+                        backend.unloadNativeContext()
+                    }
+                }
             }
         } finally {
             val roi = roiBitmap
