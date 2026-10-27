@@ -114,4 +114,120 @@ class VoiceVaultCryptoTest {
         // A few frames may straddle the ZCR edge, but the bulk must be rejected.
         assertTrue("high-ZCR noise must not count as voiced (got ${ms}ms)", ms < 1_500L)
     }
+
+    // ── SealedBlob Value Equality & HashCode Contract Tests ──────────────
+
+    @Test
+    fun `SealedBlob value equality holds for distinct instances with identical content`() {
+        val iv1 = byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12)
+        val iv2 = byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12)
+        val ct1 = byteArrayOf(10, 20, 30, 40, 50, 60, 70, 80)
+        val ct2 = byteArrayOf(10, 20, 30, 40, 50, 60, 70, 80)
+
+        val blob1 = SealedBlob(iv1, ct1)
+        val blob2 = SealedBlob(iv2, ct2)
+
+        // Verify instances are distinct heap allocations
+        assertTrue("References must be distinct", blob1 !== blob2)
+        assertTrue("IV references must be distinct", blob1.iv !== blob2.iv)
+        assertTrue("Ciphertext references must be distinct", blob1.ciphertext !== blob2.ciphertext)
+
+        // Value equality assertions
+        assertEquals("blob1 must equal blob2", blob1, blob2)
+        assertEquals("blob2 must equal blob1 (symmetry)", blob2, blob1)
+        assertTrue("blob1 == blob2 operator", blob1 == blob2)
+        assertTrue("blob1.equals(blob2)", blob1.equals(blob2))
+    }
+
+    @Test
+    fun `SealedBlob hashCode satisfies the general contract for equal instances`() {
+        val iv1 = byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12)
+        val iv2 = byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12)
+        val ct1 = byteArrayOf(10, 20, 30, 40, 50)
+        val ct2 = byteArrayOf(10, 20, 30, 40, 50)
+
+        val blob1 = SealedBlob(iv1, ct1)
+        val blob2 = SealedBlob(iv2, ct2)
+
+        // HashCode contract: equal objects must have equal hashCodes
+        assertEquals("Hash codes must match for equal blobs", blob1.hashCode(), blob2.hashCode())
+
+        // Consistency across invocations
+        assertEquals("HashCode must be deterministic", blob1.hashCode(), blob1.hashCode())
+
+        // Hash-based collection functionality
+        val set = hashSetOf(blob1)
+        assertTrue("HashSet must contain equal blob instance", set.contains(blob2))
+
+        val map = hashMapOf(blob1 to "verified")
+        assertEquals("HashMap must retrieve value by equal blob key", "verified", map[blob2])
+    }
+
+    @Test
+    fun `SealedBlob inequality detects differences in iv, ciphertext, or length`() {
+        val baseIv = byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12)
+        val baseCt = byteArrayOf(10, 20, 30, 40, 50)
+        val baseBlob = SealedBlob(baseIv, baseCt)
+
+        // Altered IV byte
+        val diffIv = SealedBlob(baseIv.clone().also { it[0] = (it[0] + 1).toByte() }, baseCt)
+        assertNotEquals("Different IV must not equal", baseBlob, diffIv)
+        assertFalse(baseBlob == diffIv)
+
+        // Altered Ciphertext byte
+        val diffCt = SealedBlob(baseIv, baseCt.clone().also { it[0] = (it[0] + 1).toByte() })
+        assertNotEquals("Different Ciphertext must not equal", baseBlob, diffCt)
+        assertFalse(baseBlob == diffCt)
+
+        // Truncated arrays
+        val shortIv = SealedBlob(byteArrayOf(1, 2, 3), baseCt)
+        assertNotEquals("Truncated IV must not equal", baseBlob, shortIv)
+
+        val shortCt = SealedBlob(baseIv, byteArrayOf(10, 20))
+        assertNotEquals("Truncated Ciphertext must not equal", baseBlob, shortCt)
+    }
+
+    @Test
+    fun `SealedBlob copy preserves equality and detects parameter modifications`() {
+        val blob = SealedBlob(
+            iv = byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12),
+            ciphertext = byteArrayOf(100, 101, 102),
+        )
+        val copied = blob.copy()
+
+        assertTrue("Copy creates a distinct instance", blob !== copied)
+        assertEquals("Copy must equal original", blob, copied)
+        assertEquals("Copy hashCode must equal original", blob.hashCode(), copied.hashCode())
+
+        val alteredCopy = blob.copy(iv = byteArrayOf(9, 9, 9))
+        assertNotEquals("Mutated copy must not equal original", blob, alteredCopy)
+    }
+
+    @Test
+    fun `SealedBlob equals handles null, reflexivity, and foreign types safely`() {
+        val blob = SealedBlob(
+            iv = byteArrayOf(1, 2, 3, 4),
+            ciphertext = byteArrayOf(5, 6, 7),
+        )
+
+        // Reflexivity
+        assertEquals("Blob must equal itself", blob, blob)
+        assertTrue(blob == blob)
+
+        // Null check
+        assertFalse("Blob must not equal null", blob.equals(null))
+
+        // Type check
+        assertFalse("Blob must not equal String", blob.equals("not a blob"))
+        assertFalse("Blob must not equal Any()", blob.equals(Any()))
+    }
+
+    @Test
+    fun `SealedBlob handles empty byte arrays correctly`() {
+        val empty1 = SealedBlob(byteArrayOf(), byteArrayOf())
+        val empty2 = SealedBlob(byteArrayOf(), byteArrayOf())
+
+        assertEquals("Empty blobs must equal", empty1, empty2)
+        assertEquals("Empty blobs must have identical hashCodes", empty1.hashCode(), empty2.hashCode())
+    }
 }

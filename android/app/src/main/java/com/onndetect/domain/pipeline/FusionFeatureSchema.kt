@@ -52,12 +52,23 @@ object FusionFeatureSchema {
     val OPTIONAL_SLOTS = intArrayOf(OPTIONAL_SLOT)
 
     /**
-     * Build the feature vector, rejecting a wrong-arity call at the point
-     * of construction instead of inside the transpiled tree.
+     * Build the feature vector, rejecting a wrong-arity call or a missing/non-finite
+     * mandatory feature (including `SRM_SCORE` in slot 0) at the point of construction
+     * instead of inside the transpiled tree.
      */
     fun build(vararg values: Float): FloatArray {
         require(values.size == SLOT_COUNT) {
             "Fusion feature vector needs $SLOT_COUNT slots, got ${values.size}"
+        }
+        for (i in values.indices) {
+            if (!isOptionalSlot(i)) {
+                require(values[i].isFinite()) {
+                    "Mandatory fusion slot $i must be finite, got ${values[i]}"
+                }
+            }
+        }
+        require(values[SRM_SCORE] in 0f..1f) {
+            "Fusion slot 0 (SRM_SCORE) must be a valid probability in [0, 1], got ${values[SRM_SCORE]}"
         }
         return FloatArray(values.size) { values[it] }
     }

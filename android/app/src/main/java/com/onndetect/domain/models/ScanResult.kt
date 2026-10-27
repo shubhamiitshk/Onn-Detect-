@@ -79,7 +79,7 @@ data class ScanResult(
     val voiceMatchReport: com.onndetect.detection.audio.VoiceMatchReport? = null,
 ) {
     init {
-        require(overallScore.isFinite() && (overallScore == -1f || overallScore in 0f..1f))
+        require(overallScore.isNaN() || overallScore == -1f || overallScore in 0f..1f)
         require(confidence.isFinite() && confidence in 0f..1f)
         if (verdict != DetectionVerdict.INCONCLUSIVE) {
             require(status == AnalysisStatus.SUCCESS && modelValidated && decisionThreshold != null)
@@ -108,17 +108,17 @@ data class SignalBreakdown(
      * migrated too; the decoder still reads the old key so earlier history
      * rows decode.
      */
-    val vfmProbeScore: Float,
-    val srmForensicScore: Float,
-    val fftSpectralScore: Float,
-    val klDivergenceScore: Float,
-    val perturbationScore: Float,
-    val audioDspScore: Float,
-    val audioModelScore: Float,
-    val temporalScore: Float,
-    val provenanceScore: Float,
-    /** Residual texture proxy, NOT camera PRNU attribution; -1 = unavailable. */
-    val prnuScore: Float = -1f,
+    val vfmProbeScore: Float = Float.NaN,
+    val srmForensicScore: Float = Float.NaN,
+    val fftSpectralScore: Float = Float.NaN,
+    val klDivergenceScore: Float = Float.NaN,
+    val perturbationScore: Float = Float.NaN,
+    val audioDspScore: Float = Float.NaN,
+    val audioModelScore: Float = Float.NaN,
+    val temporalScore: Float = Float.NaN,
+    val provenanceScore: Float = Float.NaN,
+    /** Residual texture proxy, NOT camera PRNU attribution; NaN = unavailable. */
+    val prnuScore: Float = Float.NaN,
     /**
      * The XGBoost FUSION score (all measured signals combined).
      *
@@ -127,11 +127,17 @@ data class SignalBreakdown(
      * [srmForensicScore], which is only the raw SRM CNN output. The
      * cascade telemetry card previously displayed the raw SRM score
      * while the pipeline arbitrated on the fusion score, so the card
-     * could contradict the headline verdict. -1 = unavailable.
+     * could contradict the headline verdict. NaN = unavailable.
      */
-    val fusionScore: Float = -1f,
-    /** BioLip perioral facial landmark acceleration jitter (slot 9); -1 = unavailable/faceless. */
-    val landmarkJitter: Float = -1f,
+    val fusionScore: Float = Float.NaN,
+    /** BioLip perioral facial landmark acceleration jitter (slot 9); NaN = unavailable/faceless. */
+    val landmarkJitter: Float = Float.NaN,
+    /** PatchCraft rich-poor log-odds texture contrast (slot 1); NaN = unavailable. */
+    val richPoorContrast: Float = Float.NaN,
+    /** Localized 8x8 residual hotspot ROI score (slot 2); NaN = unavailable. */
+    val roiHotspotScore: Float = Float.NaN,
+    /** PatchHead 14x14 spatial response variance (slot 3); NaN = unavailable. */
+    val vfmSpatialVariance: Float = Float.NaN,
 )
 
 data class ProvenanceInfo(

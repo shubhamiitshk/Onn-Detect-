@@ -40,8 +40,8 @@ class PhaseSpectrumAnalyzer {
     companion object {
         /** Analysis resolution. Matches the Python implementation. */
         const val SIZE = 256
-        /** Inner radius of the high-frequency band, as a fraction of Nyquist. */
-        const val HF_INNER_FRACTION = 0.25
+        /** Inner radius of the high-frequency band, as a fraction of Nyquist. Matches `ml/src/meta_classifier/phase_features.py`. */
+        const val HF_INNER_FRACTION = 0.50
     }
 
     data class PhaseResult(val kurtosis: Float, val highFrequencyRatio: Float)

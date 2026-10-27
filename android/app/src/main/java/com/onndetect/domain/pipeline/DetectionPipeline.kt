@@ -10,6 +10,7 @@ import com.onndetect.detection.provenance.VerdictConfidence
 import com.onndetect.detection.visual.FFTSpectralAnalyzer
 import com.onndetect.detection.visual.KLCooccurrenceAnalyzer
 import com.onndetect.detection.visual.SRMForensicAnalyzer
+import com.onndetect.detection.visual.ContrastivePatchCraftROI
 import com.onndetect.detection.visual.VfmProbeAnalyzer
 import com.onndetect.detection.visual.CalibrationStore
 import com.onndetect.detection.visual.ResidualHeatmapExtractor
@@ -186,13 +187,20 @@ class DetectionPipeline @Inject constructor(
             // user a verdict for a reason that had nothing to do with the
             // app's capability.
             var srm = -1f
+            var richPoorContrast = Float.NaN
+            var roiHotspotScore = Float.NaN
             if (budget != DegradationLevel.ABSTAIN) {
                 emit(ScanProgress("Decomposing 20-ch high-pass residuals…", 20f))
-                srm = srmAnalyzer.analyze(bitmap, checkStop)
-                // Saliency-Guided Localized ROI Dual-Pass: when the 32x32 residual heatmap reveals
-                // a concentrated spatial anomaly cluster (zScore >= 1.85, e.g. localized face-swap,
-                // Magic Eraser, or Generative Fill inpainting) and the global SRM score is not yet
-                // saturated, run a focused second pass on the hotspot crop.
+                val srmDetailed = srmAnalyzer.analyzeDetailed(
+                    bitmap,
+                    checkStop,
+                    includePoorMosaic = (budget == DegradationLevel.FULL),
+                )
+                var roiScore = Float.NaN
+                // Preserve the calibrated rich-mosaic score for the shipped XGBoost fusion slot 0.
+                // Contrast and ROI measurements are recorded as separate diagnostic signals so they
+                // do not alter the calibrated operating point until a new fusion model is fitted.
+                srm = srmDetailed.richScore
                 val hm = residualHeatmap
                 if (budget == DegradationLevel.FULL && hm != null && hm.isNotEmpty() && srm in 0.12f..0.72f &&
                     bitmap.width >= 256 && bitmap.height >= 256) {
@@ -203,7 +211,7 @@ class DetectionPipeline @Inject constructor(
                         val cropW = max(128, ((hotspot.normX1 - hotspot.normX0) * bitmap.width).toInt()).coerceAtMost(bitmap.width - x0)
                         val cropH = max(128, ((hotspot.normY1 - hotspot.normY0) * bitmap.height).toInt()).coerceAtMost(bitmap.height - y0)
                         if (cropW >= 128 && cropH >= 128) {
-                            val roiScore = runCatching {
+                            roiScore = runCatching {
                                 val roiCrop = Bitmap.createBitmap(bitmap, x0, y0, cropW, cropH)
                                 try {
                                     srmAnalyzer.analyze(roiCrop, checkStop)
@@ -214,10 +222,30 @@ class DetectionPipeline @Inject constructor(
                             if (roiScore.isFinite() && roiScore in 0f..1f) {
                                 signals = signals.copy(perturbationScore = roiScore)
                             }
+                            val contrastRoi = ContrastivePatchCraftROI.evaluate(
+                                richScore = srmDetailed.richScore,
+                                poorScore = srmDetailed.poorScore,
+                                roiCropScore = roiScore,
+                                hotspotZScore = hotspot.zScore,
+                            )
+                            richPoorContrast = contrastRoi.richPoorContrast
+                            roiHotspotScore = contrastRoi.roiHotspotScore
                         }
                     }
                 }
-                signals = signals.copy(srmForensicScore = srm)
+                if (richPoorContrast.isNaN() && srmDetailed.poorScore.isFinite()) {
+                    richPoorContrast = ContrastivePatchCraftROI.evaluate(
+                        richScore = srmDetailed.richScore,
+                        poorScore = srmDetailed.poorScore,
+                        roiCropScore = null,
+                        hotspotZScore = 0.0f,
+                    ).richPoorContrast
+                }
+                signals = signals.copy(
+                    srmForensicScore = srm,
+                    richPoorContrast = richPoorContrast,
+                    roiHotspotScore = roiHotspotScore,
+                )
             }
             emit(ScanProgress("2D FFT power spectrum & radial slope…", 45f))
             val spectral = fftAnalyzer.analyze(bitmap, checkStop)
@@ -234,8 +262,8 @@ class DetectionPipeline @Inject constructor(
             // Unverified EXIF and provenance never enter verdict fusion.
             // Legacy trees were trained on incompatible metadata; they are
             // not even exposed as an overall probability.
-            if (!report.validated || srm < 0f) {
-                val reason = if (srm < 0f) "Memory budget allowed diagnostic math only; no validated fallback" else report.validationReason
+            if (!report.validated || !srm.isFinite() || srm < 0f || srm > 1f) {
+                val reason = if (!srm.isFinite() || srm < 0f || srm > 1f) "Memory budget allowed diagnostic math only; no validated fallback" else report.validationReason
                 emit(ScanProgress("Analysis inconclusive", 100f, result = result(AnalysisStatus.INCONCLUSIVE, reason, report = report)))
                 return@flow
             }
@@ -261,6 +289,10 @@ class DetectionPipeline @Inject constructor(
                 }
             }
 
+            // Preserve the exact 10-slot feature contract on which the shipped
+            // `xgboost_meta_classifier.json` was trained and calibrated:
+            // [srm_score, fft_score, kl_score, flatness_score, resolution_norm,
+            //  is_compressed, semantic_probe_score, c2pa_present, lip_sync_corr, landmark_jitter]
             val features = FusionFeatureSchema.build(
                 srm, spectral.score, kl, spectral.spectralFlatness,
                 (quality.resolution / 1024f).coerceIn(0f, 1f), if (isCompressed) 1f else 0f,
@@ -287,14 +319,8 @@ class DetectionPipeline @Inject constructor(
             if (policy != null && engineCScore != null) {
                 emit(ScanProgress("Arbitrating dual-engine cascade…", 90f))
                 decision = policy.decide(fusedScore, engineCScore)
-                // The cascade now reports the FUSION score in every branch,
-                // so the matching operating point is Engine A's (the
-                // fusion) threshold - NOT Engine C's. Reporting Engine C's
-                // threshold against a fusion score would compare the score
-                // against the wrong operating point.
                 decisionThreshold = policy.engineAThreshold
             } else {
-                // Single engine (Engine A alone). Its own threshold applies.
                 val threshold = report.threshold ?: CalibrationStore.metaDecisionThreshold(appContext)
                 decisionThreshold = threshold
                 decision = CascadeDecision(

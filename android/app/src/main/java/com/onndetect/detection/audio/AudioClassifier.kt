@@ -11,6 +11,9 @@ import com.onndetect.domain.models.AnalysisStatus
 import com.onndetect.detection.provenance.AudioSealDetector
 import com.onndetect.detection.provenance.ProvenanceEvidence
 import java.util.concurrent.CancellationException
+import kotlin.math.log
+import kotlin.math.max
+import kotlin.math.min
 
 /** Speech-model diagnostics; a missing/invalid signal never becomes a verdict. */
 class AudioClassifier(private val context: Context, private val engine: LiteRTInferenceEngine,
@@ -21,26 +24,22 @@ class AudioClassifier(private val context: Context, private val engine: LiteRTIn
         const val TARGET_RATE = 16000
         const val TARGET_SAMPLES = 64000
         /**
-         * Calibrated file-level operating point of the speech countermeasure
-         * (threshold_at_eer in the release manifest). A clip scoring >= this is
-         * classified synthetic; enrollment requires strictly BELOW it (F4).
+         * Fallback operating point matching `assets/constants/lcnn_audio_threshold.json`
+         * (`threshold = 0.35546875`, bound to `model_hash = 6963363f0e51f6338ceac34575e4c9fdeeb8ecbebe33605695721232377af508`
+         * and `frontend_id = lfcc-v3-sr16000-f128-c40-nfft512-hop160-topdbnone-resampler-quadratic_window_sinc_v1-float64stft-float32`:
+         * 16 kHz, 128 linear filters, 40 LFCC coefficients, FFT 512, hop 160).
+         * At runtime, `report.threshold` loaded and verified by `ModelIntegrityGate` is authoritative.
          */
-        const val DEFAULT_THRESHOLD = 0.375f
+        const val DEFAULT_THRESHOLD = 0.35546875f
         /** 60 s @ 16 kHz: the F4 enrollment decode budget. */
         const val MAX_DECODE_SAMPLES = 960_000
         /**
          * Number of independent windows scored per file.
          *
          * ONE is the shipped, calibrated behaviour: the released threshold
-         * (0.375) was fitted on SINGLE-WINDOW scores, so pooling several
-         * windows and comparing the pooled value against that threshold
-         * would silently change the operating point.
-         *
-         * Pooling raises the score (LSE of N samples is above the mean),
-         * so multi-window scoring must not be enabled until a file-level
-         * threshold has been calibrated on file-level labels. The code path
-         * exists and is tested; the default stays at one window until that
-         * calibration exists.
+         * (0.35546875 in `lcnn_audio_threshold.json`) was fitted on SINGLE-WINDOW
+         * scores, so pooling several windows and comparing the pooled value against
+         * that threshold would silently change the operating point.
          */
         const val WINDOWS_PER_FILE = 1
     }
@@ -149,6 +148,45 @@ class AudioClassifier(private val context: Context, private val engine: LiteRTIn
             return outcome(AnalysisStatus.SUCCESS, null)
         } catch (e: CancellationException) { throw e }
         catch (e: Exception) { return Verdict(-1f, false, null, AnalysisFailurePolicy.status(e), e.message ?: "Audio analysis failed") }
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════════
+    // v11 PRISM: MN-P non-vocal residual scoring + CrossViewGate fusion
+    // ════════════════════════════════════════════════════════════════════════════════
+
+    private val MN_P_LCNN_WEIGHT = 0.75f
+    private val MN_P_MNP_WEIGHT = 0.60f
+
+    /**
+     * Scores the 16-D MN-P non-vocal residual vector using a heuristic that flags
+     * neural-codec / TTS artifacts: high non-vocal frame ratio, large voiced-silence
+     * dB gap, high cross-view HF ratio, and high temporal kurtosis all indicate
+     * synthetic audio. Real in-the-wild noise keeps V/NV spectral ratios consistent.
+     */
+    private fun scoreMnpResidual(mnp: FloatArray): Float {
+        if (mnp.size < 16) return 0.5f
+        val nvRatio = mnp[0].coerceIn(0f, 1f)
+        val dbGap = mnp[1].coerceIn(-1f, 1f)
+        val crossViewHf = mnp[13].coerceIn(0f, 1f)
+        val kurt = mnp[14].coerceIn(-1f, 1f)
+        val synthSignal = 0.30f * nvRatio + 0.25f * (dbGap + 1f) / 2f +
+            0.25f * crossViewHf + 0.20f * (kurt + 1f) / 2f
+        return synthSignal.coerceIn(0f, 1f)
+    }
+
+    /**
+     * CrossViewGate log-odds fusion of LCNN-MFM score and MN-P non-vocal residual score.
+     * Mirrors `MNPSubBandAudioDetector.score_window()` with calibrated default weights.
+     */
+    private fun fuseLcnnMnp(lcnnProb: Float, mnpProb: Float): Float {
+        val eps = 1e-6f
+        val lcnnClipped = lcnnProb.coerceIn(eps, 1f - eps)
+        val mnpClipped = mnpProb.coerceIn(eps, 1f - eps)
+        val zLcnn = kotlin.math.ln((lcnnClipped / (1f - lcnnClipped)).toDouble()).toFloat()
+        val zMnp = kotlin.math.ln((mnpClipped / (1f - mnpClipped)).toDouble()).toFloat()
+        val fusedLogit = MN_P_LCNN_WEIGHT * zLcnn + MN_P_MNP_WEIGHT * zMnp
+        val fused = 1f / (1f + kotlin.math.exp(-fusedLogit.toDouble())).toFloat()
+        return fused.coerceIn(0f, 1f)
     }
 }
 

@@ -112,17 +112,27 @@ class OrthogonalSubspaceProjector(nn.Module):
                 "The real class has fewer than two acquisition sources; there "
                 "is no source subspace to remove"
             )
-        index = {name: i for i, name in enumerate(unique)}
-        labels = torch.tensor([index[s] for s in sources], dtype=torch.long)
-        one_hot = torch.zeros(len(labels), len(unique), dtype=torch.float32)
-        one_hot[torch.arange(len(labels)), labels] = 1.0
-        # A source indicator's weight vector points along the direction that
-        # separates that source from the others. Those are the nuisance
-        # directions.
-        centre = one_hot - one_hot.mean(dim=0, keepdim=True)
-        _, _, vh = torch.linalg.svd(centre, full_matrices=False)
+        # SVD on the (K, D) weighted source centroids in feature space:
+        # B = [sqrt(N_s / N) * (mu_s - mu_global)] for each acquisition source s.
+        global_mean = features.mean(dim=0, keepdim=True)
+        centroid_diffs = []
+        n_total = float(len(features))
+        for src in unique:
+            mask = torch.tensor([s == src for s in sources], dtype=torch.bool, device=features.device)
+            n_s = float(mask.sum().item())
+            if n_s < 2:
+                continue
+            mu_s = features[mask].mean(dim=0, keepdim=True)
+            weight = torch.sqrt(torch.tensor(n_s / n_total, dtype=torch.float32, device=features.device))
+            centroid_diffs.append(weight * (mu_s - global_mean))
+        if not centroid_diffs:
+            p_perp = torch.eye(self.embed_dim, device=features.device)
+            self.proj_matrix.copy_(p_perp)
+            return
+        b_matrix = torch.cat(centroid_diffs, dim=0)  # Shape (K, D)
+        _, _, vh = torch.linalg.svd(b_matrix, full_matrices=False)  # vh has shape (K, D)
         k = min(self.top_k_remove, vh.shape[0])
-        v_top = vh[:k, :]
+        v_top = vh[:k, :]  # Shape (k, D)
         p_perp = torch.eye(self.embed_dim, device=features.device) - torch.matmul(v_top.T, v_top)
         self.proj_matrix.copy_(p_perp)
 

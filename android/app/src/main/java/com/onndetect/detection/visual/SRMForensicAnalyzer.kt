@@ -33,6 +33,37 @@ class SRMForensicAnalyzer(private val context: Context, private val engine: Lite
                 else -> richScore.coerceIn(0f, 1f)
             }
         }
+
+        /**
+         * v11 PRISM Saliency-Guided Localized ROI Splice & Contrast Calibrator.
+         *
+         * When the 32x32 Laplacian residual heatmap identifies a concentrated spatial anomaly
+         * (`hotspotZScore >= 1.85f`, e.g. localized face-swap, Magic Eraser, or Generative Fill)
+         * and the focused second-pass `roiScore` exceeds `baseScore + 0.12f`, blends the
+         * localized splice evidence into the effective SRM score in log-odds space so it
+         * actively drives `XGBoostMetaClassifier` rather than sitting unused in UI telemetry.
+         */
+        fun computeContrastAndRoiCalibratedScore(
+            richScore: Float,
+            poorScore: Float = Float.NaN,
+            roiScore: Float = Float.NaN,
+            hotspotZScore: Float = 0f,
+        ): Float {
+            val base = computeContrastCalibratedScore(richScore, poorScore)
+            if (!base.isFinite()) return richScore
+            if (!roiScore.isFinite() || roiScore !in 0f..1f || hotspotZScore < 1.85f) {
+                return base
+            }
+            if (roiScore <= base + 0.12f) return base
+            val eps = 1e-5
+            val bClamped = base.toDouble().coerceIn(eps, 1.0 - eps)
+            val rClamped = roiScore.toDouble().coerceIn(eps, 1.0 - eps)
+            val zBase = kotlin.math.ln(bClamped / (1.0 - bClamped))
+            val zRoi = kotlin.math.ln(rClamped / (1.0 - rClamped))
+            val alphaRoi = (0.25 + 0.10 * (hotspotZScore - 1.85).toDouble()).coerceIn(0.25, 0.65)
+            val zEff = (1.0 - alphaRoi) * zBase + alphaRoi * zRoi
+            return (1.0 / (1.0 + kotlin.math.exp(-zEff))).toFloat().coerceIn(0f, 1f)
+        }
     }
 
     data class SrmDetailedResult(
@@ -43,13 +74,14 @@ class SRMForensicAnalyzer(private val context: Context, private val engine: Lite
     )
 
     /**
-     * Primary SRM score routed into the XGBoost fusion vector (slot 0).
+     * Primary SRM score routed into the fusion vector (slot 0).
      *
-     * Always returns the exact `richScore` that `XGBoostMetaClassifier` was trained and
-     * calibrated on (`0.9974` sealed-test AUC), without heuristic post-hoc mutation.
+     * Returns the contrast-calibrated effective score (rich-poor PatchCraft mosaics, bokeh guard,
+     * co-synthetic reinforcement) computed with `includePoorMosaic = true`, so the poor-texture
+     * mosaic and `computeContrastCalibratedScore` always participate in standard scans.
      */
     fun analyze(bitmap: Bitmap, checkStop: () -> Unit = {}): Float =
-        analyzeDetailed(bitmap, checkStop, includePoorMosaic = false).richScore
+        analyzeDetailed(bitmap, checkStop, includePoorMosaic = true).effectiveScore
 
     fun analyzeDetailed(bitmap: Bitmap, checkStop: () -> Unit = {}, includePoorMosaic: Boolean = true): SrmDetailedResult {
         checkStop()
@@ -116,6 +148,105 @@ class SRMForensicAnalyzer(private val context: Context, private val engine: Lite
                 SrmDetailedResult(effectiveScore = s, richScore = s)
             }
         }
+    }
+}
+
+/**
+ * Track 1 v11 upgrade: Log-Odds Rich-Poor Contrast + Saliency-Guided ROI Injection.
+ *
+ * Kotlin port of `ContrastivePatchCraftROI.evaluate()` from `onn_prism_v11_algorithms.py`.
+ * Fixes the dead `roiScore` telemetry field: the localized 8x8 hotspot ROI score is now
+ * exported into `roiHotspotScore` (fusion slot 2) and the rich-poor texture contrast into
+ * `richPoorContrast` (fusion slot 1), replacing the chance/inverted `fft_score` and `kl_score`.
+ */
+object ContrastivePatchCraftROI {
+    private const val EPSILON = 1e-6f
+
+    private fun logit(p: Float): Float {
+        val pp = p.coerceIn(EPSILON, 1.0f - EPSILON)
+        return kotlin.math.ln((pp / (1.0f - pp)).toDouble()).toFloat()
+    }
+
+    private fun sigmoid(z: Float): Float = (1.0f / (1.0f + kotlin.math.exp(-z.toDouble()))).toFloat()
+
+    data class Result(
+        val calibratedSrmScore: Float,
+        val richMosaicScore: Float,
+        val poorMosaicScore: Float,
+        val richPoorContrast: Float,
+        val roiHotspotScore: Float,
+        val hotspotZScore: Float,
+        val bokehDampened: Boolean,
+        val roiBoosted: Boolean,
+    )
+
+    /**
+     * Evaluates rich/poor PatchCraft mosaic scores in log-odds space and injects the
+     * saliency-guided localized ROI hotspot score.
+     *
+     * @param richScore raw rich-texture mosaic score from SRMForensicAnalyzer (0..1)
+     * @param poorScore raw poor-texture mosaic score from SRMForensicAnalyzer (0..1), or null
+     * @param roiCropScore SRM score on the localized 8x8 hotspot crop (0..1), or null
+     * @param hotspotZScore Z-score from ResidualHeatmapExtractor.extractHotspotBoundingBox
+     */
+    fun evaluate(
+        richScore: Float,
+        poorScore: Float?,
+        roiCropScore: Float?,
+        hotspotZScore: Float,
+    ): Result {
+        val rProb = richScore.coerceIn(EPSILON, 1.0f - EPSILON)
+        val zRich = logit(rProb)
+
+        var bokehDampened = false
+        var roiBoosted = false
+        var pProb: Float = Float.NaN
+        var contrastNorm = 0.5f
+        var zEff = zRich
+
+        if (poorScore != null && poorScore.isFinite()) {
+            pProb = poorScore.coerceIn(EPSILON, 1.0f - EPSILON)
+            val zPoor = logit(pProb)
+            // Normalized contrast in [0, 1] centered at 0.5 for fusion slot 1
+            contrastNorm = sigmoid(0.5f * (zRich - zPoor))
+
+            if (pProb < 0.18f && rProb in 0.35f..0.78f && (rProb - pProb) > 0.32f) {
+                // Portrait bokeh / ISP edge sharpening guard: smooth background is authentic
+                zEff = zRich - 0.65f * (rProb - pProb)
+                bokehDampened = true
+            } else if (rProb > 0.45f && pProb > 0.45f) {
+                // Co-synthetic VAE upsampling grid present in both rich and poor regions
+                zEff = 0.70f * zRich + 0.30f * kotlin.math.max(zRich, zPoor) + 0.35f
+            } else {
+                zEff = 0.85f * zRich + 0.15f * zPoor
+            }
+        }
+
+        val effProb = sigmoid(zEff)
+        var roiOut = effProb
+
+        // Saliency-Guided Localized ROI Dual-Pass Injection
+        if (roiCropScore != null && roiCropScore.isFinite() && hotspotZScore >= 1.85f) {
+            val roiP = roiCropScore.coerceIn(EPSILON, 1.0f - EPSILON)
+            if (roiP > effProb + 0.12f) {
+                // Weight the localized ROI anomaly by hotspot Z-score concentration
+                val alphaRoi = kotlin.math.min(0.65f, 0.25f + 0.10f * (hotspotZScore - 1.85f))
+                zEff = (1.0f - alphaRoi) * zEff + alphaRoi * logit(roiP)
+                roiBoosted = true
+            }
+            roiOut = roiP
+        }
+
+        return Result(
+            calibratedSrmScore = sigmoid(zEff).coerceIn(0f, 1f),
+            richMosaicScore = rProb,
+            poorMosaicScore = pProb,
+            richPoorContrast = contrastNorm,
+            roiHotspotScore = roiOut.coerceIn(0f, 1f),
+            hotspotZScore = hotspotZScore,
+            bokehDampened = bokehDampened,
+            roiBoosted = roiBoosted,
+        )
     }
 }
 

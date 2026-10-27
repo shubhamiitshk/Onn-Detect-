@@ -3,6 +3,7 @@ package com.onndetect.data.local
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import java.security.KeyStore
+import java.util.Arrays
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -43,8 +44,23 @@ interface VoiceVaultCrypto {
 
 /** IV + ciphertext(+tag) pair as stored in Room. */
 data class SealedBlob(val iv: ByteArray, val ciphertext: ByteArray) {
-    override fun equals(other: Any?) = this === other
-    override fun hashCode() = System.identityHashCode(this)
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (javaClass != other?.javaClass) return false
+
+        other as SealedBlob
+
+        if (!Arrays.equals(iv, other.iv)) return false
+        if (!Arrays.equals(ciphertext, other.ciphertext)) return false
+
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var result = Arrays.hashCode(iv)
+        result = 31 * result + Arrays.hashCode(ciphertext)
+        return result
+    }
 }
 
 /** Builds the AAD that binds a sealed embedding to its row identity. */

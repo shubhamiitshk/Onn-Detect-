@@ -1,0 +1,42 @@
+{
+  "generated_at_utc": "2026-10-27T19:38:00Z",
+  "base_commit": "3da11a3d13690a1d3c550410e797030517a8756b",
+  "review_branch": "review/qwen35-vlm-cascade-ci-fix",
+  "selected_experiment_matrix": [
+    "Baseline: Specialist fast path only (SigLIP-B/16 TAP + SRM/PatchCraft + FFT + KL + 7-tree XGBoost)",
+    "Candidate A: Baseline + fine-tuned Qwen/Qwen3.5-0.8B (16-bit LoRA on Colab T4, Q4_K_M + mmproj = 738 MB)",
+    "Candidate B: Baseline + fine-tuned Qwen/Qwen3.5-2B (16-bit LoRA on Colab T4, Q4_K_M + mmproj = 1948 MB)",
+    "Compact reference baseline: HuggingFaceTB/SmolVLM2-500M-Video-Instruct (Q8_0 + mmproj = 546 MB)"
+  ],
+  "calibration_and_contract_bindings": {
+    "audio_model": "lcnn_audio_int8.tflite",
+    "audio_model_sha256": "6963363f0e51f6338ceac34575e4c9fdeeb8ecbebe33605695721232377af508",
+    "audio_frontend_id": "lfcc-v3-sr16000-f128-c40-nfft512-hop160-topdbnone-resampler-quadratic_window_sinc_v1-float64stft-float32",
+    "audio_threshold_calibration_json": 0.35546875,
+    "audio_windows_per_file": 1,
+    "visual_fusion_slots_10": [
+      "srm_score",
+      "fft_score",
+      "kl_score",
+      "flatness_score",
+      "resolution_norm",
+      "is_compressed",
+      "semantic_probe_score",
+      "c2pa_present",
+      "lip_sync_corr",
+      "landmark_jitter"
+    ]
+  },
+  "completed_verification_suites": {
+    "onn_release_lineage_gate": "PASSED",
+    "check_android_consistency": "PASSED (90 Kotlin sources, 10 features in order, 0 errors)",
+    "verify_workflow_syntax": "PASSED (build-android.yml, evaluate-models.yml, train-models.yml)",
+    "verify_front_end_parity": "PASSED (max|diff| stationary=2.359e-07, dynamic=4.415e-07)",
+    "gen_lfcc_golden_check": "PASSED (max |numpy - torch| = 0.00e+00)",
+    "verify_fft_parity": "PASSED (max delta score=1.55e-15, flatness=7.37e-18)",
+    "scripts_unittest_suite": "PASSED (62 tests in 11.321s)",
+    "ml_pytest_suite": "PASSED (230 passed, 1 skipped, 3 subtests passed)",
+    "android_testDebugUnitTest": "PASSED (BUILD SUCCESSFUL, DeepThinkAlgorithmsTest 14/14 passed)"
+  },
+  "evidence_status_note": "The unit-test and --self-test outputs verify mathematical invariants, contract enforcement, source-level deduplication, masked loss handling, and routing mechanics on synthetic test inputs. Actual Qwen3.5-0.8B and Qwen3.5-2B detection metrics (TPR @ 1% FPR,TPR @ 5% FPR, conditional and total early-exit miss rates) require executing the Colab T4 training-and-export pilot on held-out forensic splits."
+}

@@ -166,7 +166,7 @@ class ScannerViewModel @Inject constructor(
             }
         }.getOrNull()
         finish(ScanResult(UUID.randomUUID().toString(), ScanMode.AUDIO_ONLY, System.currentTimeMillis(),
-            v.score, v.isAiGenerated, 0f, SignalBreakdown(-1f,-1f,-1f,-1f,-1f,-1f,v.score,-1f,-1f),
+            v.score, v.isAiGenerated, 0f, SignalBreakdown(audioModelScore = v.score.takeIf { it.isFinite() && it in 0f..1f } ?: Float.NaN),
             null, null, QualityInfo(0,false,null,false,false), SystemClock.elapsedRealtime() - started,
             status = v.status, verdict = if (v.modelValidated && v.status == AnalysisStatus.SUCCESS) {
                 if (v.isAiGenerated) DetectionVerdict.SYNTHETIC else DetectionVerdict.AUTHENTIC
@@ -185,7 +185,15 @@ class ScannerViewModel @Inject constructor(
             com.onndetect.detection.kyc.VirtualCameraDetector().inspect(appContext, o.temporalScore)
         }.getOrNull()
         finish(ScanResult(UUID.randomUUID().toString(), ScanMode.VIDEO_ONLY, System.currentTimeMillis(), o.overallScore,
-            verdict == DetectionVerdict.SYNTHETIC, 0f, SignalBreakdown(o.semanticScore,o.srmScore,o.fftScore,o.klScore,-1f,-1f,o.audioScore,o.temporalScore,-1f, landmarkJitter = o.landmarkJitter),
+            verdict == DetectionVerdict.SYNTHETIC, 0f, SignalBreakdown(
+                vfmProbeScore = o.semanticScore,
+                srmForensicScore = o.srmScore,
+                fftSpectralScore = o.fftScore,
+                klDivergenceScore = o.klScore,
+                audioModelScore = o.audioScore,
+                temporalScore = o.temporalScore,
+                landmarkJitter = o.landmarkJitter,
+            ),
             null, null, QualityInfo(minOf(o.width,o.height),true,null,false,false), SystemClock.elapsedRealtime() - started,
             status = o.status, verdict = verdict, reason = o.reason, modelValidated = o.modelValidated,
             decisionThreshold = o.decisionThreshold, modelVersion = o.modelVersion,

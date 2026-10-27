@@ -40,26 +40,39 @@ object VideoScorePolicy {
      */
     fun combineMultimodalScore(
         visualScore: Float,
-        visualThreshold: Float,
-        audioScore: Float,
-        audioValidatedSuccess: Boolean,
+        visualThreshold: Float = 0.578125f,
+        audioScore: Float = Float.NaN,
+        audioValidatedSuccess: Boolean = false,
         audioThreshold: Float = 0.35546875f,
-        temporalScore: Float = -1f,
+        temporalScore: Float = Float.NaN,
         lipSyncAnomaly: Float = 0f,
+        rppgPhaseAnomaly: Float = Float.NaN,
     ): Float {
+        if (!visualScore.isFinite() || visualScore !in 0f..1f) return Float.NaN
         var base = visualScore.coerceIn(0f, 1f)
 
         // 1. Audio escalation: if the audio track is synthetic (above its calibrated EER threshold),
         // map it into the visual threshold space so a real video with an AI-cloned voice crosses
         // `visualThreshold`. If the audio track is authentic, do NOT penalize `visualScore`.
-        if (audioScore in 0f..1f && audioScore >= audioThreshold) {
+        // Guard against IEEE 754 Math.max NaN contamination: both visualThreshold and audioThreshold
+        // must be valid finite probabilities in [0, 1] before threshold-space mapping is attempted.
+        if (visualThreshold.isFinite() && visualThreshold in 0f..1f &&
+            audioThreshold.isFinite() && audioThreshold in 0f..1f &&
+            audioScore.isFinite() && audioScore in 0f..1f &&
+            audioScore >= audioThreshold
+        ) {
             val mappedAudio = if (audioThreshold < 0.99f) {
                 visualThreshold + ((audioScore - audioThreshold) / (1f - audioThreshold)) * (1f - visualThreshold)
             } else {
                 audioScore
             }
-            val weight = if (audioValidatedSuccess) 0.70f else 0.35f
-            base = maxOf(base, (1f - weight) * base + weight * mappedAudio.coerceIn(0f, 1f))
+            if (mappedAudio.isFinite()) {
+                val weight = if (audioValidatedSuccess) 0.70f else 0.35f
+                val candidate = (1f - weight) * base + weight * mappedAudio.coerceIn(0f, 1f)
+                if (candidate.isFinite() && candidate > base) {
+                    base = candidate
+                }
+            }
         }
 
         // 2. One-sided temporal & BioLip anomaly boost: high frame-to-frame discontinuity (> 0.30)
@@ -72,8 +85,67 @@ object VideoScorePolicy {
             lipSyncAnomaly.coerceIn(0f, 1f)
         } else 0f
 
-        val boost = (TEMPORAL_WEIGHT * tempAnomaly + 0.15f * lipAnomaly).coerceIn(0f, 0.30f)
+        val rppgAnom = if (rppgPhaseAnomaly.isFinite() && rppgPhaseAnomaly > 0.35f) {
+            ((rppgPhaseAnomaly - 0.35f) / 0.65f).coerceIn(0f, 1f)
+        } else 0f
+
+        val boost = (TEMPORAL_WEIGHT * tempAnomaly + 0.15f * lipAnomaly + 0.10f * rppgAnom).coerceIn(0f, 0.35f)
         return (base + (1f - base) * boost).coerceIn(0f, 1f)
+    }
+
+    /**
+     * Computes Dimensionless Trajectory Tortuosity (2nd-order jerk / 1st-order path length)
+     * over unit VFM frame embeddings in `[0f, 1f]` (v11 PRISM, CalibratedVideoMultimodalFusion).
+     */
+    fun computeVfmTemporalAccelerationAnomaly(embeddings: List<FloatArray>): Float {
+        if (embeddings.size < 3) return Float.NaN
+        val d = embeddings[0].size
+        if (d == 0 || embeddings.any { it.size != d }) return Float.NaN
+
+        val unit = Array(embeddings.size) { i ->
+            val v = embeddings[i]
+            var normSq = 0.0
+            for (x in v) normSq += x.toDouble() * x.toDouble()
+            val norm = kotlin.math.sqrt(normSq)
+            if (norm > 1e-12) FloatArray(d) { (v[it] / norm).toFloat() } else v.clone()
+        }
+
+        var totalKappa = 0.0
+        var validCount = 0
+
+        for (t in 1 until embeddings.size - 1) {
+            val prev = unit[t - 1]
+            val curr = unit[t]
+            val next = unit[t + 1]
+
+            var stepPrevSq = 0.0
+            var stepNextSq = 0.0
+            var jerkSq = 0.0
+
+            for (i in 0 until d) {
+                val dp = (curr[i] - prev[i]).toDouble()
+                val dn = (next[i] - curr[i]).toDouble()
+                val jerk = dn - dp
+                stepPrevSq += dp * dp
+                stepNextSq += dn * dn
+                jerkSq += jerk * jerk
+            }
+
+            val stepPrev = kotlin.math.sqrt(stepPrevSq)
+            val stepNext = kotlin.math.sqrt(stepNextSq)
+
+            if (stepPrev < 0.75 && stepNext < 0.75 && (stepPrev + stepNext) > 1e-5) {
+                val jerkMag = kotlin.math.sqrt(jerkSq)
+                val pathLen = stepNext + stepPrev + 1e-8
+                val kappa = (jerkMag / pathLen).coerceIn(0.0, 1.0)
+                totalKappa += kappa
+                validCount++
+            }
+        }
+
+        if (validCount == 0) return 0f
+        val meanKappa = (totalKappa / validCount).toFloat()
+        return ((meanKappa - 0.25f) / 0.55f).coerceIn(0f, 1f)
     }
 }
 
@@ -95,12 +167,12 @@ class VideoForensicAnalyzer @Inject constructor(private val context: Context,
         val modelVersion: String = "unknown", val preprocessingVersion: String = "unknown",
         val calibrationVersion: String = "unvalidated",
         /**
-         * Mean slot-6 (frozen tower) score across the analysed frames, or -1
+         * Mean slot-6 (frozen tower) score across the analysed frames, or Float.NaN
          * when the probe did not run.
          */
-        val semanticScore: Float = -1f,
+        val semanticScore: Float = Float.NaN,
         /** BioLip perioral facial landmark temporal micro-jitter. */
-        val landmarkJitter: Float = DetectionPipeline.NEUTRAL_JITTER)
+        val landmarkJitter: Float = Float.NaN)
     companion object {
         /**
          * Minimum adjacent-frame cosine similarity for a frame to inherit a
@@ -194,7 +266,10 @@ class VideoForensicAnalyzer @Inject constructor(private val context: Context,
             if (Thread.currentThread().isInterrupted) throw CancellationException("Video analysis cancelled")
             checkStop(); check(SystemClock.elapsedRealtime() <= deadline) { "Video analysis deadline exceeded" }
         }
-        fun failed(status: AnalysisStatus, reason: String?) = Outcome(-1f, false, 0f, -1f, -1f, -1f, -1f, -1f, -1f, 0, 0, 0, 0, status, reason)
+        fun failed(status: AnalysisStatus, reason: String?) = Outcome(
+            Float.NaN, false, 0f, Float.NaN, Float.NaN, Float.NaN, Float.NaN, Float.NaN, Float.NaN,
+            0, 0, 0, 0, status, reason, semanticScore = Float.NaN, landmarkJitter = Float.NaN
+        )
         val report = ModelIntegrityGate.report(context, setOf(ModelIntegrityChecker.IMAGE_MODEL))
         if (!report.allOk) return failed(AnalysisStatus.MODEL_FAILURE, report.failures.joinToString())
         try {
@@ -280,8 +355,8 @@ class VideoForensicAnalyzer @Inject constructor(private val context: Context,
                     onStage("Frame ${index + 1}/${video.frames.size} analyzed...")
                 }
                 checkProgress()
-                val temporal = if (adjacentCosines.isNotEmpty()) FrameCosineDelta.anomalyScore(adjacentCosines.toList()) else -1f
-                var audioScore = -1f
+                val temporal = if (adjacentCosines.isNotEmpty()) FrameCosineDelta.anomalyScore(adjacentCosines.toList()) else Float.NaN
+                var audioScore = Float.NaN
                 var audioDuration = 0L
                 var audioValidatedSuccess = false
                 if (video.hasAudioTrack) {
@@ -293,7 +368,7 @@ class VideoForensicAnalyzer @Inject constructor(private val context: Context,
                     audioValidatedSuccess = audio.modelValidated && audio.status == AnalysisStatus.SUCCESS && audio.score in 0f..1f
                     if (audio.status != AnalysisStatus.SUCCESS) issues += audio.reason ?: "Audio inconclusive"
                 }
-                fun avg(values: List<Float>) = if (values.isEmpty()) -1f else values.average().toFloat()
+                fun avg(values: List<Float>) = if (values.isEmpty()) Float.NaN else values.average().toFloat()
                 val threshold = report.threshold
                 if (report.validated && threshold != null && frameFusionScores.isNotEmpty()) {
                     // Hybrid pooling: 50% mean across all frames + 50% top-k peak anomaly
@@ -303,8 +378,8 @@ class VideoForensicAnalyzer @Inject constructor(private val context: Context,
                     val topKMean = frameFusionScores.sortedDescending().take(k).average().toFloat()
                     val visualScore = (0.50f * meanScore + 0.50f * topKMean).coerceIn(0f, 1f)
 
-                    val lipSyncAnomaly = if (bioLip.hasFace && landmarkJitter > 0.15f) {
-                        (landmarkJitter - 0.15f) / 0.85f
+                    val lipSyncAnomaly = if (bioLip.hasFace && measuredJitter.isFinite() && measuredJitter > 0.15f) {
+                        ((measuredJitter - 0.15f) / 0.85f).coerceIn(0f, 1f)
                     } else 0f
 
                     // Multimodal blending across visual, audio, temporal, and biomechanical lip sync
@@ -319,6 +394,7 @@ class VideoForensicAnalyzer @Inject constructor(private val context: Context,
                         audioThreshold = audioThr,
                         temporalScore = temporal,
                         lipSyncAnomaly = lipSyncAnomaly,
+                        rppgPhaseAnomaly = bioLip.rppgPhaseAnomaly,
                     )
                     val provisionalNotice = "Provisional video verdict: heuristic multimodal temporal blend without dedicated video calibration"
                     val note = (listOf(provisionalNotice) + issues).distinct().joinToString("; ")
@@ -326,13 +402,14 @@ class VideoForensicAnalyzer @Inject constructor(private val context: Context,
                         avg(flatScores), temporal, audioScore, video.frames.size, video.width, video.height,
                         video.durationMs, AnalysisStatus.SUCCESS, note, true, video.timestampsMs, audioDuration,
                         threshold, report.releaseId, report.frontendId, "provisional-uncalibrated",
-                        avg(semanticScores), landmarkJitter)
+                        avg(semanticScores), landmarkJitter = if (bioLip.hasFace && measuredJitter.isFinite()) measuredJitter else Float.NaN)
                 }
-                return Outcome(-1f, false, 0f, avg(srmScores), avg(fftScores), avg(klScores), avg(flatScores), temporal,
+                return Outcome(Float.NaN, false, 0f, avg(srmScores), avg(fftScores), avg(klScores), avg(flatScores), temporal,
                     audioScore, video.frames.size, video.width, video.height, video.durationMs,
                     AnalysisStatus.INCONCLUSIVE, (if (!report.validated) report.validationReason else "Insufficient usable video frames") +
                         if (issues.isEmpty()) "" else "; " + issues.distinct().joinToString(), false, video.timestampsMs, audioDuration,
-                    semanticScore = avg(semanticScores), landmarkJitter = landmarkJitter)
+                    semanticScore = avg(semanticScores),
+                    landmarkJitter = if (bioLip.hasFace && measuredJitter.isFinite()) measuredJitter else Float.NaN)
             } finally { video.frames.forEach { if (!it.isRecycled) it.recycle() } }
         } catch (e: CancellationException) { throw e }
         catch (e: Exception) { return failed(AnalysisFailurePolicy.status(e), e.message ?: "Video analysis failed") }

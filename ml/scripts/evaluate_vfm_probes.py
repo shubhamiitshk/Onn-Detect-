@@ -218,14 +218,16 @@ def fit_source_debiased_probe(
     sources_train: list[str],
     rank_k: int = 3,
     laion_real_weight: float = 3.0,
+    l2_reg: float = 30.0,
 ) -> tuple[np.ndarray, float, np.ndarray]:
     """Project out the top-k real-source directions, then fold the projection back.
 
     The source nuisance subspace is estimated **strictly within the real
-    class** (``y == 0``). Every sample there is authentic, so any variance
-    between ``laion`` and ``pexels``/``docci``/``imagenet`` is 100% source
-    nuisance and 0% synthesis signal. Estimating it on the mixed class
-    would also remove the real-vs-fake direction, which is the signal.
+    class** (``y == 0``) in standardized Z-space to maintain coordinate alignment.
+    Every sample there is authentic, so any variance between ``laion`` and
+    ``pexels``/``docci``/``imagenet`` is 100% source nuisance and 0% synthesis
+    signal. Estimating it on the mixed class would also remove the real-vs-fake
+    direction, which is the signal.
 
     Because the probe is linear, the projection folds into the weight
     vector: ``(P e)^T w == e^T (P w)``. So the DEPLOYED head is still a
@@ -239,38 +241,38 @@ def fit_source_debiased_probe(
     real_mask = y_train == 0
     if real_mask.sum() < 10:
         raise ValueError("Too few real samples to estimate the source subspace")
-    X_real = X_train[real_mask]
-    s_real = sources[real_mask]
-    if len(set(s_real.tolist())) < 2:
+    if len(set(sources[real_mask].tolist())) < 2:
         raise ValueError(
             "The real class has fewer than two acquisition sources; there is "
             "no source subspace to remove"
         )
 
-    # 1. Fit a linear model predicting acquisition source WITHIN real images.
-    classifier = LogisticRegression(C=1.0, max_iter=1000).fit(X_real, s_real)
-    # 2. SVD on the source classifier's weights -> the nuisance basis V_k.
+    # 1. Standardize first so Fisher source subspace is coordinate-aligned with the classifier
+    mean = X_train.mean(axis=0, keepdims=True)
+    std = X_train.std(axis=0, keepdims=True) + 1e-6
+    z_train = (X_train - mean) / std
+
+    Z_real = z_train[real_mask]
+    s_real = sources[real_mask]
+
+    # 2. Fit linear source-discriminant model in standardized space with matched L2 regularization
+    C_reg = 1.0 / max(1e-4, float(l2_reg))
+    classifier = LogisticRegression(C=C_reg, max_iter=1000).fit(Z_real, s_real)
+
+    # 3. SVD on the standardized source classifier's weights -> the nuisance basis V_k
     _, _, vt = np.linalg.svd(classifier.coef_, full_matrices=False)
     V_k = vt[:rank_k].T                                   # (D, k)
     projection = np.eye(X_train.shape[1], dtype=np.float64) - (V_k @ V_k.T)
 
-    # 3. Upweight LAION reals so false positives on LAION are penalised.
+    # 4. Upweight LAION reals so false positives on LAION are penalised
     sample_weight = np.ones(len(y_train), dtype=np.float64)
     sample_weight[real_mask & (sources == "laion")] = laion_real_weight
 
-    # 4. Fit the binary probe on the STANDARDIZED, PROJECTED embeddings.
-    #
-    # The standardization must match the application exactly. An earlier
-    # version fitted on the RAW projected features while the application
-    # standardized first, so the two described DIFFERENT functions and the
-    # measured AUC belonged to a probe that had never been fitted.
-    mean = X_train.mean(axis=0, keepdims=True)
-    std = X_train.std(axis=0, keepdims=True) + 1e-6
-    z_train = (X_train - mean) / std
-    probe = LogisticRegression(C=1.0, max_iter=1000)
+    # 5. Fit the binary probe on the STANDARDIZED, PROJECTED embeddings with matched regularization
+    probe = LogisticRegression(C=C_reg, max_iter=1000)
     probe.fit(z_train @ projection, y_train, sample_weight=sample_weight)
-    # (Z @ P) @ coef == Z @ (P @ coef), so the projection folds into the
-    # weight vector and the deployed head stays a single vector.
+
+    # Fold projection into the weight vector
     folded_weight = (projection @ probe.coef_.reshape(-1)).astype(np.float32)
     return folded_weight, float(probe.intercept_[0]), projection.astype(np.float32)
 

@@ -9,7 +9,9 @@ import android.provider.MediaStore
 import com.onndetect.data.local.ScanHistoryEntity
 import com.onndetect.data.local.SignalBreakdownJson
 import com.onndetect.detection.provenance.ForensicReceipt
+import com.onndetect.domain.models.SignalBreakdown
 import org.json.JSONObject
+import java.io.OutputStream
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
@@ -23,6 +25,43 @@ object ForensicCertificateExporter {
 
     private const val CARD_WIDTH = 1080
     private const val CARD_HEIGHT = 1440
+
+    fun formatScorePercent(score: Float): String =
+        if (score.isFinite() && score in 0f..1f) "${(score * 100f).roundToInt()}%" else "N/A"
+
+    fun formatThresholdPercent(threshold: Float): String =
+        if (threshold.isFinite() && threshold in 0f..1f) "${(threshold * 100f).roundToInt()}%" else "N/A"
+
+    fun formatTelemetryValue(value: Float): String =
+        if (value.isFinite() && value in 0f..1f) String.format(Locale.US, "%.1f%%", value * 100f) else "N/A"
+
+    fun formatSha256(mediaSha: String): Pair<String, String> {
+        val p1 = if (mediaSha.length >= 32) mediaSha.substring(0, 32) else mediaSha
+        val p2 = if (mediaSha.length > 32) mediaSha.substring(32) else ""
+        return p1 to p2
+    }
+
+    fun formatShareText(entry: ScanHistoryEntity): String {
+        val scoreStr = formatScorePercent(entry.score)
+        return "ONN-DETECT Forensic Verification Certificate (${entry.verdict} • Score $scoreStr)"
+    }
+
+    fun buildTelemetryRows(signals: SignalBreakdown?): List<Pair<String, Float>> {
+        return listOf(
+            "Engine C (SigLIP-B/16 TAP Probe)" to (signals?.vfmProbeScore ?: Float.NaN),
+            "Engine A (XGBoost 7-Tree Fusion)" to (signals?.fusionScore ?: Float.NaN),
+            "20-Ch SRM + PatchCraft Mosaic" to (signals?.srmForensicScore ?: Float.NaN),
+            "2D FFT Radial Power Spectrum" to (signals?.fftSpectralScore ?: Float.NaN),
+            "Pixel Co-Occurrence KL Divergence" to (signals?.klDivergenceScore ?: Float.NaN),
+            "Localized ROI / Audio / BioLip" to (
+                listOfNotNull(
+                    signals?.perturbationScore,
+                    signals?.audioModelScore,
+                    signals?.landmarkJitter
+                ).filter { it.isFinite() && it in 0f..1f }.maxOrNull() ?: Float.NaN
+            )
+        )
+    }
 
     fun renderCertificateBitmap(
         entry: ScanHistoryEntity,
@@ -120,9 +159,9 @@ object ForensicCertificateExporter {
         }
         canvas.drawText(verdictLabel, 100f, 252f, verdictPaint)
 
-        val scorePct = if (entry.score in 0f..1f) "${(entry.score * 100f).roundToInt()}%" else "N/A"
+        val scorePct = formatScorePercent(entry.score)
         val threshold = evidence.optDouble("threshold", 0.5782).toFloat()
-        val thrPct = "${(threshold * 100f).roundToInt()}%"
+        val thrPct = formatThresholdPercent(threshold)
         canvas.drawText(
             "Synthetic Probability Score: $scorePct   (Calibrated Decision Threshold: $thrPct)",
             100f, 310f, bodyPaint
@@ -140,30 +179,19 @@ object ForensicCertificateExporter {
         canvas.drawText("MULTI-ENGINE FORENSIC TELEMETRY", 100f, 488f, subPaint)
 
         val signals = SignalBreakdownJson.decode(entry.signalsJson)
-        val rows = listOf(
-            "Engine C (SigLIP-B/16 TAP Probe)" to (signals?.vfmProbeScore ?: -1f),
-            "Engine A (XGBoost 7-Tree Fusion)" to (signals?.fusionScore ?: -1f),
-            "20-Ch SRM + PatchCraft Mosaic" to (signals?.srmForensicScore ?: -1f),
-            "2D FFT Radial Power Spectrum" to (signals?.fftSpectralScore ?: -1f),
-            "Pixel Co-Occurrence KL Divergence" to (signals?.klDivergenceScore ?: -1f),
-            "Localized ROI / Audio / BioLip" to maxOf(
-                signals?.perturbationScore ?: -1f,
-                signals?.audioModelScore ?: -1f,
-                signals?.landmarkJitter ?: -1f
-            )
-        )
+        val rows = buildTelemetryRows(signals)
 
         var y = 550f
         val barTrackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#1E293B") }
         val barFillPaint = Paint(Paint.ANTI_ALIAS_FLAG)
         for ((label, value) in rows) {
             canvas.drawText(label, 100f, y, bodyPaint)
-            val valStr = if (value in 0f..1f) String.format(Locale.US, "%.1f%%", value * 100f) else "N/A"
+            val valStr = formatTelemetryValue(value)
             canvas.drawText(valStr, CARD_WIDTH - 200f, y, monoPaint)
 
             val trackRect = RectF(100f, y + 14f, CARD_WIDTH - 100f, y + 28f)
             canvas.drawRoundRect(trackRect, 7f, 7f, barTrackPaint)
-            if (value in 0f..1f) {
+            if (value.isFinite() && value in 0f..1f) {
                 barFillPaint.color = if (value >= 0.58f) red else cyan
                 val fillW = (trackRect.width() * value.coerceIn(0.02f, 1f))
                 canvas.drawRoundRect(
@@ -182,8 +210,7 @@ object ForensicCertificateExporter {
         canvas.drawText("CRYPTOGRAPHIC ATTESTATION & MEDIA BINDING", 100f, 1012f, subPaint)
 
         val mediaSha = evidence.optString("mediaSha256", "UNAVAILABLE")
-        val shaPart1 = if (mediaSha.length >= 32) mediaSha.substring(0, 32) else mediaSha
-        val shaPart2 = if (mediaSha.length > 32) mediaSha.substring(32) else ""
+        val (shaPart1, shaPart2) = formatSha256(mediaSha)
         val dateStr = DateFormat.getDateTimeInstance().format(Date(entry.timestamp))
         val tier = receipt?.securityTier ?: "Hardware Keystore (TEE)"
         val sigSnippet = receipt?.signatureBase64?.take(44)?.plus("...") ?: "RFC 8785 Canonical JCS"
@@ -236,10 +263,7 @@ object ForensicCertificateExporter {
                 val shareIntent = Intent(Intent.ACTION_SEND).apply {
                     type = "image/png"
                     putExtra(Intent.EXTRA_STREAM, uri)
-                    putExtra(
-                        Intent.EXTRA_TEXT,
-                        "ONN-DETECT Forensic Verification Certificate (${entry.verdict} • Score ${(entry.score * 100).roundToInt()}%)"
-                    )
+                    putExtra(Intent.EXTRA_TEXT, formatShareText(entry))
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
                 context.startActivity(Intent.createChooser(shareIntent, "Share Forensic Certificate"))
@@ -247,5 +271,58 @@ object ForensicCertificateExporter {
         } finally {
             bmp.recycle()
         }
+    }
+
+    /**
+     * Renders the Forensic Verification Certificate into an on-device PDF document.
+     * Writes directly to [outputStream] with zero external network or storage permissions.
+     */
+    fun renderCertificatePdf(
+        entry: ScanHistoryEntity,
+        evidence: JSONObject,
+        receipt: ForensicReceipt?,
+        outputStream: OutputStream,
+    ) {
+        val bmp = renderCertificateBitmap(entry, evidence, receipt)
+        try {
+            val pdfDoc = android.graphics.pdf.PdfDocument()
+            val pageInfo = android.graphics.pdf.PdfDocument.PageInfo.Builder(CARD_WIDTH, CARD_HEIGHT, 1).create()
+            val page = pdfDoc.startPage(pageInfo)
+            page.canvas.drawBitmap(bmp, 0f, 0f, null)
+            pdfDoc.finishPage(page)
+            pdfDoc.writeTo(outputStream)
+            pdfDoc.close()
+        } finally {
+            bmp.recycle()
+        }
+    }
+
+    /**
+     * Serializes the scan assessment, evidence metadata, and hardware-attested cryptographic receipt
+     * into a unified audit JSON document conforming to RFC-8785 canonical verification standards.
+     */
+    fun generateCertificateJson(
+        entry: ScanHistoryEntity,
+        evidence: JSONObject,
+        receipt: ForensicReceipt?,
+    ): String {
+        val root = JSONObject()
+        root.put("certificate_type", "ONN-DETECT-FORENSIC-CERTIFICATE-V1")
+        root.put("assessment_id", entry.id)
+        root.put("timestamp_epoch_ms", entry.timestamp)
+        root.put("verdict", entry.verdict)
+        root.put("model_validated", entry.modelValidated)
+        root.put("status", entry.status)
+        root.put("score", if (entry.score.isFinite() && entry.score in 0f..1f) entry.score.toDouble() else JSONObject.NULL)
+        root.put("modality", entry.scanMode)
+        root.put("duration_ms", entry.durationMs)
+        root.put("evidence", evidence)
+        if (entry.signalsJson != null) {
+            root.put("signals", JSONObject(entry.signalsJson))
+        }
+        if (receipt != null) {
+            root.put("cryptographic_receipt", JSONObject(receipt.toExportJson()))
+        }
+        return root.toString(2)
     }
 }

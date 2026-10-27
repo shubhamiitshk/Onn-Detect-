@@ -7,6 +7,7 @@ import android.net.Uri
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.lang.reflect.Constructor
 import java.lang.reflect.Field
 import java.lang.reflect.Method
 import java.util.concurrent.Executors
@@ -70,7 +71,6 @@ object PerioralLandmarkAnalyzer {
      * @param minEyeDistPx Minimum inter-ocular distance in pixels to accept a frame
      * @return Normalized jitter score in [0, 1], or Float.NaN if insufficient valid frames
      */
-    @Suppress("UNUSED_PARAMETER")
     fun computeJitterScore(
         frameLandmarks: List<List<Any>?>,
         minEyeDistPx: Float = 12f
@@ -88,7 +88,7 @@ object PerioralLandmarkAnalyzer {
                     val dx = (getLandmarkX(re) - getLandmarkX(le)).toDouble()
                     val dy = (getLandmarkY(re) - getLandmarkY(le)).toDouble()
                     val eyeDist = kotlin.math.hypot(dx, dy)
-                    if (!eyeDist.isFinite() || eyeDist < MIN_EYE_DIST_PX) {
+                    if (!eyeDist.isFinite() || eyeDist < minEyeDistPx) {
                         null
                     } else {
                         val cosA = dx / eyeDist
@@ -111,7 +111,7 @@ object PerioralLandmarkAnalyzer {
                     null
                 }
             }
-        }.filterNotNull()
+        }
 
         if (normalized.size < MIN_CONSECUTIVE_FRAMES) return Float.NaN
 
@@ -286,8 +286,8 @@ object PerioralLandmarkAnalyzer {
         val nFrames = minOf(frames.size, frameLandmarks.size)
         if (nFrames < 4) return Float.NaN
 
-        val leftSeries = ArrayList<Double>(nFrames)
-        val rightSeries = ArrayList<Double>(nFrames)
+        val perFrameLeft = arrayOfNulls<Double>(nFrames)
+        val perFrameRight = arrayOfNulls<Double>(nFrames)
 
         for (t in 0 until nFrames) {
             val bmp = frames[t]
@@ -297,22 +297,56 @@ object PerioralLandmarkAnalyzer {
                 val leftCg = sampleMalarChromaticity(bmp, pts, LEFT_MALAR_INDICES)
                 val rightCg = sampleMalarChromaticity(bmp, pts, RIGHT_MALAR_INDICES)
                 if (leftCg.isFinite() && rightCg.isFinite()) {
-                    leftSeries.add(leftCg)
-                    rightSeries.add(rightCg)
+                    perFrameLeft[t] = leftCg
+                    perFrameRight[t] = rightCg
                 }
             } catch (_: Exception) {
                 // Skip invalid frame
             }
         }
 
-        if (leftSeries.size < 4) return Float.NaN
-        val m = leftSeries.size - 1
-        val dLeft = DoubleArray(m) { i -> leftSeries[i + 1] - leftSeries[i] }
-        val dRight = DoubleArray(m) { i -> rightSeries[i + 1] - rightSeries[i] }
+        return computeRppgAnomalyFromTimeline(perFrameLeft.toList(), perFrameRight.toList())
+    }
 
-        val corr = pearsonCorrelation(dLeft, dRight)
-        if (!corr.isFinite()) return Float.NaN
-        return ((0.55 - corr) / 0.85).coerceIn(0.0, 1.0).toFloat()
+    /**
+     * Computes bilateral malar rPPG phase anomaly strictly across contiguous, uninterrupted
+     * runs of tracked frames from timeline-indexed series (null represents missing/untracked frames).
+     *
+     * Returns Float.NaN when fewer than 4 contiguous frames exist.
+     */
+    internal fun computeRppgAnomalyFromTimeline(
+        leftTimeline: List<Double?>,
+        rightTimeline: List<Double?>
+    ): Float {
+        val n = minOf(leftTimeline.size, rightTimeline.size)
+        if (n < 4) return Float.NaN
+
+        val contiguousRuns = mutableListOf<MutableList<Pair<Double, Double>>>()
+        var currentRun = mutableListOf<Pair<Double, Double>>()
+
+        for (t in 0 until n) {
+            val l = leftTimeline[t]
+            val r = rightTimeline[t]
+            if (l != null && r != null && l.isFinite() && r.isFinite()) {
+                currentRun.add(Pair(l, r))
+            } else {
+                if (currentRun.isNotEmpty()) {
+                    contiguousRuns.add(currentRun)
+                    currentRun = mutableListOf()
+                }
+            }
+        }
+        if (currentRun.isNotEmpty()) {
+            contiguousRuns.add(currentRun)
+        }
+
+        val validRuns = contiguousRuns.filter { it.size >= 4 }
+        if (validRuns.isEmpty()) return Float.NaN
+
+        val longestRun = validRuns.maxByOrNull { it.size } ?: return Float.NaN
+        val leftSeries = DoubleArray(longestRun.size) { longestRun[it].first }
+        val rightSeries = DoubleArray(longestRun.size) { longestRun[it].second }
+        return computeRppgAnomalyFromSeries(leftSeries, rightSeries)
     }
 
     /**
@@ -445,28 +479,41 @@ object PerioralLandmarkAnalyzer {
  */
 class LipSyncDetector(private val context: Context) : AutoCloseable {
 
+    companion object {
+        const val MODEL_ASSET_PATH = "models/face_landmarker.task"
+    }
+
     private var faceLandmarker: Any? = null
     private var faceLandmarkerClass: Class<*>? = null
     private var detectForVideoMethod: Method? = null
     private var closeMethod: Method? = null
+    private var faceLandmarksMethod: Method? = null
     private var faceLandmarksField: Field? = null
     private var landmarkXMethod: Method? = null
     private var landmarkYMethod: Method? = null
     private var imageClass: Class<*>? = null
-    private var bitmapImageBuilderClass: Class<*>? = null
+    private var bitmapImageBuilderConstructor: Constructor<*>? = null
+    private var buildImageMethod: Method? = null
     private val executor = Executors.newSingleThreadExecutor()
 
     fun initialize() {
         try {
-            // Try to load MediaPipe FaceLandmarker classes via reflection
-            faceLandmarkerClass = Class.forName("com.google.mediapipe.tasks.vision.face.FaceLandmarker")
-            val optionsClass = Class.forName("com.google.mediapipe.tasks.vision.face.FaceLandmarkerOptions")
-            val optionsBuilderClass = Class.forName("com.google.mediapipe.tasks.vision.face.FaceLandmarkerOptions\$Builder")
+            // Load MediaPipe FaceLandmarker classes via reflection using 0.10+ package hierarchy
+            faceLandmarkerClass = Class.forName("com.google.mediapipe.tasks.vision.facelandmarker.FaceLandmarker")
+            val optionsClass = Class.forName("com.google.mediapipe.tasks.vision.facelandmarker.FaceLandmarker\$FaceLandmarkerOptions")
+            val baseOptionsClass = Class.forName("com.google.mediapipe.tasks.core.BaseOptions")
             val runningModeClass = Class.forName("com.google.mediapipe.tasks.vision.core.RunningMode")
             imageClass = Class.forName("com.google.mediapipe.tasks.vision.core.Image")
-            bitmapImageBuilderClass = Class.forName("com.google.mediapipe.tasks.vision.core.Image\$BitmapImageBuilder")
+            val bitmapImageBuilderClass = Class.forName("com.google.mediapipe.tasks.vision.core.Image\$BitmapImageBuilder")
 
-            val builder = optionsBuilderClass.getDeclaredConstructor().newInstance()
+            // BaseOptions.builder().setModelAssetPath(MODEL_ASSET_PATH).build()
+            val baseBuilder = baseOptionsClass.getMethod("builder").invoke(null)
+            baseBuilder.javaClass.getMethod("setModelAssetPath", String::class.java).invoke(baseBuilder, MODEL_ASSET_PATH)
+            val baseOptions = baseBuilder.javaClass.getMethod("build").invoke(baseBuilder)
+
+            // FaceLandmarkerOptions.builder().setBaseOptions(baseOptions).setRunningMode(RunningMode.VIDEO).build()
+            val builder = optionsClass.getMethod("builder").invoke(null)
+            builder.javaClass.getMethod("setBaseOptions", baseOptionsClass).invoke(builder, baseOptions)
             builder.javaClass.getMethod("setOutputFaceBlendshapes", Boolean::class.javaPrimitiveType).invoke(builder, false)
             builder.javaClass.getMethod("setOutputFacialTransformationMatrix", Boolean::class.javaPrimitiveType).invoke(builder, false)
             builder.javaClass.getMethod("setRunningMode", runningModeClass).invoke(builder, runningModeClass.getField("VIDEO").get(null))
@@ -477,12 +524,21 @@ class LipSyncDetector(private val context: Context) : AutoCloseable {
             // Cache methods for later use
             detectForVideoMethod = faceLandmarkerClass!!.getMethod("detectForVideo", imageClass!!, Long::class.javaPrimitiveType)
             closeMethod = faceLandmarkerClass!!.getMethod("close")
-            faceLandmarksField = Class.forName("com.google.mediapipe.tasks.vision.face.FaceLandmarkerResult").getField("faceLandmarks")
-            val normalizedLandmarkClass = Class.forName("com.google.mediapipe.tasks.components.containers.NormalizedLandmark")
-            landmarkXMethod = normalizedLandmarkClass.getMethod("getX")
-            landmarkYMethod = normalizedLandmarkClass.getMethod("getY")
 
-            Log.i("LipSyncDetector", "MediaPipe FaceLandmarker initialized successfully")
+            val resultClass = Class.forName("com.google.mediapipe.tasks.vision.facelandmarker.FaceLandmarkerResult")
+            faceLandmarksMethod = runCatching { resultClass.getMethod("faceLandmarks") }.getOrNull()
+            faceLandmarksField = runCatching { resultClass.getField("faceLandmarks") }.getOrNull()
+
+            bitmapImageBuilderConstructor = bitmapImageBuilderClass.getConstructor(Bitmap::class.java)
+            buildImageMethod = bitmapImageBuilderClass.getMethod("build")
+
+            val normalizedLandmarkClass = Class.forName("com.google.mediapipe.tasks.components.containers.NormalizedLandmark")
+            landmarkXMethod = runCatching { normalizedLandmarkClass.getMethod("x") }
+                .getOrElse { normalizedLandmarkClass.getMethod("getX") }
+            landmarkYMethod = runCatching { normalizedLandmarkClass.getMethod("y") }
+                .getOrElse { normalizedLandmarkClass.getMethod("getY") }
+
+            Log.i("LipSyncDetector", "MediaPipe FaceLandmarker initialized successfully with $MODEL_ASSET_PATH")
         } catch (e: Exception) {
             Log.w("LipSyncDetector", "MediaPipe FaceLandmarker not available: ${e.message}. Lip-sync detection will be disabled.")
             faceLandmarker = null
@@ -497,54 +553,86 @@ class LipSyncDetector(private val context: Context) : AutoCloseable {
      *         or Float.NaN if insufficient valid frames or MediaPipe not available
      */
     suspend fun analyzeVideo(videoUri: Uri): Float = withContext(Dispatchers.IO) {
-        if (faceLandmarker == null || detectForVideoMethod == null || imageClass == null || bitmapImageBuilderClass == null) {
+        if (faceLandmarker == null || detectForVideoMethod == null || imageClass == null ||
+            bitmapImageBuilderConstructor == null || buildImageMethod == null) {
             return@withContext Float.NaN
         }
 
-        val fileDescriptor = context.contentResolver.openFileDescriptor(videoUri, "r")
-        if (fileDescriptor == null) return@withContext Float.NaN
+        val fileDescriptor = try {
+            context.contentResolver.openFileDescriptor(videoUri, "r")
+        } catch (e: Exception) {
+            Log.w("LipSyncDetector", "Failed to open video URI: $videoUri", e)
+            null
+        } ?: return@withContext Float.NaN
 
-        val mediaMetadata = MediaMetadataRetriever()
-        mediaMetadata.setDataSource(fileDescriptor.fileDescriptor)
-        val frameCount = mediaMetadata.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_FRAME_COUNT)?.toIntOrNull() ?: 0
-        mediaMetadata.release()
+        fileDescriptor.use { pfd ->
+            val mediaMetadata = MediaMetadataRetriever()
+            try {
+                mediaMetadata.setDataSource(pfd.fileDescriptor)
+                val rawFrameCount = mediaMetadata.extractMetadata(
+                    MediaMetadataRetriever.METADATA_KEY_VIDEO_FRAME_COUNT
+                )?.toIntOrNull()
+                val durationMs = mediaMetadata.extractMetadata(
+                    MediaMetadataRetriever.METADATA_KEY_DURATION
+                )?.toLongOrNull() ?: 0L
 
-        if (frameCount < 3) return@withContext Float.NaN
+                val frameCount = when {
+                    rawFrameCount != null && rawFrameCount > 0 -> rawFrameCount
+                    durationMs > 0L -> (durationMs * 30L / 1000L).toInt()
+                    else -> 0
+                }
 
-        val landmarks = mutableListOf<List<Any>?>()
-        val frameIndices = (0 until frameCount step 2).take(30) // Sample up to 30 frames
+                if (frameCount < 3) return@withContext Float.NaN
 
-        try {
-            for (frameIdx in frameIndices) {
-                val bitmap = mediaMetadata.getFrameAtTime(
-                    (frameIdx * 1000000L * 1000 / 30).toLong(),
-                    MediaMetadataRetriever.OPTION_CLOSEST_SYNC
-                ) ?: continue
+                val landmarks = mutableListOf<List<Any>?>()
+                val frameIndices = (0 until frameCount step 2).take(30) // Sample up to 30 frames
 
-                val builder = bitmapImageBuilderClass!!.getConstructor(Bitmap::class.java).newInstance(bitmap)
-                val mpImage = builder.javaClass.getMethod("build").invoke(builder)
-                val timestampMs = (frameIdx * 1000L / 30).toLong()
+                for (frameIdx in frameIndices) {
+                    val timeUs = (frameIdx * 1_000_000L / 30L)
+                    val bitmap = mediaMetadata.getFrameAtTime(
+                        timeUs,
+                        MediaMetadataRetriever.OPTION_CLOSEST_SYNC
+                    ) ?: continue
 
-                val result = detectForVideoMethod!!.invoke(faceLandmarker, mpImage, timestampMs)
-                val faceLandmarksList = faceLandmarksField!!.get(result) as List<*>
-                val face = faceLandmarksList.firstOrNull() ?: continue
+                    try {
+                        val builder = bitmapImageBuilderConstructor!!.newInstance(bitmap)
+                        val mpImage = buildImageMethod!!.invoke(builder)
+                        val timestampMs = (frameIdx * 1000L / 30L)
 
-                val lipLandmarks = mutableListOf<Any>()
-                val faceSize = (face as? List<*>)?.size ?: (face.javaClass.getMethod("size").invoke(face) as Int)
-                for (idx in PerioralLandmarkAnalyzer.LIP_INDICES) {
-                    if (idx < faceSize) {
-                        val lm = (face as? List<*>)?.get(idx) ?: face.javaClass.getMethod("get", Int::class.javaPrimitiveType).invoke(face, idx)
-                        lipLandmarks.add(lm)
+                        val result = detectForVideoMethod!!.invoke(faceLandmarker, mpImage, timestampMs)
+                        val faceLandmarksList = (faceLandmarksMethod?.invoke(result) ?: faceLandmarksField?.get(result)) as? List<*>
+                        val face = faceLandmarksList?.firstOrNull() as? List<*>
+                        if (face == null || face.isEmpty()) {
+                            landmarks.add(null)
+                            continue
+                        }
+
+                        // Pass the full face landmarks list (all 478 points) so pose normalization
+                        // and eye-distance scaling can locate outer eye corners (33, 263) and nose tip (1).
+                        val fullFaceLandmarks = ArrayList<Any>(face.size)
+                        for (item in face) {
+                            if (item != null) fullFaceLandmarks.add(item)
+                        }
+                        landmarks.add(fullFaceLandmarks)
+                    } finally {
+                        if (!bitmap.isRecycled) {
+                            bitmap.recycle()
+                        }
                     }
                 }
-                landmarks.add(lipLandmarks)
-            }
-        } catch (e: Exception) {
-            Log.w("LipSyncDetector", "Error during video analysis", e)
-            return@withContext Float.NaN
-        }
 
-        PerioralLandmarkAnalyzer.computeJitterScore(landmarks)
+                PerioralLandmarkAnalyzer.computeJitterScore(landmarks)
+            } catch (e: Exception) {
+                Log.w("LipSyncDetector", "Error during video analysis", e)
+                Float.NaN
+            } finally {
+                try {
+                    mediaMetadata.release()
+                } catch (e: Exception) {
+                    Log.w("LipSyncDetector", "Error releasing MediaMetadataRetriever", e)
+                }
+            }
+        }
     }
 
     override fun close() {
@@ -555,6 +643,7 @@ class LipSyncDetector(private val context: Context) : AutoCloseable {
                 Log.w("LipSyncDetector", "Error closing FaceLandmarker", e)
             }
         }
+        faceLandmarker = null
         executor.shutdown()
     }
 }

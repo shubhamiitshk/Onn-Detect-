@@ -1,0 +1,35 @@
+model:
+  name: ReliabilityGatedMetaFusion
+  num_features: 10
+  feature_names:
+    - calibrated_srm_score
+    - rich_poor_contrast
+    - roi_hotspot_score
+    - vfm_spatial_variance
+    - resolution_norm
+    - is_compressed
+    - semantic_probe_score
+    - c2pa_present
+    - lip_sync_corr
+    - landmark_jitter
+data:
+  dataset: multimodal_calibration_matrix
+  root_dir: ../datasets/openfake_visual
+  cascade_mask_rate: 0.25
+booster:
+  max_depth: 4
+  n_estimators: 10
+  learning_rate: 0.10
+  subsample: 0.85
+  colsample_bytree: 0.85
+  base_margin: reliability_gated_probe
+  probe_margin_weight: 1.0
+  bounded_correction_tanh: 1.5
+cascade_policy:
+  arbitration: neyman_pearson_llr
+  delta_abstain: 0.35
+  tau_conflict: 1.50
+  target_fpr: 0.01
+output:
+  export_target: android/app/src/main/assets/models/meta_classifier.json
+  export_kotlin: android/app/src/main/java/com/onndetect/domain/pipeline/XGBoostMetaClassifier.kt

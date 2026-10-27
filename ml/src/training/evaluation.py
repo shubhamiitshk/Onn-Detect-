@@ -1,7 +1,7 @@
 """Frozen-threshold evaluation with class counts and binomial uncertainty."""
 import math
 import numpy as np
-from sklearn.metrics import roc_curve, balanced_accuracy_score
+from .metrics import roc_curve, balanced_accuracy_score
 from .metrics import compute_auc, compute_eer, compute_accuracy
 
 def wilson_interval(successes, total):

@@ -28,8 +28,65 @@ class LiteRTInferenceEngine @Inject constructor(private val loader: MemoryMapped
      */
     private val modelLocks = java.util.concurrent.ConcurrentHashMap<String, Any>()
 
-    /** Guards the `loaded` MAP only. Never held during model construction. */
+    /** Guards the `loaded` MAP and `blockedModels` set only. Never held during model construction. */
     private val mapLock = Any()
+
+    /**
+     * Models temporarily locked out from loading while an exclusive Tier-2 VLM session holds
+     * native memory (e.g. `siglip_probe_int8.tflite`). Guarded by [mapLock].
+     */
+    private val blockedModels = HashSet<String>()
+
+    /**
+     * Detailed result of evicting a model from the interpreter cache, distinguishing cache
+     * map removal from successful closure of the underlying native TFLite/delegate/mmap resources.
+     */
+    data class EvictionReport(
+        val modelFile: String,
+        val wasCached: Boolean,
+        val removedFromCache: Boolean,
+        val interpreterClosed: Boolean,
+        val delegateClosed: Boolean,
+        val mappingClosed: Boolean,
+        val closeError: Throwable? = null,
+    ) {
+        /**
+         * True iff the model is no longer cached AND every underlying resource that was open
+         * (`interpreter`, `holder`, `mapped.closeable`) closed without throwing an exception.
+         */
+        val resourcesCleanlyReleased: Boolean
+            get() = !wasCached || (
+                removedFromCache &&
+                    interpreterClosed &&
+                    delegateClosed &&
+                    mappingClosed &&
+                    closeError == null
+                )
+    }
+
+    /**
+     * Explicit ownership lease that evicts specified heavy models (such as `siglip_probe_int8.tflite`)
+     * and prevents any concurrent or subsequent inference call from reloading them until [close] is called.
+     */
+    inner class ExclusiveSessionLease internal constructor(
+        val lockedOutModels: Set<String>,
+        val evictionReports: Map<String, EvictionReport>,
+    ) : AutoCloseable {
+        @Volatile
+        var isActive: Boolean = true
+            private set
+
+        val allResourcesCleanlyReleased: Boolean
+            get() = evictionReports.values.all { it.resourcesCleanlyReleased }
+
+        override fun close() {
+            if (!isActive) return
+            synchronized(mapLock) {
+                blockedModels.removeAll(lockedOutModels)
+                isActive = false
+            }
+        }
+    }
 
     private fun lockFor(modelFile: String): Any =
         modelLocks.computeIfAbsent(modelFile) { Any() }
@@ -40,7 +97,14 @@ class LiteRTInferenceEngine @Inject constructor(private val loader: MemoryMapped
         // held for the map access, so one model's slow first load does not
         // stall another model's first load.
         synchronized(lockFor(modelFile)) {
-            synchronized(mapLock) { loaded[modelFile] }?.let { return it.interpreter }
+            synchronized(mapLock) {
+                if (modelFile in blockedModels) {
+                    throw ModelContractException(
+                        "Model '$modelFile' is locked out by an active exclusive VLM session lease"
+                    )
+                }
+                loaded[modelFile]
+            }?.let { return it.interpreter }
             val mapped = loader.loadMapped(modelFile)
             val holder = DelegateHolder()
             try {
@@ -115,6 +179,105 @@ class LiteRTInferenceEngine @Inject constructor(private val loader: MemoryMapped
         }
         else -> throw ModelContractException("Unsupported model input")
     }
+
+    /**
+     * Evicts a single cached model interpreter and closes its native delegate and mmap
+     * buffers, returning an [EvictionReport] that separates cache removal from native
+     * resource closure.
+     */
+    fun evictModelWithReport(modelFile: String): EvictionReport {
+        val lock = lockFor(modelFile)
+        synchronized(lock) {
+            val removed = synchronized(mapLock) { loaded.remove(modelFile) }
+                ?: return EvictionReport(
+                    modelFile = modelFile,
+                    wasCached = false,
+                    removedFromCache = false,
+                    interpreterClosed = true,
+                    delegateClosed = true,
+                    mappingClosed = true,
+                    closeError = null,
+                )
+            var firstError: Throwable? = null
+            fun recordError(t: Throwable) {
+                if (firstError == null) firstError = t else firstError!!.addSuppressed(t)
+            }
+            val interpOk = try {
+                removed.interpreter.close()
+                true
+            } catch (t: Throwable) {
+                recordError(t)
+                false
+            }
+            val delegateOk = try {
+                removed.holder.close()
+                true
+            } catch (t: Throwable) {
+                recordError(t)
+                false
+            }
+            val mappedOk = try {
+                removed.mapped.closeable?.close()
+                true
+            } catch (t: Throwable) {
+                recordError(t)
+                false
+            }
+            return EvictionReport(
+                modelFile = modelFile,
+                wasCached = true,
+                removedFromCache = true,
+                interpreterClosed = interpOk,
+                delegateClosed = delegateOk,
+                mappingClosed = mappedOk,
+                closeError = firstError,
+            )
+        }
+    }
+
+    /**
+     * Evicts [modelFile] and returns true ONLY if it was cached, removed from cache, AND all
+     * underlying native resources (`interpreter`, `holder`, `mapped.closeable`) closed cleanly
+     * without throwing.
+     */
+    fun evictModel(modelFile: String): Boolean {
+        val report = evictModelWithReport(modelFile)
+        return report.removedFromCache && report.resourcesCleanlyReleased
+    }
+
+    /**
+     * Acquires an exclusive session lease for a Tier-2 on-device VLM invocation.
+     * Blocks any concurrent/subsequent reload of [modelsToEvictAndBlock] first, then evicts
+     * any cached instances in deterministic lock order.
+     */
+    fun acquireExclusiveVlmSession(
+        modelsToEvictAndBlock: Set<String> = setOf("siglip_probe_int8.tflite"),
+    ): ExclusiveSessionLease {
+        val ordered = modelsToEvictAndBlock.sortedBy { lockFor(it).hashCode() }
+        synchronized(mapLock) {
+            blockedModels.addAll(ordered)
+        }
+        val reports = LinkedHashMap<String, EvictionReport>()
+        try {
+            for (modelFile in ordered) {
+                reports[modelFile] = evictModelWithReport(modelFile)
+            }
+        } catch (t: Throwable) {
+            synchronized(mapLock) {
+                blockedModels.removeAll(ordered.toSet())
+            }
+            throw t
+        }
+        return ExclusiveSessionLease(ordered.toSet(), reports)
+    }
+
+    /** Returns true if [modelFile] is currently locked out by an active [ExclusiveSessionLease]. */
+    fun isModelBlocked(modelFile: String): Boolean =
+        synchronized(mapLock) { modelFile in blockedModels }
+
+    /** Returns true if [modelFile] currently has an active cached interpreter in memory. */
+    fun isModelLoaded(modelFile: String): Boolean =
+        synchronized(mapLock) { loaded.containsKey(modelFile) }
 
     override fun close() {
         // Take every model lock before closing, so an in-flight inference

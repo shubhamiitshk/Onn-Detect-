@@ -2,7 +2,7 @@ name: evaluate-models
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'review/**']
   pull_request:
   workflow_dispatch:
     inputs:
@@ -41,6 +41,7 @@ jobs:
           python -m unittest discover -s ml/tests -p 'test_*.py' -v
           python ml/scripts/train_srm_dcpt_patchcraft.py --self-test
           python ml/scripts/train_bfree_tap_and_ssl_distill.py --self-test
+          python ml/scripts/train_forensic_vlm_colab_t4.py --self-test
           python scripts/verify_front_end_parity.py --require-torch
           python scripts/gen_lfcc_golden.py --torch --check scripts/lfcc_golden.json
           python scripts/verify_fft_parity.py

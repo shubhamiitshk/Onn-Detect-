@@ -107,6 +107,77 @@ from train_bfree_tap_and_ssl_distill import (  # noqa: E402
     SiglipTAPHead,
     compute_tap_bfree_loss,
 )
+from models.prism_v11_algorithms import (  # noqa: E402
+    FisherSourceSubspaceProjector,
+    PRLPatchHeadProbe,
+)
+
+
+# ============================================================================
+# Fisher Between-Source Nuisance Subspace Projector (v11 PRISM, Algorithm 1)
+# ============================================================================
+
+class FisherSourceSubspaceProjector:
+    """Fisher Between-Source Nuisance Subspace Projector.
+
+    Computes the exact SVD of weighted real-class source centroid deviations
+    B = [sqrt(p_s) * (mu_s - mu_real)]_{s=1}^S. Because rank(B) <= S - 1
+    (at most 3 dims out of 768 for 4 sources), projecting out V_top reduces
+    between-source real centroid shift to machine zero while preserving
+    D - r dimensions. Folds P_perp directly into w_patch at export time
+    (0 runtime FLOPs).
+    """
+
+    def __init__(self, embed_dim: int = 768, max_rank: int = 3, shrinkage: float = 0.10) -> None:
+        self.embed_dim = int(embed_dim)
+        self.max_rank = int(max_rank)
+        self.shrinkage = float(shrinkage)
+        self.proj_matrix = np.eye(self.embed_dim, dtype=np.float64)
+        self.basis_removed = None
+
+    def fit_real_sources(self, real_features: np.ndarray, real_sources: list) -> "FisherSourceSubspaceProjector":
+        X = np.asarray(real_features, dtype=np.float64)
+        if X.ndim != 2 or X.shape[1] != self.embed_dim:
+            raise ValueError(f"Expected (N, {self.embed_dim}) real features, got {X.shape}")
+        if len(real_sources) != len(X):
+            raise ValueError("real_sources length must match real_features")
+
+        unique_sources = sorted(set(real_sources))
+        if len(unique_sources) < 2:
+            self.proj_matrix = np.eye(self.embed_dim, dtype=np.float64)
+            return self
+
+        global_mean = np.mean(X, axis=0)
+        centroid_diffs = []
+
+        for src in unique_sources:
+            mask = np.asarray([s == src for s in real_sources], dtype=bool)
+            n_s = int(np.sum(mask))
+            if n_s < 2:
+                continue
+            X_s = X[mask]
+            mu_s = np.mean(X_s, axis=0)
+            weight = math.sqrt(float(n_s) / float(len(X)))
+            centroid_diffs.append(weight * (mu_s - global_mean))
+
+        if not centroid_diffs:
+            return self
+
+        B = np.stack(centroid_diffs, axis=0)
+        _, s_vals, vh = np.linalg.svd(B, full_matrices=False)
+
+        rank = min(self.max_rank, len(unique_sources) - 1, int(np.sum(s_vals > 1e-6)))
+        if rank <= 0:
+            return self
+
+        V_top = vh[:rank, :]
+        self.basis_removed = V_top
+        self.proj_matrix = np.eye(self.embed_dim, dtype=np.float64) - (V_top.T @ V_top)
+        return self
+
+    def project(self, features: np.ndarray) -> np.ndarray:
+        arr = np.asarray(features, dtype=np.float64)
+        return (arr @ self.proj_matrix).astype(features.dtype)
 
 
 # ============================================================================
@@ -517,6 +588,36 @@ def train_siglip_tap(
         w_np, b_val = tap_head_cpu.write_back_to_siglip_head(tower_cpu)
         print(f"  • Successfully folded weights: w_np={w_np.shape}, b_val={b_val:.4f}")
 
+        # v11 PRISM: Fit Fisher between-source nuisance subspace on real validation
+        # features and fold P_perp directly into w_patch (0 runtime FLOPs).
+        # Source is inferred from the parent directory name of each validation sample.
+        try:
+            val_features = []
+            val_sources = []
+            tap_head_cpu.eval()
+            with torch.no_grad():
+                for v_path, v_label in splits["val"]:
+                    if int(v_label) != 0:
+                        continue  # Fit projector on real samples only
+                    v_img = decode_image(str(v_path)).image.convert("RGB")
+                    v_np = preprocess_siglip_chw(v_img)
+                    v_tokens = tower_cpu(pixel_values=torch.from_numpy(v_np[None])).last_hidden_state
+                    # Mean-pool patch tokens -> (D,) source centroid component
+                    pooled = v_tokens.mean(dim=1).squeeze(0).cpu().numpy().astype(np.float64)
+                    val_features.append(pooled)
+                    val_sources.append(v_path.parent.name)
+            if len(val_features) >= 4:
+                projector = FisherSourceSubspaceProjector(embed_dim=w_np.shape[0], max_rank=3)
+                projector.fit_real_sources(np.stack(val_features), val_sources)
+                w_np = projector.project(w_np[None, :])[0]
+                removed_rank = len(projector.basis_removed) if projector.basis_removed is not None else 0
+                print(f"  • Fisher source subspace fitted: removed_rank={removed_rank}, "
+                      f"w_patch projected (P_perp @ w), {removed_rank} dims nulled out of {w_np.shape[0]}")
+            else:
+                print(f"  • Skipping Fisher projector: only {len(val_features)} real validation samples (need >= 4)")
+        except Exception as e:
+            print(f"  • Warning: Fisher source debiasing skipped ({e}); using raw w_patch")
+
         # Build Keras mirror
         keras_model = build_keras_vfm_probe(
             tower_cpu,
@@ -524,6 +625,7 @@ def train_siglip_tap(
             probe_bias=b_val,
             input_size=SIGLIP_INPUT_SIZE,
             l2_normalize=True,
+            use_spatial_2d=True,
         )
         print(f"  • Keras mirror constructed: {keras_model.input_shape} -> {keras_model.output_shape}")
 

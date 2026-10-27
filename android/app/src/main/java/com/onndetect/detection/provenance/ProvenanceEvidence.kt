@@ -68,7 +68,7 @@ sealed interface ProvenanceEvidence {
         )
 
         /** A mark must be at least this significant to count as evidence. */
-        const val SIGNIFICANT_P_VALUE = 1e-6
+        const val SIGNIFICANT_P_VALUE = 1e-4
     }
 }
 

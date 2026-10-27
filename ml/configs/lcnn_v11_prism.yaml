@@ -1,0 +1,44 @@
+model:
+  name: LCNNMFMAudio
+  input_size:
+    - 401
+    - 40
+  num_classes: 1
+  pooling: astp
+  sub_bands: 4
+  use_mnp_residual: true
+data:
+  dataset: asvspoof5_inthewild
+  root_dir: ../datasets/asvspoof5_audio
+  max_duration: 4.0
+  sample_rate: 16000
+  cache_in_memory: false
+  windows_per_file: 3
+training:
+  epochs: 24
+  batch_size: 32
+  num_workers: 4
+  amp: true
+  precision: fp16
+  gradient_clip: 1.0
+  distillation:
+    enabled: true
+    teachers: [wavlm_large, hubert_large]
+    alpha: 0.35
+    temperature: 2.0
+optimizer:
+  name: AdamW
+  lr: 0.0005
+  weight_decay: 0.0001
+scheduler:
+  name: CosineAnnealing
+  warmup_epochs: 3
+  T_max: 24
+  eta_min: 1.0e-06
+early_stopping:
+  patience: 6
+  metric: val_auc
+  mode: max
+logging:
+  log_dir: ../ml/logs/lcnn_v11_prism
+  save_interval: 4

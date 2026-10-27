@@ -46,9 +46,22 @@ import kotlin.math.roundToInt
  * [ProvenanceEvidence.Absent], which carries no claim in either
  * direction.
  */
-class AudioSealDetector @Inject constructor(
-    private val engine: LiteRTInferenceEngine,
+class AudioSealDetector internal constructor(
+    private val contractProvider: (String) -> LiteRTInferenceEngine.Contract?,
+    private val predictor: (String, ByteBuffer) -> Float,
 ) {
+
+    @Inject
+    constructor(engine: LiteRTInferenceEngine) : this(
+        contractProvider = { file ->
+            try {
+                engine.contract(file)
+            } catch (e: Throwable) {
+                null
+            }
+        },
+        predictor = { file, buffer -> engine.predict(file, buffer) },
+    )
 
     data class DetectionResult(
         val detected: Boolean,
@@ -81,7 +94,7 @@ class AudioSealDetector @Inject constructor(
      * Returns null when the detector graph is not available.
      */
     fun detectWatermark(samples: FloatArray): DetectionResult? {
-        val contract = runCatching { engine.contract(MODEL_FILE) }.getOrNull() ?: return null
+        val contract = runCatching { contractProvider(MODEL_FILE) }.getOrNull() ?: return null
         val size = contract.inputShape.lastOrNull() ?: return null
         if (contract.inputShape.size != 2 || contract.inputShape[0] != 1) return null
         if (size < 1024) return null
@@ -114,12 +127,12 @@ class AudioSealDetector @Inject constructor(
         // that agree (confidently 0 or confidently 1). The app's inference
         // engine asserts a scalar output, so the sign test is computed
         // inside the graph and only the bit count crosses the boundary.
-        val agreeing = engine.predict(MODEL_FILE, input) { }
+        val agreeing = predictor(MODEL_FILE, input)
         if (!agreeing.isFinite() || agreeing < 0f) return null
         val count = agreeing.roundToInt().coerceIn(0, MESSAGE_BITS)
         val pValue = binomialTwoTailed(count, MESSAGE_BITS)
         return DetectionResult(
-            detected = count >= MIN_AGREEING_BITS && pValue < ProvenanceEvidence.SIGNIFICANT_P_VALUE,
+            detected = count >= MIN_AGREEING_BITS && pValue < SIGNIFICANT_P_VALUE,
             pValue = pValue,
             agreeingBits = count,
             totalBits = MESSAGE_BITS,
@@ -155,6 +168,12 @@ class AudioSealDetector @Inject constructor(
 
         /** Bits in the AudioSeal message of the published detector. */
         const val MESSAGE_BITS = 16
+
+        /**
+         * Detection significance threshold calibrated for a 16-bit message head.
+         * Exact 16/16 agreement yields p = 2 * (0.5)^16 = 3.0518e-5 < 1e-4.
+         */
+        const val SIGNIFICANT_P_VALUE = 1e-4
 
         /**
          * Two-tailed binomial p-value for "at least [successes] of [trials]

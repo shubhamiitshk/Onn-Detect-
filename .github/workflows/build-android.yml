@@ -2,7 +2,7 @@ name: build-android
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'review/**']
   pull_request:
   workflow_dispatch:
 
@@ -28,6 +28,8 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.11'
+      - name: Install Python contract check dependencies
+        run: python -m pip install numpy==2.3.5 PyYAML==6.0.2 "cryptography>=50.0.2"
       - name: Source and release contract checks
         run: |
           python scripts/check_android_consistency.py
@@ -93,15 +95,25 @@ jobs:
       - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
         with:
           log-accepted-android-sdk-licenses: true
+      - name: Enable KVM group permissions
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
       - uses: reactivecircus/android-emulator-runner@1dcd0090116d15e7c562f8db72807de5e036a4ed # v2.34.0
         with:
-          api-level: 36
+          api-level: 34
+          target: default
           arch: x86_64
           profile: pixel_6
+          cores: 4
+          ram-size: 4096M
+          heap-size: 576M
+          emulator-boot-timeout: 900
           disable-snapshot: true
           disable-animations: true
-          emulator-options: -no-snapshot -no-boot-anim -gpu swiftshader_indirect -no-snapshot-save
-          script: gradlew connectedDebugAndroidTest
+          emulator-options: -no-snapshot -no-boot-anim -gpu swiftshader_indirect -no-snapshot-save -no-audio -no-window
+          script: cd android && bash gradlew connectedDebugAndroidTest --no-daemon
       - name: Upload instrumentation results
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

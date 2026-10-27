@@ -1,0 +1,47 @@
+model:
+  name: PRLPatchHeadProbe
+  backbone: google/siglip-base-patch16-224
+  embed_dim: 768
+  input_size: 224
+  patch_size: 16
+  num_patches: 196
+  spatial_grid: [14, 14]
+  use_spatial_2d: true
+  fusion_layers: [7, 11]
+  alpha_mid: 0.35
+  num_classes: 1
+data:
+  dataset: bfree_paired_twins
+  root_dir: ../datasets/bfree_twins
+  img_size: 224
+  frontend: siglip
+  cache_in_memory: true
+  cache_bytes: 1073741824
+training:
+  epochs: 12
+  batch_size: 32
+  num_workers: 4
+  amp: true
+  precision: fp16
+  gradient_clip: 1.0
+  prl_lambda_rel: 1.0
+  prl_lambda_coh: 0.5
+  prl_lambda_rank: 0.25
+  fisher_debias_rank: 3
+  fisher_l2_reg: 30.0
+optimizer:
+  name: AdamW
+  lr: 0.0003
+  weight_decay: 0.01
+scheduler:
+  name: CosineAnnealing
+  warmup_epochs: 2
+  T_max: 12
+  eta_min: 1.0e-06
+early_stopping:
+  patience: 4
+  metric: val_auc
+  mode: max
+logging:
+  log_dir: ../ml/logs/siglip_v11_prism
+  save_interval: 2

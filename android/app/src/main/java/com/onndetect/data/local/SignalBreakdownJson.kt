@@ -27,13 +27,17 @@ object SignalBreakdownJson {
         put("landmarkJitter", safe(signals.landmarkJitter))
     }.toString()
 
-    /** @return null when json is null/corrupt; missing fields default to -1. */
+    /** @return null when json is null/corrupt; missing or null fields default to Float.NaN. */
     fun decode(json: String?): SignalBreakdown? {
         if (json.isNullOrBlank()) return null
         return try {
             val o = JSONObject(json)
             if (o.optInt("schemaVersion", 1) != 1) return null
-            fun f(name: String) = o.optDouble(name, -1.0).toFloat().takeIf { it.isFinite() && it in 0f..1f } ?: -1f
+            fun f(name: String): Float = if (o.isNull(name)) {
+                Float.NaN
+            } else {
+                o.optDouble(name, Double.NaN).toFloat().takeIf { it.isFinite() && it in 0f..1f } ?: Float.NaN
+            }
             // Slot 6's key was renamed from "mobileClipScore" to
             // "vfmProbeScore". The shape of the record did not change, so
             // the schema version stays 1 and the OLD key is still read:
@@ -51,7 +55,7 @@ object SignalBreakdownJson {
                 provenanceScore = f("provenanceScore"),
                 prnuScore = f("prnuScore"),
                 // Absent in rows written before the fusion score was
-                // persisted -> -1f (unavailable), never 0f.
+                // persisted -> Float.NaN (unavailable), never 0f.
                 fusionScore = f("fusionScore"),
                 landmarkJitter = f("landmarkJitter"),
             )

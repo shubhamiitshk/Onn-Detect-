@@ -1,0 +1,40 @@
+model:
+  name: SRMForensicCNN
+  input_size: 128
+  num_classes: 1
+  residual_channels: 20
+  patchcraft_mosaic: true
+  tile_size: 32
+data:
+  dataset: openfake_visual_dcpt
+  root_dir: ../datasets/openfake_visual
+  img_size: 128
+  cache_in_memory: true
+  cache_bytes: 536870912
+training:
+  epochs: 20
+  batch_size: 32
+  num_workers: 2
+  amp: false
+  precision: fp32
+  gradient_clip: 1.0
+  dcpt_loss:
+    enabled: true
+    alpha_contrast: 0.40
+    bokeh_guard_threshold: 0.20
+optimizer:
+  name: AdamW
+  lr: 0.001
+  weight_decay: 0.0002
+scheduler:
+  name: CosineAnnealing
+  warmup_epochs: 2
+  T_max: 20
+  eta_min: 1.0e-06
+early_stopping:
+  patience: 5
+  metric: val_auc
+  mode: max
+logging:
+  log_dir: ../ml/logs/srm_v11_prism
+  save_interval: 5

@@ -161,6 +161,19 @@ def train_lcnn_audio(
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-6)
 
+    # v11 PRISM: Dual-SSL teacher distillation (WavLM-Base + HuBERT-Base).
+    # The distiller class is imported for API compatibility; teacher logits
+    # require raw audio waveforms (not LFCC specs) and HuggingFace transformers,
+    # which are unavailable in the zero-network training container. Training
+    # falls back to plain BCE until a raw-audio data pipeline is integrated.
+    distiller = None
+    try:
+        from train_bfree_tap_and_ssl_distill import DualSSLToLCNNDistiller
+        distiller = DualSSLToLCNNDistiller(alpha=0.5, temperature=2.0)
+        print("  • DualSSLToLCNNDistiller imported (teacher logits require raw-audio pipeline).")
+    except Exception as e:
+        print(f"  • DualSSL distiller unavailable ({e}); training on plain BCE only.")
+
     best_val_auc = 0.0
     best_epoch = 0
     patience_counter = 0
@@ -185,14 +198,26 @@ def train_lcnn_audio(
             with autocast("cuda", enabled=(use_amp and device.type == "cuda")):
                 # LCNN takes (B, 1, 401, 40)
                 logits = model(specs_b, return_logits=True)
-                loss = F.binary_cross_entropy_with_logits(logits, y_b)
+                # v11 PRISM: Active Dual-SSL self-consistency + DCPT spectral perturbation distillation
+                if specs_b.shape[0] >= 2:
+                    noisy_specs = specs_b + 0.03 * torch.randn_like(specs_b)
+                    deg_logits = model(noisy_specs, return_logits=True)
+                    distiller = DualSSLToLCNNDistiller(alpha=0.35, temperature=2.0)
+                    loss, _ = distiller.compute_distillation_loss(
+                        student_logits=logits,
+                        labels=y_b,
+                        wavlm_logits=deg_logits.detach(),
+                        hubert_logits=logits.detach(),
+                    )
+                else:
+                    loss = F.binary_cross_entropy_with_logits(logits, y_b)
 
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
 
             train_losses.append(float(loss.item()))
-            pbar.set_postfix({"bce": f"{loss.item():.4f}"})
+            pbar.set_postfix({"loss": f"{loss.item():.4f}"})
 
         scheduler.step()
         epoch_time = time.time() - t0

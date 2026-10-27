@@ -5,7 +5,43 @@ must be diagnosed using source labels and matched frontend/model lineage.
 """
 
 import numpy as np
-from sklearn.metrics import roc_auc_score, accuracy_score, roc_curve
+try:
+    from sklearn.metrics import (  # type: ignore[import-untyped]
+        accuracy_score,
+        balanced_accuracy_score,
+        roc_auc_score,
+        roc_curve,
+    )
+except ImportError:
+    def roc_curve(y_true, y_score):
+        y_true = np.asarray(y_true).astype(int)
+        y_score = np.asarray(y_score, dtype=np.float64)
+        desc_indices = np.argsort(y_score)[::-1]
+        y_score = y_score[desc_indices]
+        y_true = y_true[desc_indices]
+        distinct_indices = np.where(np.diff(y_score))[0]
+        threshold_idxs = np.r_[distinct_indices, y_true.size - 1]
+        tps = np.cumsum(y_true)[threshold_idxs]
+        fps = 1 + threshold_idxs - tps
+        tps = np.r_[0, tps]
+        fps = np.r_[0, fps]
+        thresholds = np.r_[y_score[0] + 1.0, y_score[threshold_idxs]]
+        fpr = np.zeros_like(fps, dtype=np.float64) if fps[-1] <= 0 else fps / fps[-1]
+        tpr = np.zeros_like(tps, dtype=np.float64) if tps[-1] <= 0 else tps / tps[-1]
+        return fpr, tpr, thresholds
+
+    def roc_auc_score(y_true, y_score):
+        fpr, tpr, _ = roc_curve(y_true, y_score)
+        trapz_fn = getattr(np, "trapezoid", getattr(np, "trapz", None))
+        return float(trapz_fn(tpr, fpr))
+
+    def accuracy_score(y_true, y_pred):
+        return float(np.mean(np.asarray(y_true) == np.asarray(y_pred)))
+
+    def balanced_accuracy_score(y_true, y_pred):
+        y_t, y_p = np.asarray(y_true), np.asarray(y_pred)
+        classes = np.unique(y_t)
+        return float(np.mean([np.mean(y_p[y_t == c] == c) for c in classes]))
 
 
 class DegenerateScores(RuntimeError):

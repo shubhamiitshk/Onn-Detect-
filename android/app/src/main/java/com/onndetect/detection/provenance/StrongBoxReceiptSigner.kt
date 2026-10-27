@@ -25,15 +25,21 @@ interface ReceiptSigner {
 }
 
 @Singleton
-class StrongBoxReceiptSigner @Inject constructor(
-    private val context: Context,
+class StrongBoxReceiptSigner @JvmOverloads constructor(
+    private val context: Context? = null,
 ) : ReceiptSigner {
 
     companion object {
         const val KEY_ALIAS = "onn_forensic_signing_key_v1"
         const val TIER_STRONGBOX = "STRONGBOX"
         const val TIER_TEE = "TEE"
+        const val TIER_SOFTWARE_TEST = "SOFTWARE_TEST"
     }
+
+    private val keyLock = Any()
+
+    @Volatile
+    private var isInitialized: Boolean = false
 
     /**
      * The tier is DERIVED from the key that actually exists, not a mutable
@@ -41,10 +47,15 @@ class StrongBoxReceiptSigner @Inject constructor(
      */
     @Volatile
     private var activeSecurityTier: String = TIER_TEE
+
+    @Volatile
     private var testKeyPair: java.security.KeyPair? = null
 
     override val securityTier: String
-        get() = activeSecurityTier
+        get() {
+            ensureKeyPair()
+            return activeSecurityTier
+        }
 
     /**
      * Signs [canonicalPayloadJson] using the hardware-backed private key.
@@ -81,10 +92,8 @@ class StrongBoxReceiptSigner @Inject constructor(
             // FAILURE, and it is reported as one: a receipt signed by a
             // software key must never be produced silently, because the
             // enterprise claim is that the key is hardware-isolated.
-            if (!androidKeystoreAvailable()) throw e
-            val kp = testKeyPair ?: KeyPairGenerator.getInstance("EC").apply {
-                initialize(ECGenParameterSpec("secp256r1"))
-            }.generateKeyPair().also { testKeyPair = it }
+            if (androidKeystoreAvailable()) throw e
+            val kp = getOrGenerateTestKeyPairLocked()
 
             val signer = Signature.getInstance("SHA256withECDSA")
             signer.initSign(kp.private)
@@ -95,13 +104,15 @@ class StrongBoxReceiptSigner @Inject constructor(
                 canonicalPayloadJson = canonicalPayloadJson,
                 signatureBase64 = Base64.getEncoder().encodeToString(signatureBytes),
                 publicKeyPem = ReceiptVerifier.formatPublicKeyToPem(kp.public.encoded),
-                securityTier = "SOFTWARE_TEST",
+                securityTier = TIER_SOFTWARE_TEST,
                 certificateChainBase64 = emptyList(),
             )
         }
     }
 
     /**
+     * Thread-safe keypair initialization with double-checked locking.
+     *
      * The signing key is created ONCE and then reused.
      *
      * The attestation challenge belongs to the KEY's certificate, not to each
@@ -111,31 +122,61 @@ class StrongBoxReceiptSigner @Inject constructor(
      * unverifiable against the current key.
      */
     private fun ensureKeyPair() {
-        val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        if (keyStore.containsAlias(KEY_ALIAS)) {
-            activeSecurityTier = tierOf(keyStore)
-            return
-        }
+        if (isInitialized) return
+        synchronized(keyLock) {
+            if (isInitialized) return
 
-        val hasStrongBox = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            context.packageManager.hasSystemFeature(PackageManager.FEATURE_STRONGBOX_KEYSTORE)
-        } else {
-            false
-        }
-
-        if (hasStrongBox) {
-            try {
-                generateEcKey(isStrongBox = true)
-                activeSecurityTier = TIER_STRONGBOX
+            if (!androidKeystoreAvailable()) {
+                activeSecurityTier = TIER_SOFTWARE_TEST
+                getOrGenerateTestKeyPairLocked()
+                isInitialized = true
                 return
-            } catch (e: Exception) {
-                // StrongBox key generation failed or unsupported by driver -> Fallback to TEE
             }
-        }
 
-        // Standard hardware TEE generation
-        generateEcKey(isStrongBox = false)
-        activeSecurityTier = TIER_TEE
+            val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+            if (keyStore.containsAlias(KEY_ALIAS)) {
+                activeSecurityTier = tierOf(keyStore)
+                isInitialized = true
+                return
+            }
+
+            val hasStrongBox = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && context != null) {
+                try {
+                    context.packageManager.hasSystemFeature(PackageManager.FEATURE_STRONGBOX_KEYSTORE)
+                } catch (_: Exception) {
+                    false
+                }
+            } else {
+                false
+            }
+
+            if (hasStrongBox) {
+                try {
+                    generateEcKey(isStrongBox = true)
+                    activeSecurityTier = TIER_STRONGBOX
+                    isInitialized = true
+                    return
+                } catch (e: Exception) {
+                    // StrongBox key generation failed or unsupported by driver -> Fallback to TEE
+                }
+            }
+
+            // Standard hardware TEE generation
+            generateEcKey(isStrongBox = false)
+            activeSecurityTier = TIER_TEE
+            isInitialized = true
+        }
+    }
+
+    /**
+     * Safely retrieves or generates the software test keypair using double-checked locking.
+     */
+    private fun getOrGenerateTestKeyPairLocked(): java.security.KeyPair {
+        return testKeyPair ?: synchronized(keyLock) {
+            testKeyPair ?: KeyPairGenerator.getInstance("EC").apply {
+                initialize(ECGenParameterSpec("secp256r1"))
+            }.generateKeyPair().also { testKeyPair = it }
+        }
     }
 
     /** The tier the EXISTING key actually provides, never an assumed one. */

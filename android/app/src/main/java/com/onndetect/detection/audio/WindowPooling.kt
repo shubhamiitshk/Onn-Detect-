@@ -61,6 +61,27 @@ internal object WindowPooling {
     }
 
     /**
+     * Blends pooled multi-window LCNN probabilities with utterance-level pre-CMVN
+     * non-vocal residual anomaly in log-odds space (v11 PRISM).
+     */
+    fun combineMultiWindowAndNonVocalAnomaly(
+        probs: FloatArray,
+        nonVocalAnomaly: Float = Float.NaN,
+        tau: Float = LSE_TEMPERATURE,
+    ): Float {
+        val basePooled = poolProbabilities(probs, tau)
+        if (!basePooled.isFinite()) return Float.NaN
+        if (!nonVocalAnomaly.isFinite() || nonVocalAnomaly !in 0f..1f) return basePooled
+        val eps = 1e-6f
+        val pClamped = basePooled.coerceIn(eps, 1f - eps)
+        val mClamped = nonVocalAnomaly.coerceIn(eps, 1f - eps)
+        val zBase = ln((pClamped / (1f - pClamped)).toDouble()).toFloat()
+        val zMnp = ln((mClamped / (1f - mClamped)).toDouble()).toFloat()
+        val fusedLogit = 0.80f * zBase + 0.20f * zMnp
+        return (1.0 / (1.0 + exp(-fusedLogit.toDouble()))).toFloat().coerceIn(0f, 1f)
+    }
+
+    /**
      * Evenly spaced window start offsets across a file of [durationMs].
      *
      * The first and last 5% are excluded so a window never starts on a
