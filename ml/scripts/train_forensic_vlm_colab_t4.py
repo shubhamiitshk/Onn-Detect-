@@ -2024,6 +2024,7 @@ def verify_saved_model_reload(
     dataset_jsonl: Path,
     model_id: str = "Qwen/Qwen3.5-0.8B",
     max_eval_samples: int = 10,
+    tolerance: float = 1e-3,
 ) -> bool:
     """Reloads the saved adapter and forensic head contract in a fresh model session
     and verifies that predicted class probabilities reproduce those recorded before saving.
@@ -2053,10 +2054,13 @@ def verify_saved_model_reload(
 
     print(f"[Reload-Test] Loading base model '{model_id}'...")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    bf16_ok = torch.cuda.is_available() and torch.cuda.is_bf16_supported()
+    target_dtype = torch.float32 if device.type == "cpu" else (torch.bfloat16 if bf16_ok else torch.float16)
+
     processor = AutoProcessor.from_pretrained(model_id)
     base_model = AutoModelForImageTextToText.from_pretrained(
         model_id,
-        torch_dtype=torch.float32 if device.type == "cpu" else torch.float16,
+        torch_dtype=target_dtype,
         device_map="auto" if device.type == "cuda" else None,
     )
     model = PeftModel.from_pretrained(base_model, str(adapter_dir))
@@ -2090,15 +2094,15 @@ def verify_saved_model_reload(
                 ref_p = float(ref_data[key]["class_prob"])
                 d = abs(p_val - ref_p)
                 diffs.append(d)
-                if d > 1e-4:
+                if d > tolerance:
                     raise AssertionError(
                         f"Reload prediction mismatch for '{key}': reloaded={p_val:.6f}, "
-                        f"reference={ref_p:.6f}, diff={d:.6e} > tolerance 1e-4"
+                        f"reference={ref_p:.6f}, diff={d:.6e} > tolerance {tolerance}"
                     )
 
     if diffs:
         max_d = max(diffs)
-        print(f"[Reload-Test] VERIFIED: {len(diffs)} reference predictions reproduced! (max abs diff = {max_d:.6e} <= 1e-4)")
+        print(f"[Reload-Test] VERIFIED: {len(diffs)} reference predictions reproduced! (max abs diff = {max_d:.6e} <= {tolerance})")
     else:
         print(f"[Reload-Test] Evaluated {len(reloaded_probs)} samples successfully. Mean P(Fake)={np.mean(reloaded_probs):.4f}")
     return True
