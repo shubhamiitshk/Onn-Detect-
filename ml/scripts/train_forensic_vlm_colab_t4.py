@@ -1162,6 +1162,33 @@ def execute_supervised_vlm_lora_training(
         )
 
     output_dir.mkdir(parents=True, exist_ok=True)
+    # Save reference evaluation predictions for reload reproducibility testing
+    ref_eval_set = (test_records if test_records else val_records)[:20]
+    ref_preds: Dict[str, Any] = {}
+    with torch.no_grad():
+        for r in ref_eval_set:
+            img = r.get("pil_image") or Image.open(r["image_path"])
+            img_res, _ = resize_image_to_budget(img, image_max_px=image_max_px)
+            inp = batch_collator(img_res, r.get("prompt", "Assess forensic authenticity."), float(r["label"]), device)
+            out = model(**inp, output_hidden_states=True)
+            if hasattr(out, "hidden_states") and out.hidden_states is not None:
+                h_last = out.hidden_states[-1]
+            elif isinstance(out, (tuple, list)):
+                h_last = out[0]
+            else:
+                h_last = getattr(out, "last_hidden_state", out)
+            vh = h_last[:, -1, :].to(torch.float32).squeeze(0).cpu().numpy()
+            pred = head_contract.predict(vh)
+            key = r.get("sha256") or r["image_id"]
+            ref_preds[key] = {
+                "image_id": r["image_id"],
+                "class_prob": float(pred["class_prob"]),
+                "class_logit": float(pred["class_logit"]),
+                "forgery_axes": [float(x) for x in pred["forgery_logits_6d"]],
+                "counter_axes": [float(x) for x in pred["authentic_counter_logits_6d"]],
+            }
+    (output_dir / "reference_eval_predictions.json").write_text(json.dumps(ref_preds, indent=2), encoding="utf-8")
+
     policy_path = output_dir / "forensic_vlm_policy.json"
     export_forensic_vlm_policy_artifact(
         output_path=policy_path,
@@ -1202,45 +1229,98 @@ def execute_supervised_vlm_lora_training(
 def validate_dataset_records(records: Sequence[Dict[str, Any]]) -> None:
     """Validates required schema fields, image paths, baseline measurements,
     and label conventions across all records before loading model weights.
+    Strictly verifies:
+      1. Exact integer labels (0 or 1); rejects booleans, floats like 0.5, strings, or NaN.
+      2. Required specialist baselines with finite ranges:
+         - fast_fusion_prob: finite float in [0.0, 1.0]
+         - srm_score: finite float in [0.0, 1.0]
+         - doc_tamper_score: finite float in [0.0, 1.0]
+         - vfm_probe_score: finite float in [0.0, 1.0] or None
+         - hotspot_z: finite non-negative float (>= 0.0)
+         - active_domain: valid string in allowed domain taxonomy
+      3. Image file readability & SHA-256 digest consistency.
     """
     if not records:
         raise ValueError("Dataset records list is empty.")
+
+    allowed_domains = {"human_face", "scene_arch", "object_product", "animal_art", "document_text"}
+    seen_ids = set()
 
     for idx, r in enumerate(records):
         img_id = r.get("image_id")
         if not img_id or not isinstance(img_id, str):
             raise KeyError(f"Record #{idx} missing required non-empty string 'image_id'")
+        if img_id in seen_ids:
+            raise ValueError(f"Duplicate 'image_id' detected: {img_id}")
+        seen_ids.add(img_id)
 
         root_id = r.get("root_source_id")
         if not root_id or not isinstance(root_id, str):
             raise KeyError(f"Record '{img_id}' missing required non-empty string 'root_source_id'")
 
+        # 1. Exact integer label validation
         if "label" not in r:
             raise KeyError(f"Record '{img_id}' missing required 'label'")
-        try:
-            lbl = int(r["label"])
-            if lbl not in (0, 1):
-                raise ValueError(f"Record '{img_id}' label must be 0 or 1, got {lbl}")
-        except (ValueError, TypeError) as e:
-            raise ValueError(f"Record '{img_id}' invalid label: {e}")
+        lbl = r["label"]
+        if isinstance(lbl, bool):
+            raise ValueError(f"Record '{img_id}' label cannot be boolean (True/False), got {lbl!r}")
+        if not (isinstance(lbl, int) or (isinstance(lbl, float) and lbl.is_integer())):
+            raise ValueError(f"Record '{img_id}' label must be an exact integer 0 or 1, got {lbl!r}")
+        int_lbl = int(lbl)
+        if int_lbl not in (0, 1):
+            raise ValueError(f"Record '{img_id}' label must be 0 or 1, got {int_lbl}")
 
+        # 2. Specialist baseline feature validation
+        for field in ("fast_fusion_prob", "srm_score", "doc_tamper_score"):
+            if field not in r:
+                raise KeyError(f"Record '{img_id}' missing required specialist baseline '{field}'")
+            val = r[field]
+            if not isinstance(val, (int, float)) or not math.isfinite(val) or not (0.0 <= val <= 1.0):
+                raise ValueError(f"Record '{img_id}' '{field}' must be a finite float in [0.0, 1.0], got {val!r}")
+
+        if "vfm_probe_score" not in r:
+            raise KeyError(f"Record '{img_id}' missing required baseline field 'vfm_probe_score'")
+        probe_val = r["vfm_probe_score"]
+        if probe_val is not None:
+            if not isinstance(probe_val, (int, float)) or not math.isfinite(probe_val) or not (0.0 <= probe_val <= 1.0):
+                raise ValueError(f"Record '{img_id}' 'vfm_probe_score' must be a finite float in [0.0, 1.0] or None, got {probe_val!r}")
+
+        if "hotspot_z" not in r:
+            raise KeyError(f"Record '{img_id}' missing required baseline field 'hotspot_z'")
+        hz_val = r["hotspot_z"]
+        if not isinstance(hz_val, (int, float)) or not math.isfinite(hz_val) or hz_val < 0.0:
+            raise ValueError(f"Record '{img_id}' 'hotspot_z' must be a finite non-negative float, got {hz_val!r}")
+
+        active_dom = r.get("active_domain")
+        if not active_dom or not isinstance(active_dom, str) or active_dom not in allowed_domains:
+            raise ValueError(f"Record '{img_id}' 'active_domain' must be one of {allowed_domains}, got {active_dom!r}")
+
+        # 3. Image file readability & digest verification
         img_path = r.get("image_path")
         if img_path:
             p = Path(img_path)
             if not p.is_file():
                 raise FileNotFoundError(f"Record '{img_id}' image file does not exist: {img_path}")
+            try:
+                with Image.open(p) as img_check:
+                    img_check.verify()
+                    if img_check.width <= 0 or img_check.height <= 0:
+                        raise ValueError(f"Record '{img_id}' image has invalid dimensions: {img_check.size}")
+            except Exception as exc:
+                raise ValueError(f"Record '{img_id}' image file {p} is corrupt or unreadable: {exc}")
+
+            if "sha256" in r and r["sha256"]:
+                actual_hash = hashlib.sha256(p.read_bytes()).hexdigest()
+                if actual_hash != r["sha256"]:
+                    raise ValueError(f"Record '{img_id}' sha256 mismatch: recorded={r['sha256']}, actual={actual_hash}")
         elif "pil_image" not in r:
             raise KeyError(f"Record '{img_id}' must provide either 'image_path' or 'pil_image'")
-
-        if "fast_fusion_prob" not in r and "fusion_prob" not in r:
-            raise KeyError(f"Record '{img_id}' missing required specialist baseline 'fast_fusion_prob'")
-        if "srm_score" not in r and "srm_prob" not in r:
-            raise KeyError(f"Record '{img_id}' missing required specialist baseline 'srm_score'")
 
 
 def _load_jsonl_records(dataset_jsonl: Path) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Loads JSONL records, validates all fields and images, and returns disjoint train, val, test splits.
     Preserves explicit 'split' fields when present, otherwise groups automatically by root source ID.
+    Strictly asserts zero root leakage AND zero exact file/pixel blob leakage across splits.
     """
     if not dataset_jsonl.is_file():
         raise FileNotFoundError(f"Dataset JSONL not found: {dataset_jsonl}")
@@ -1298,12 +1378,41 @@ def _load_jsonl_records(dataset_jsonl: Path) -> Tuple[List[Dict[str, Any]], List
         if leak_val_test:
             raise ValueError(f"Root source leakage between val and test splits: {list(leak_val_test)[:5]}")
 
+        # Cross-split exact image file blob and pixel hash leakage detection
+        def _get_hashes(recs: List[Dict[str, Any]]) -> Set[str]:
+            h_set: Set[str] = set()
+            for r in recs:
+                if "sha256" in r and r["sha256"]:
+                    h_set.add(str(r["sha256"]))
+                elif "image_path" in r and r["image_path"]:
+                    p = Path(r["image_path"])
+                    if p.is_file():
+                        h_set.add(hashlib.sha256(p.read_bytes()).hexdigest())
+            return h_set
+
+        train_hashes = _get_hashes(train_records)
+        val_hashes = _get_hashes(val_records)
+        test_hashes = _get_hashes(test_records)
+
+        leak_hash_val = train_hashes & val_hashes
+        leak_hash_test = train_hashes & test_hashes
+        leak_hash_val_test = val_hashes & test_hashes
+        if leak_hash_val:
+            raise ValueError(f"Exact image file blob leakage between train and val splits ({len(leak_hash_val)} duplicate blobs)")
+        if leak_hash_test:
+            raise ValueError(f"Exact image file blob leakage between train and test splits ({len(leak_hash_test)} duplicate blobs)")
+        if leak_hash_val_test:
+            raise ValueError(f"Exact image file blob leakage between val and test splits ({len(leak_hash_val_test)} duplicate blobs)")
+
         for s_name, s_recs in [("train", train_records), ("val", val_records), ("test", test_records)]:
             if s_recs:
                 labels = {int(r["label"]) for r in s_recs}
                 if labels != {0, 1}:
                     raise ValueError(f"Split '{s_name}' must contain both positive and negative labels, found {labels}")
         return train_records, val_records, test_records
+
+    splits = assign_disjoint_splits_by_root_source(records)
+    return splits["train"], splits["val"], splits["test"]
 
     splits = assign_disjoint_splits_by_root_source(records)
     return splits["train"], splits["val"], splits["test"]
@@ -1662,16 +1771,58 @@ def run_self_tests() -> None:
         )
 
     # Validate dataset validation and split preservation on synthetic records
+    valid_base = {
+        "pil_image": Image.new("RGB", (32, 32)),
+        "fast_fusion_prob": 0.5,
+        "srm_score": 0.5,
+        "vfm_probe_score": 0.5,
+        "hotspot_z": 1.0,
+        "doc_tamper_score": 0.1,
+        "active_domain": "human_face",
+    }
     test_recs = [
-        {"image_id": "r1", "root_source_id": "root_A", "split": "train", "label": 0, "pil_image": Image.new("RGB", (32, 32)), "fast_fusion_prob": 0.1, "srm_score": 0.1},
-        {"image_id": "r2", "root_source_id": "root_B", "split": "train", "label": 1, "pil_image": Image.new("RGB", (32, 32)), "fast_fusion_prob": 0.9, "srm_score": 0.9},
-        {"image_id": "r3", "root_source_id": "root_C", "split": "val", "label": 0, "pil_image": Image.new("RGB", (32, 32)), "fast_fusion_prob": 0.1, "srm_score": 0.1},
-        {"image_id": "r4", "root_source_id": "root_D", "split": "val", "label": 1, "pil_image": Image.new("RGB", (32, 32)), "fast_fusion_prob": 0.9, "srm_score": 0.9},
-        {"image_id": "r5", "root_source_id": "root_E", "split": "test", "label": 0, "pil_image": Image.new("RGB", (32, 32)), "fast_fusion_prob": 0.1, "srm_score": 0.1},
-        {"image_id": "r6", "root_source_id": "root_F", "split": "test", "label": 1, "pil_image": Image.new("RGB", (32, 32)), "fast_fusion_prob": 0.9, "srm_score": 0.9},
+        {"image_id": "r1", "root_source_id": "root_A", "split": "train", "label": 0, **valid_base},
+        {"image_id": "r2", "root_source_id": "root_B", "split": "train", "label": 1, **valid_base},
+        {"image_id": "r3", "root_source_id": "root_C", "split": "val", "label": 0, **valid_base},
+        {"image_id": "r4", "root_source_id": "root_D", "split": "val", "label": 1, **valid_base},
+        {"image_id": "r5", "root_source_id": "root_E", "split": "test", "label": 0, **valid_base},
+        {"image_id": "r6", "root_source_id": "root_F", "split": "test", "label": 1, **valid_base},
     ]
     validate_dataset_records(test_recs)
-    print("  [PASS] Pre-Training Dataset Schema & Baseline Measurement Validation")
+
+    # Assert rejection of fractional labels (label=0.5)
+    bad_lbl = [dict(test_recs[0], label=0.5)]
+    try:
+        validate_dataset_records(bad_lbl)
+        raise AssertionError("Failed to reject fractional label 0.5")
+    except ValueError:
+        pass
+
+    # Assert rejection of NaN fast_fusion_prob
+    bad_ff = [dict(test_recs[0], fast_fusion_prob=float("nan"))]
+    try:
+        validate_dataset_records(bad_ff)
+        raise AssertionError("Failed to reject NaN fast_fusion_prob")
+    except ValueError:
+        pass
+
+    # Assert rejection of out-of-bounds srm_score=2.0
+    bad_srm = [dict(test_recs[0], srm_score=2.0)]
+    try:
+        validate_dataset_records(bad_srm)
+        raise AssertionError("Failed to reject out-of-bounds srm_score=2.0")
+    except ValueError:
+        pass
+
+    # Assert rejection of negative hotspot_z=-0.5
+    bad_hz = [dict(test_recs[0], hotspot_z=-0.5)]
+    try:
+        validate_dataset_records(bad_hz)
+        raise AssertionError("Failed to reject negative hotspot_z")
+    except ValueError:
+        pass
+
+    print("  [PASS] Pre-Training Dataset Schema & Baseline Measurement Validation (with negative counterexample rejections)")
 
 
 def export_cross_language_parity_fixture(output_path: Path, hidden_dim: int = 8, seed: int = 20261028) -> Dict[str, Any]:
@@ -1914,7 +2065,12 @@ def verify_saved_model_reload(
     train_recs, val_recs, test_recs = _load_jsonl_records(dataset_jsonl)
     eval_set = (test_recs if test_recs else val_recs)[:max_eval_samples]
 
+    ref_pred_file = output_dir / "reference_eval_predictions.json"
+    has_refs = ref_pred_file.is_file()
+    ref_data: Dict[str, Any] = json.loads(ref_pred_file.read_text(encoding="utf-8")) if has_refs else {}
+
     reloaded_probs = []
+    diffs = []
     with torch.no_grad():
         for r in eval_set:
             img = r.get("pil_image") or Image.open(r["image_path"])
@@ -1926,9 +2082,25 @@ def verify_saved_model_reload(
             out = model(**inputs, output_hidden_states=True)
             vh = out.hidden_states[-1][:, -1, :].to(torch.float32).squeeze(0).cpu().numpy()
             pred = head.predict(vh)
-            reloaded_probs.append(float(pred["class_prob"]))
+            p_val = float(pred["class_prob"])
+            reloaded_probs.append(p_val)
 
-    print(f"[Reload-Test] Evaluated {len(reloaded_probs)} samples successfully. Mean P(Fake)={np.mean(reloaded_probs):.4f}")
+            key = r.get("sha256") or r["image_id"]
+            if key in ref_data:
+                ref_p = float(ref_data[key]["class_prob"])
+                d = abs(p_val - ref_p)
+                diffs.append(d)
+                if d > 1e-4:
+                    raise AssertionError(
+                        f"Reload prediction mismatch for '{key}': reloaded={p_val:.6f}, "
+                        f"reference={ref_p:.6f}, diff={d:.6e} > tolerance 1e-4"
+                    )
+
+    if diffs:
+        max_d = max(diffs)
+        print(f"[Reload-Test] VERIFIED: {len(diffs)} reference predictions reproduced! (max abs diff = {max_d:.6e} <= 1e-4)")
+    else:
+        print(f"[Reload-Test] Evaluated {len(reloaded_probs)} samples successfully. Mean P(Fake)={np.mean(reloaded_probs):.4f}")
     return True
 
 

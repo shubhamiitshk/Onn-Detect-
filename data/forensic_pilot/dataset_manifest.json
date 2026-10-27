@@ -1,6 +1,9 @@
 {
   "schema_version": "onn-forensic-pilot-corpus-v1",
+  "corpus_type": "procedural_smoke_fixture",
+  "purpose": "Mechanical training loop, CUDA backpropagation, VRAM measurement, and pipeline wiring verification only. Not an empirical benchmark of forensic detection accuracy.",
   "total_records": 145,
+  "total_unique_hashes": 145,
   "total_roots": 120,
   "splits": {
     "train": {
