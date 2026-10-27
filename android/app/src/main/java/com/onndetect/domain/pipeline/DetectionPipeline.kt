@@ -394,6 +394,7 @@ class DetectionPipeline @Inject constructor(
                 )
             }
             val prefillBackend = OnDemandForensicVlmAnalyzer.activePrefillBackend
+                ?: OnDemandForensicVlmAnalyzer.initializeActiveBackendIfAvailable(appContext)
             if (OnDemandForensicVlmAnalyzer.experimentalVlmCascadeEnabled &&
                 vlmRoute?.invokeOnDeviceVlm == true &&
                 vlmPolicyBundle?.headContract != null &&

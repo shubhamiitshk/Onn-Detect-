@@ -73,6 +73,12 @@ object OnDemandForensicVlmAnalyzer {
     @Volatile
     var overridePolicyBundle: PolicyBundle? = null
 
+    /**
+     * Optional pinned publisher Ed25519 public key hex for validating VLM model packs.
+     */
+    @Volatile
+    var pinnedPublisherPublicKeyHex: String? = null
+
     val RUBRIC_AXES: List<String> = listOf(
         "anatomical_geometry",
         "physics_illumination",
@@ -434,7 +440,30 @@ object OnDemandForensicVlmAnalyzer {
         val publisherSignatureHex: String = "",
         val publisherSignatureValid: Boolean = false,
         val diagnosticOnly: Boolean = true,
-    )
+    ) {
+        companion object {
+            fun fromJson(jsonStr: String): SignedVlmPackManifest {
+                val obj = JSONObject(jsonStr)
+                return SignedVlmPackManifest(
+                    packId = obj.optString("pack_id", ""),
+                    hfModelId = obj.optString("hf_model_id", ""),
+                    languageWeightsSha256 = obj.optString("language_weights_sha256", ""),
+                    visionMmprojSha256 = obj.optString("vision_mmproj_sha256", ""),
+                    policySha256 = obj.optString("policy_sha256", ""),
+                    languageBytes = obj.optLong("language_bytes", 0L),
+                    visionMmprojBytes = obj.optLong("vision_mmproj_bytes", 0L),
+                    processorVersion = obj.optString("processor_version", ""),
+                    chatTemplateId = obj.optString("chat_template_id", ""),
+                    imageResolutionCapPx = obj.optInt("image_resolution_cap_px", 512),
+                    maxVisualTokens = obj.optInt("max_visual_tokens", 512),
+                    publisherPublicKeyHex = obj.optString("publisher_public_key_hex", ""),
+                    publisherSignatureHex = obj.optString("publisher_signature_hex", ""),
+                    publisherSignatureValid = obj.optBoolean("publisher_signature_valid", false),
+                    diagnosticOnly = obj.optBoolean("diagnostic_only", true),
+                )
+            }
+        }
+    }
 
     fun computeCanonicalManifestPayload(manifest: SignedVlmPackManifest): ByteArray {
         val canonicalStr = "${manifest.packId}|${manifest.hfModelId}|${manifest.languageWeightsSha256}|" +
@@ -959,15 +988,94 @@ object OnDemandForensicVlmAnalyzer {
     }
 
     /**
-     * Loads an optional user-imported local policy bundle from `<filesDir>/vlm_packs/forensic_vlm_policy.json`
-     * when present on device.
+     * Loads an optional user-imported local policy bundle from `forensic_vlm_policy.json`
+     * inside [packDir] when present.
      */
-    fun loadInstalledPolicyBundleOrNull(context: Context): PolicyBundle? {
+    fun loadInstalledPolicyBundleOrNull(packDir: File): PolicyBundle? {
         overridePolicyBundle?.let { return it }
         return runCatching {
-            val policyFile = File(File(context.filesDir, "vlm_packs"), "forensic_vlm_policy.json")
+            val policyFile = File(packDir, "forensic_vlm_policy.json")
             if (!policyFile.isFile) return null
             PolicyBundle.fromJson(policyFile.readText(Charsets.UTF_8))
         }.getOrNull()
+    }
+
+    /**
+     * Loads an optional user-imported local policy bundle from `<filesDir>/vlm_packs/forensic_vlm_policy.json`
+     * when present on device.
+     */
+    fun loadInstalledPolicyBundleOrNull(context: Context): PolicyBundle? =
+        loadInstalledPolicyBundleOrNull(File(context.filesDir, "vlm_packs"))
+
+    /**
+     * Discovers, cryptographically verifies, and initializes the native prefill backend
+     * from [packDir] when a valid signed pack is resident.
+     */
+    fun initializeActiveBackendIfAvailable(
+        packDir: File,
+        expectedPublisherPublicKeyHex: String? = pinnedPublisherPublicKeyHex,
+    ): VlmPrefillBackend? {
+        activePrefillBackend?.let { return it }
+        return runCatching {
+            if (!packDir.isDirectory) return null
+
+            val manifestFile = File(packDir, "signed_manifest.json").takeIf { it.isFile }
+                ?: File(packDir, "manifest.json").takeIf { it.isFile }
+                ?: return null
+
+            val manifest = SignedVlmPackManifest.fromJson(manifestFile.readText(Charsets.UTF_8))
+            if (!verifySignedPackContract(manifest, expectedPublisherPublicKeyHex)) {
+                return null
+            }
+
+            val modelFile = listOf(
+                File(packDir, "${manifest.packId}-model.gguf"),
+                File(packDir, "${manifest.packId}-language.gguf"),
+                File(packDir, "model.gguf"),
+                File(packDir, "language.gguf"),
+            ).firstOrNull { it.isFile && it.length() == manifest.languageBytes }
+                ?: packDir.listFiles()?.firstOrNull {
+                    it.isFile && it.extension == "gguf" && !it.name.contains("mmproj") && it.length() == manifest.languageBytes
+                }
+                ?: return null
+
+            val mmprojFile = listOf(
+                File(packDir, "${manifest.packId}-mmproj.gguf"),
+                File(packDir, "mmproj.gguf"),
+            ).firstOrNull { it.isFile && it.length() == manifest.visionMmprojBytes }
+                ?: packDir.listFiles()?.firstOrNull {
+                    it.isFile && it.extension == "gguf" && it.name.contains("mmproj") && it.length() == manifest.visionMmprojBytes
+                }
+                ?: return null
+
+            val backend = LlamaCppVlmPrefillBackend(
+                modelPath = modelFile.absolutePath,
+                mmprojPath = mmprojFile.absolutePath,
+                imageResolutionCapPx = manifest.imageResolutionCapPx,
+            )
+            activePrefillBackend = backend
+            backend
+        }.getOrNull()
+    }
+
+    /**
+     * Discovers, cryptographically verifies, and initializes the native prefill backend
+     * from `<filesDir>/vlm_packs/` when a valid signed pack is resident.
+     */
+    fun initializeActiveBackendIfAvailable(
+        context: Context,
+        expectedPublisherPublicKeyHex: String? = pinnedPublisherPublicKeyHex,
+    ): VlmPrefillBackend? =
+        initializeActiveBackendIfAvailable(File(context.filesDir, "vlm_packs"), expectedPublisherPublicKeyHex)
+
+    /**
+     * Resets mutable singleton state for test isolation.
+     */
+    fun resetForTesting() {
+        activePrefillBackend = null
+        overridePolicyBundle = null
+        experimentalVlmCascadeEnabled = false
+        experimentalDiagnosticOnly = true
+        pinnedPublisherPublicKeyHex = null
     }
 }

@@ -31,4 +31,6 @@ ml/export/
 release_models/
 release_v9/
 exported/
+.cxx/
+**/build/
 

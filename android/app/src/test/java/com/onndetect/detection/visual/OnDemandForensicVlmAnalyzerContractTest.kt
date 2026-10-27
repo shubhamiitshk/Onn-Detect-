@@ -7,9 +7,12 @@ import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
+import java.io.File
+import java.io.RandomAccessFile
 
 /**
  * Training/serving contract tests for the optional Tier-2 forensic VLM (`Engine D`).
@@ -322,5 +325,120 @@ class OnDemandForensicVlmAnalyzerContractTest {
             "Manifest with < 50MB language file must be rejected",
             OnDemandForensicVlmAnalyzer.verifySignedPackContract(tinyManifest)
         )
+    }
+
+    @Test
+    fun signedVlmPackManifestFromJsonParsesAllFields() {
+        val json = """
+            {
+                "pack_id": "test_pack",
+                "hf_model_id": "org/test-model",
+                "language_weights_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+                "vision_mmproj_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+                "policy_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+                "language_bytes": 60000000,
+                "vision_mmproj_bytes": 15000000,
+                "processor_version": "transformers-4.48.0",
+                "chat_template_id": "forensic_v1",
+                "image_resolution_cap_px": 384,
+                "max_visual_tokens": 256,
+                "publisher_public_key_hex": "4444444444444444444444444444444444444444444444444444444444444444",
+                "publisher_signature_hex": "55555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555",
+                "publisher_signature_valid": true,
+                "diagnostic_only": false
+            }
+        """.trimIndent()
+
+        val manifest = OnDemandForensicVlmAnalyzer.SignedVlmPackManifest.fromJson(json)
+        assertEquals("test_pack", manifest.packId)
+        assertEquals("org/test-model", manifest.hfModelId)
+        assertEquals("1111111111111111111111111111111111111111111111111111111111111111", manifest.languageWeightsSha256)
+        assertEquals(60000000L, manifest.languageBytes)
+        assertEquals(15000000L, manifest.visionMmprojBytes)
+        assertEquals(384, manifest.imageResolutionCapPx)
+        assertEquals(256, manifest.maxVisualTokens)
+        assertEquals(false, manifest.diagnosticOnly)
+    }
+
+    @Test
+    fun initializeActiveBackendIfAvailableEnforcesIntegrityAndDiscoversPacks() {
+        OnDemandForensicVlmAnalyzer.resetForTesting()
+        LlamaCppVlmPrefillBackend.testMockDelegate = { _, _, _, _ -> FloatArray(1536) }
+
+        val testDir = java.nio.file.Files.createTempDirectory("test_vlm_pack").toFile()
+        try {
+            // 1. Empty dir returns null
+            assertNull(OnDemandForensicVlmAnalyzer.initializeActiveBackendIfAvailable(testDir))
+
+            // 2. Setup genuine signed manifest
+            val kpg = java.security.KeyPairGenerator.getInstance("Ed25519")
+            val keyPair = kpg.generateKeyPair()
+            val encPub = keyPair.public.encoded
+            val rawPub = encPub.copyOfRange(encPub.size - 32, encPub.size)
+            val pubHex = rawPub.joinToString("") { "%02x".format(it) }
+
+            val langBytes = 52L * 1024 * 1024
+            val visBytes = 11L * 1024 * 1024
+
+            val baseManifest = OnDemandForensicVlmAnalyzer.SignedVlmPackManifest(
+                packId = "pack_alpha",
+                hfModelId = "Qwen/Qwen3.5-0.8B",
+                languageWeightsSha256 = "1".repeat(64),
+                visionMmprojSha256 = "2".repeat(64),
+                policySha256 = "3".repeat(64),
+                languageBytes = langBytes,
+                visionMmprojBytes = visBytes,
+                processorVersion = "transformers-4.48.0",
+                chatTemplateId = "qwen_default",
+                imageResolutionCapPx = 512,
+                maxVisualTokens = 512,
+                publisherPublicKeyHex = pubHex,
+                publisherSignatureHex = "",
+            )
+            val payload = OnDemandForensicVlmAnalyzer.computeCanonicalManifestPayload(baseManifest)
+            val signer = java.security.Signature.getInstance("Ed25519")
+            signer.initSign(keyPair.private)
+            signer.update(payload)
+            val sigHex = signer.sign().joinToString("") { "%02x".format(it) }
+
+            val manifestJson = """
+                {
+                    "pack_id": "pack_alpha",
+                    "hf_model_id": "Qwen/Qwen3.5-0.8B",
+                    "language_weights_sha256": "${"1".repeat(64)}",
+                    "vision_mmproj_sha256": "${"2".repeat(64)}",
+                    "policy_sha256": "${"3".repeat(64)}",
+                    "language_bytes": $langBytes,
+                    "vision_mmproj_bytes": $visBytes,
+                    "processor_version": "transformers-4.48.0",
+                    "chat_template_id": "qwen_default",
+                    "image_resolution_cap_px": 512,
+                    "max_visual_tokens": 512,
+                    "publisher_public_key_hex": "$pubHex",
+                    "publisher_signature_hex": "$sigHex"
+                }
+            """.trimIndent()
+
+            val manifestFile = File(testDir, "signed_manifest.json")
+            manifestFile.writeText(manifestJson, Charsets.UTF_8)
+
+            // Missing weight files returns null
+            assertNull(OnDemandForensicVlmAnalyzer.initializeActiveBackendIfAvailable(testDir))
+
+            // Create model files with exact matching lengths
+            val langFile = File(testDir, "pack_alpha-model.gguf")
+            val visFile = File(testDir, "pack_alpha-mmproj.gguf")
+            RandomAccessFile(langFile, "rw").use { it.setLength(langBytes) }
+            RandomAccessFile(visFile, "rw").use { it.setLength(visBytes) }
+
+            // With files present and signed manifest valid, initialization succeeds
+            val backend = OnDemandForensicVlmAnalyzer.initializeActiveBackendIfAvailable(testDir)
+            assertNotNull(backend)
+            assertEquals(backend, OnDemandForensicVlmAnalyzer.activePrefillBackend)
+        } finally {
+            testDir.deleteRecursively()
+            OnDemandForensicVlmAnalyzer.resetForTesting()
+            LlamaCppVlmPrefillBackend.testMockDelegate = null
+        }
     }
 }

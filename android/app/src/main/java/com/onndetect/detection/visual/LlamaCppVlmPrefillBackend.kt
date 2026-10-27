@@ -188,6 +188,50 @@ class LlamaCppVlmPrefillBackend(
     // =========================================================================
     // Pixel Preprocessing Utilities
     // =========================================================================
+    internal fun pixelsToRgbBytes(
+        pixels: IntArray,
+        width: Int,
+        height: Int,
+        capPx: Int,
+    ): Triple<ByteArray, Int, Int> {
+        require(width > 0 && height > 0) { "width and height must be positive: width=$width, height=$height" }
+        require(pixels.size == width * height) {
+            "pixels.size (${pixels.size}) must match width * height ($width * $height = ${width * height})"
+        }
+        val maxDim = maxOf(width, height)
+        val (targetW, targetH) = if (maxDim > capPx) {
+            val scale = capPx.toFloat() / maxDim
+            Pair((width * scale).toInt().coerceAtLeast(1), (height * scale).toInt().coerceAtLeast(1))
+        } else {
+            Pair(width, height)
+        }
+
+        val rgb = ByteArray(targetW * targetH * 3)
+        var outIdx = 0
+        if (targetW == width && targetH == height) {
+            for (p in pixels) {
+                rgb[outIdx++] = ((p shr 16) and 0xFF).toByte() // R
+                rgb[outIdx++] = ((p shr 8) and 0xFF).toByte()  // G
+                rgb[outIdx++] = (p and 0xFF).toByte()         // B
+            }
+        } else {
+            val xRatio = width.toFloat() / targetW
+            val yRatio = height.toFloat() / targetH
+            for (y in 0 until targetH) {
+                val srcY = (y * yRatio).toInt().coerceIn(0, height - 1)
+                val srcRowOffset = srcY * width
+                for (x in 0 until targetW) {
+                    val srcX = (x * xRatio).toInt().coerceIn(0, width - 1)
+                    val p = pixels[srcRowOffset + srcX]
+                    rgb[outIdx++] = ((p shr 16) and 0xFF).toByte() // R
+                    rgb[outIdx++] = ((p shr 8) and 0xFF).toByte()  // G
+                    rgb[outIdx++] = (p and 0xFF).toByte()         // B
+                }
+            }
+        }
+        return Triple(rgb, targetW, targetH)
+    }
+
     internal fun bitmapToRgbBytes(bitmap: Bitmap, capPx: Int): Triple<ByteArray, Int, Int> {
         val w = bitmap.width
         val h = bitmap.height
@@ -208,17 +252,9 @@ class LlamaCppVlmPrefillBackend(
         val pixels = IntArray(targetW * targetH)
         scaled.getPixels(pixels, 0, targetW, 0, 0, targetW, targetH)
 
-        val rgb = ByteArray(targetW * targetH * 3)
-        var outIdx = 0
-        for (p in pixels) {
-            rgb[outIdx++] = ((p shr 16) and 0xFF).toByte() // R
-            rgb[outIdx++] = ((p shr 8) and 0xFF).toByte()  // G
-            rgb[outIdx++] = (p and 0xFF).toByte()         // B
-        }
-
         if (scaled !== bitmap) {
             scaled.recycle()
         }
-        return Triple(rgb, targetW, targetH)
+        return pixelsToRgbBytes(pixels, targetW, targetH, capPx)
     }
 }
