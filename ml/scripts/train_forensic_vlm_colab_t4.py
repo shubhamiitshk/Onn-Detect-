@@ -1349,6 +1349,25 @@ def run_colab_t4_lora_pilot(
         f"Model={model_id} | rank={lora_rank} | steps={max_steps} | image_cap={image_max_px}px"
     )
 
+    # Guard against incompatible pre-installed torchao in Colab environments (e.g. 0.10.0 < 0.16.0)
+    try:
+        import peft.import_utils
+        orig_is_torchao = getattr(peft.import_utils, "is_torchao_available", None)
+        if orig_is_torchao is not None:
+            def safe_is_torchao_available():
+                try:
+                    return orig_is_torchao()
+                except (ImportError, Exception):
+                    return False
+            peft.import_utils.is_torchao_available = safe_is_torchao_available
+    except Exception:
+        pass
+    try:
+        import peft.tuners.lora.torchao
+        peft.tuners.lora.torchao.is_torchao_available = lambda: False
+    except Exception:
+        pass
+
     from transformers import AutoModelForImageTextToText, AutoProcessor
     from peft import LoraConfig, get_peft_model
 
@@ -1859,6 +1878,14 @@ def verify_saved_model_reload(
     and verifies that predicted class probabilities reproduce those recorded before saving.
     """
     import torch
+    # Guard against incompatible pre-installed torchao in Colab environments
+    try:
+        import peft.import_utils
+        peft.import_utils.is_torchao_available = lambda: False
+        import peft.tuners.lora.torchao
+        peft.tuners.lora.torchao.is_torchao_available = lambda: False
+    except Exception:
+        pass
     from transformers import AutoModelForImageTextToText, AutoProcessor
     from peft import PeftModel
 
