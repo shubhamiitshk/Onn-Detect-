@@ -19,6 +19,14 @@
       "typography_document_layout",
       "temporal_kinematic_consistency"
     ],
+    "axes_supervised": [
+      true,
+      true,
+      true,
+      true,
+      false,
+      false
+    ],
     "w_class": [
       -0.10152,
       -0.313541,
@@ -192,32 +200,215 @@
       false
     ],
     "expected_full": {
-      "class_logit": 1.677273,
-      "class_prob": 0.842543,
+      "class_logit": 1.677273350751,
+      "class_prob": 0.8425431401423022,
       "forgery_logits_6d": [
-        -1.355959,
-        -0.681288,
-        -0.838729,
-        0.790665,
-        1.772347,
-        0.540036
+        -1.355959426653,
+        -0.681288450711,
+        -0.8387292366210002,
+        0.790665110505,
+        NaN,
+        NaN
       ],
       "authentic_counter_logits_6d": [
-        -0.774169,
-        1.165684,
-        -1.360659,
-        1.062925,
-        -0.823834,
-        -1.906224
+        -0.7741693096969999,
+        1.165683662519,
+        -1.3606585861839997,
+        1.0629250650470001,
+        NaN,
+        NaN
       ]
     },
     "expected_masked_forgery_logits_6d": [
-      -1.355959,
-      -0.681288,
-      -0.838729,
-      0.790665,
+      -1.355959426653,
+      -0.681288450711,
+      -0.8387292366210002,
+      0.790665110505,
       null,
       null
     ]
-  }
+  },
+  "routing_parity_fixtures": [
+    {
+      "name": "confident_fast_face_no_escalate",
+      "fast_fusion_prob": 0.95,
+      "srm_calibrated_score": 0.9,
+      "vfm_probe_score": 0.92,
+      "hotspot_z_score": 0.5,
+      "active_domain": "human_face",
+      "doc_tamper_score": 0.0,
+      "available_heap_mb": 256,
+      "require_explanation": false,
+      "expected": {
+        "mode": "FAST_EXIT_CONFIDENT",
+        "invoke_on_device_vlm": false,
+        "expected_voi_score": 0.0,
+        "target_domain": "human_face",
+        "trigger_reason": "fast_tier_confident"
+      }
+    },
+    {
+      "name": "boundary_uncertainty_escalates",
+      "fast_fusion_prob": 0.5782,
+      "srm_calibrated_score": 0.5,
+      "vfm_probe_score": 0.5,
+      "hotspot_z_score": 0.0,
+      "active_domain": "human_face",
+      "doc_tamper_score": 0.0,
+      "available_heap_mb": 256,
+      "require_explanation": false,
+      "expected": {
+        "mode": "VLM_SINGLE_PASS_LOGIT",
+        "invoke_on_device_vlm": true,
+        "expected_voi_score": 0.42,
+        "target_domain": "human_face",
+        "trigger_reason": "ambiguous_fast_margin"
+      }
+    },
+    {
+      "name": "document_tamper_escalates_on_document_text",
+      "fast_fusion_prob": 0.1,
+      "srm_calibrated_score": 0.12,
+      "vfm_probe_score": 0.15,
+      "hotspot_z_score": 0.2,
+      "active_domain": "document_text",
+      "doc_tamper_score": 0.85,
+      "available_heap_mb": 256,
+      "require_explanation": false,
+      "expected": {
+        "mode": "VLM_SINGLE_PASS_LOGIT",
+        "invoke_on_device_vlm": true,
+        "expected_voi_score": 0.42,
+        "target_domain": "document_text",
+        "trigger_reason": "specialized_domain_document_text"
+      }
+    },
+    {
+      "name": "document_tamper_ignored_on_human_face",
+      "fast_fusion_prob": 0.1,
+      "srm_calibrated_score": 0.12,
+      "vfm_probe_score": 0.15,
+      "hotspot_z_score": 0.2,
+      "active_domain": "human_face",
+      "doc_tamper_score": 0.85,
+      "available_heap_mb": 256,
+      "require_explanation": false,
+      "expected": {
+        "mode": "FAST_EXIT_CONFIDENT",
+        "invoke_on_device_vlm": false,
+        "expected_voi_score": 0.0,
+        "target_domain": "human_face",
+        "trigger_reason": "fast_tier_confident"
+      }
+    },
+    {
+      "name": "cross_engine_conflict_escalates",
+      "fast_fusion_prob": 0.9,
+      "srm_calibrated_score": 0.95,
+      "vfm_probe_score": 0.05,
+      "hotspot_z_score": 0.0,
+      "active_domain": "human_face",
+      "doc_tamper_score": 0.0,
+      "available_heap_mb": 256,
+      "require_explanation": false,
+      "expected": {
+        "mode": "VLM_SINGLE_PASS_LOGIT",
+        "invoke_on_device_vlm": true,
+        "expected_voi_score": 0.42,
+        "target_domain": "human_face",
+        "trigger_reason": "cross_engine_disagreement"
+      }
+    },
+    {
+      "name": "missing_probe_score_nan_safe",
+      "fast_fusion_prob": 0.95,
+      "srm_calibrated_score": 0.92,
+      "vfm_probe_score": null,
+      "hotspot_z_score": 0.0,
+      "active_domain": "human_face",
+      "doc_tamper_score": 0.0,
+      "available_heap_mb": 256,
+      "require_explanation": false,
+      "expected": {
+        "mode": "FAST_EXIT_CONFIDENT",
+        "invoke_on_device_vlm": false,
+        "expected_voi_score": 0.0,
+        "target_domain": "human_face",
+        "trigger_reason": "fast_tier_confident"
+      }
+    },
+    {
+      "name": "localized_hotspot_roi_escalates",
+      "fast_fusion_prob": 0.95,
+      "srm_calibrated_score": 0.92,
+      "vfm_probe_score": 0.9,
+      "hotspot_z_score": 2.5,
+      "active_domain": "human_face",
+      "doc_tamper_score": 0.0,
+      "available_heap_mb": 256,
+      "require_explanation": false,
+      "expected": {
+        "mode": "VLM_SINGLE_PASS_LOGIT",
+        "invoke_on_device_vlm": true,
+        "expected_voi_score": 0.42,
+        "target_domain": "human_face",
+        "trigger_reason": "localized_roi_hotspot"
+      }
+    },
+    {
+      "name": "memory_constrained_micro_moe_only",
+      "fast_fusion_prob": 0.5782,
+      "srm_calibrated_score": 0.5,
+      "vfm_probe_score": 0.5,
+      "hotspot_z_score": 0.0,
+      "active_domain": "human_face",
+      "doc_tamper_score": 0.0,
+      "available_heap_mb": 64,
+      "require_explanation": false,
+      "expected": {
+        "mode": "MICRO_MOE_ONLY",
+        "invoke_on_device_vlm": false,
+        "expected_voi_score": 0.42,
+        "target_domain": "human_face",
+        "trigger_reason": "ambiguous_fast_margin"
+      }
+    },
+    {
+      "name": "explanation_requested_forces_cot_mode",
+      "fast_fusion_prob": 0.95,
+      "srm_calibrated_score": 0.9,
+      "vfm_probe_score": 0.92,
+      "hotspot_z_score": 0.0,
+      "active_domain": "human_face",
+      "doc_tamper_score": 0.0,
+      "available_heap_mb": 256,
+      "require_explanation": true,
+      "expected": {
+        "mode": "VLM_FULL_DIALECTICAL_COT",
+        "invoke_on_device_vlm": true,
+        "expected_voi_score": 0.42,
+        "target_domain": "human_face",
+        "trigger_reason": "forensic_explanation_requested"
+      }
+    },
+    {
+      "name": "infeasible_policy_never_escalates",
+      "fast_fusion_prob": 0.5782,
+      "srm_calibrated_score": 0.95,
+      "vfm_probe_score": 0.05,
+      "hotspot_z_score": 3.0,
+      "active_domain": "document_text",
+      "doc_tamper_score": 0.99,
+      "available_heap_mb": 256,
+      "require_explanation": true,
+      "override_policy_infeasible": true,
+      "expected": {
+        "mode": "FAST_EXIT_CONFIDENT",
+        "invoke_on_device_vlm": false,
+        "expected_voi_score": 0.0,
+        "target_domain": "document_text",
+        "trigger_reason": "routing_policy_infeasible"
+      }
+    }
+  ]
 }

@@ -228,6 +228,7 @@ object OnDemandForensicVlmAnalyzer {
     data class HeadContractWeights(
         val hiddenDim: Int,
         val axes: List<String>,
+        val axesSupervised: List<Boolean> = List(6) { true },
         val wClass: FloatArray,
         val bClass: Float,
         val wForgeryAxes: Array<FloatArray>,
@@ -299,9 +300,19 @@ object OnDemandForensicVlmAnalyzer {
                     val bCounterArr = hcObj.getJSONArray("b_counter_axes")
                     val bCounter = FloatArray(6) { bCounterArr.getDouble(it).toFloat() }
 
+                    val axesSupArr = hcObj.optJSONArray("axes_supervised")
+                    val axesSupervised = if (axesSupArr != null) {
+                        List(axesSupArr.length()) { axesSupArr.getBoolean(it) }
+                    } else {
+                        List(6) { i ->
+                            wForgery[i].any { abs(it) > 1e-6f } || wCounter[i].any { abs(it) > 1e-6f }
+                        }
+                    }
+
                     HeadContractWeights(
                         hiddenDim = hiddenDim,
                         axes = axes,
+                        axesSupervised = axesSupervised,
                         wClass = wClass,
                         bClass = bClass,
                         wForgeryAxes = wForgery,
@@ -337,7 +348,9 @@ object OnDemandForensicVlmAnalyzer {
         val forgeryLogits = FloatArray(6)
         val counterLogits = FloatArray(6)
         for (axis in 0 until 6) {
-            if (applicableMask6d != null && axis < applicableMask6d.size && !applicableMask6d[axis]) {
+            val isSupervised = axis < head.axesSupervised.size && head.axesSupervised[axis]
+            val isApplicable = applicableMask6d == null || (axis < applicableMask6d.size && applicableMask6d[axis])
+            if (!isSupervised || !isApplicable) {
                 forgeryLogits[axis] = Float.NaN
                 counterLogits[axis] = Float.NaN
                 continue
@@ -428,6 +441,8 @@ object OnDemandForensicVlmAnalyzer {
     )
 
     data class DialecticalVlmOutcome(
+        val vlmClassProb: Float = Float.NaN,
+        val vlmClassLogit: Float = Float.NaN,
         val vlmDialecticalProb: Float,
         val posteriorProb: Float,
         val dominantFlawAxis: String,
@@ -587,6 +602,8 @@ object OnDemandForensicVlmAnalyzer {
         decisionThreshold: Float = 0.5782f,
         cropDownscaleRatio: Float = Float.NaN,
         diagnosticOnly: Boolean = false,
+        vlmClassProb: Float = Float.NaN,
+        vlmClassLogit: Float = Float.NaN,
     ): DialecticalVlmOutcome {
         require(forgeryLogits6d.size == 6 && authenticCounterLogits6d.size == 6) {
             "Rubric requires 6 axis slots (use Float.NaN for inapplicable axes)"
@@ -614,11 +631,30 @@ object OnDemandForensicVlmAnalyzer {
             }
         }
         if (activeWeightSum <= 0f) {
+            val primaryVlmProb = if (vlmClassProb.isFinite()) vlmClassProb else Float.NaN
+            val fusedProb = if (vlmClassProb.isFinite()) {
+                val zFast = 1.5f * tanh((logit(fastFusionProb) / 1.5f).toDouble()).toFloat()
+                val logitVal = if (vlmClassLogit.isFinite()) vlmClassLogit else logit(vlmClassProb)
+                val zVlm = 1.8f * tanh((logitVal / 1.8f).toDouble()).toFloat()
+                sigmoid(0.62f * zFast + 0.38f * zVlm)
+            } else {
+                fastFusionProb
+            }
+            val postProb = if (diagnosticOnly) fastFusionProb else fusedProb
+            val isFake = (if (vlmClassProb.isFinite()) fusedProb else fastFusionProb) >= decisionThreshold
+            val explanation = if (vlmClassProb.isFinite()) {
+                "<think>[Domain] $activeDomain | [SupervisedRubric] none | [VlmClassProb] ${"%.4f".format(vlmClassProb)} " +
+                    "(fastProb=${"%.3f".format(fastFusionProb)})</think><answer>${if (isFake) "Fake" else "Real"}</answer>"
+            } else {
+                "No observable VLM axes applicable; specialist baseline retained."
+            }
             return DialecticalVlmOutcome(
-                vlmDialecticalProb = Float.NaN,
-                posteriorProb = fastFusionProb,
-                dominantFlawAxis = "not_observable",
-                dialecticalExplanation = "No observable VLM axes applicable; specialist baseline retained.",
+                vlmClassProb = vlmClassProb,
+                vlmClassLogit = vlmClassLogit,
+                vlmDialecticalProb = primaryVlmProb,
+                posteriorProb = postProb,
+                dominantFlawAxis = if (isFake && vlmClassProb.isFinite()) "global_vlm_detection" else "not_observable",
+                dialecticalExplanation = explanation,
                 evaluatedAxes = emptyList(),
                 cropDownscaleRatio = cropDownscaleRatio,
                 diagnosticOnly = diagnosticOnly,
@@ -652,8 +688,19 @@ object OnDemandForensicVlmAnalyzer {
             }
         }
 
-        val vlmLogit = 0.65f * weightedSum + 0.35f * peakCalibratedDiff
-        val vlmProb = sigmoid(1.5f * vlmLogit)
+        val rubricLogit = 0.65f * weightedSum + 0.35f * peakCalibratedDiff
+        val vlmProb = if (vlmClassProb.isFinite()) {
+            vlmClassProb
+        } else {
+            sigmoid(1.5f * rubricLogit)
+        }
+        val vlmLogit = if (vlmClassLogit.isFinite()) {
+            vlmClassLogit
+        } else if (vlmClassProb.isFinite()) {
+            logit(vlmClassProb)
+        } else {
+            rubricLogit
+        }
 
         val zFast = 1.5f * tanh((logit(fastFusionProb) / 1.5f).toDouble()).toFloat()
         val zVlm = 1.8f * tanh((vlmLogit / 1.8f).toDouble()).toFloat()
@@ -674,6 +721,8 @@ object OnDemandForensicVlmAnalyzer {
         }
 
         return DialecticalVlmOutcome(
+            vlmClassProb = if (vlmClassProb.isFinite()) vlmClassProb else vlmProb,
+            vlmClassLogit = if (vlmClassLogit.isFinite()) vlmClassLogit else vlmLogit,
             vlmDialecticalProb = vlmProb,
             posteriorProb = postProb,
             dominantFlawAxis = flawAxis,
@@ -790,6 +839,8 @@ object OnDemandForensicVlmAnalyzer {
                 decisionThreshold = policyBundle.routingPolicy.decisionThresholdDev,
                 cropDownscaleRatio = cropDownscaleRatioProvider(),
                 diagnosticOnly = diagnosticOnly,
+                vlmClassProb = projected.classProb,
+                vlmClassLogit = projected.classLogit,
             )
         }
     }

@@ -167,4 +167,94 @@ class OnDemandForensicVlmAnalyzerContractTest {
         assertFalse(text.contains("physics_illumination"))
         assertFalse(text.contains("boundary_halo_seam"))
     }
+
+    @Test
+    fun crossLanguageRoutingParityCasesMatchPython() {
+        val root = JSONObject(fixtureJson())
+        val defaultPolicy = OnDemandForensicVlmAnalyzer.PolicyBundle.fromJson(fixtureJson()).routingPolicy
+        val fixtures = root.getJSONArray("routing_parity_fixtures")
+        assertTrue("Fixture must contain routing test cases", fixtures.length() > 0)
+        for (i in 0 until fixtures.length()) {
+            val item = fixtures.getJSONObject(i)
+            val casePolicy = if (item.optBoolean("override_policy_infeasible", false)) {
+                defaultPolicy.copy(feasible = false)
+            } else {
+                defaultPolicy
+            }
+            val vfmProbe = if (item.isNull("vfm_probe_score")) null else item.getDouble("vfm_probe_score").toFloat()
+            val route = OnDemandForensicVlmAnalyzer.routeWithPolicy(
+                policy = casePolicy,
+                fastFusionProb = item.getDouble("fast_fusion_prob").toFloat(),
+                srmCalibratedScore = item.getDouble("srm_calibrated_score").toFloat(),
+                vfmProbeScore = vfmProbe,
+                hotspotZScore = item.getDouble("hotspot_z_score").toFloat(),
+                activeDomain = item.getString("active_domain"),
+                docTamperScore = item.getDouble("doc_tamper_score").toFloat(),
+                availableHeapMb = item.getInt("available_heap_mb"),
+                requireExplanation = item.getBoolean("require_explanation"),
+            )
+            val exp = item.getJSONObject("expected")
+            val name = item.getString("name")
+            assertEquals("[$name] mode", exp.getString("mode"), route.mode.name)
+            assertEquals("[$name] invoke_on_device_vlm", exp.getBoolean("invoke_on_device_vlm"), route.invokeOnDeviceVlm)
+            assertEquals("[$name] expected_voi_score", exp.getDouble("expected_voi_score").toFloat(), route.expectedVoiScore, 1e-4f)
+            assertEquals("[$name] target_domain", exp.getString("target_domain"), route.targetDomain)
+            assertEquals("[$name] trigger_reason", exp.getString("trigger_reason"), route.triggerReason)
+        }
+    }
+
+    @Test
+    fun counterexampleClassLogitTenZeroRubricEvaluatesClassProb() {
+        val eng = engine()
+        val headContract = OnDemandForensicVlmAnalyzer.HeadContractWeights(
+            hiddenDim = 4,
+            axes = OnDemandForensicVlmAnalyzer.RUBRIC_AXES,
+            axesSupervised = List(6) { false },
+            wClass = floatArrayOf(0f, 0f, 0f, 0f),
+            bClass = 10.0f,
+            wForgeryAxes = Array(6) { FloatArray(4) },
+            bForgeryAxes = FloatArray(6),
+            wCounterAxes = Array(6) { FloatArray(4) },
+            bCounterAxes = FloatArray(6),
+        )
+        val policyBundle = OnDemandForensicVlmAnalyzer.PolicyBundle(
+            schemaVersion = "onn-forensic-vlm-policy-v1",
+            modelId = "test/counterexample-unannotated",
+            routingPolicy = OnDemandForensicVlmAnalyzer.RoutingPolicyConfig(
+                decisionThresholdDev = 0.50f,
+            ),
+            headContract = headContract,
+        )
+        val outcome = OnDemandForensicVlmAnalyzer.executeLeasedProjection(
+            inferenceEngine = eng,
+            policyBundle = policyBundle,
+            fastFusionProb = 0.50f,
+            diagnosticOnly = false,
+        ) {
+            floatArrayOf(0f, 0f, 0f, 0f)
+        }
+        assertEquals(10.0f, outcome.vlmClassLogit, 1e-3f)
+        assertEquals(0.999955f, outcome.vlmClassProb, 1e-4f)
+        assertEquals(outcome.vlmClassProb, outcome.vlmDialecticalProb, 1e-4f)
+        assertTrue("Evaluated axes must be empty when no rubric axis is supervised", outcome.evaluatedAxes.isEmpty())
+        assertTrue("Explanation must indicate no supervised rubric", outcome.dialecticalExplanation.contains("[SupervisedRubric] none"))
+        assertFalse("Outcome must NOT be 0.500000", outcome.vlmDialecticalProb == 0.500000f)
+        assertTrue("Posterior prob must reflect fake above decision threshold", outcome.posteriorProb > 0.60f)
+        assertTrue("Posterior prob must exceed decision threshold", outcome.posteriorProb >= policyBundle.routingPolicy.decisionThresholdDev)
+    }
+
+    @Test
+    fun fixedFprPrecisionPreservedAfterJsonAndFloatConversion() {
+        val negatives = FloatArray(99) { 0.5000002f } + floatArrayOf(0.5000004f)
+        val thresholdFloat = 0.5000004f
+        val fpCount = negatives.count { it >= thresholdFloat }
+        val fpr = fpCount.toFloat() / negatives.size.toFloat()
+        assertEquals("FPR must be exactly 1%", 0.01f, fpr, 1e-6f)
+
+        val json = """{"decision_threshold_dev": 0.5000004}"""
+        val parsedThreshold = JSONObject(json).getDouble("decision_threshold_dev").toFloat()
+        val fpCountParsed = negatives.count { it >= parsedThreshold }
+        val fprParsed = fpCountParsed.toFloat() / negatives.size.toFloat()
+        assertEquals("Parsed threshold must maintain 1% FPR and not collapse to 100%", 0.01f, fprParsed, 1e-6f)
+    }
 }

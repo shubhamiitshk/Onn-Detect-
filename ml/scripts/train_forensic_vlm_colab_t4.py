@@ -246,6 +246,7 @@ class MaskedAuxiliaryForensicHead:
         self.b_axes = np.zeros(6, dtype=np.float64)
         self.w_counter_axes = np.zeros((self.hidden_dim, 6), dtype=np.float64)
         self.b_counter_axes = np.zeros(6, dtype=np.float64)
+        self.axes_supervised: List[bool] = [False] * 6
 
     def fit(
         self,
@@ -263,6 +264,7 @@ class MaskedAuxiliaryForensicHead:
         y = np.asarray(labels, dtype=np.float64).reshape(-1)
         A = np.asarray(axis_annotations_6d, dtype=np.float64)
         valid_mask = np.isfinite(A)
+        self.axes_supervised = [bool(np.sum(valid_mask[:, i]) > 0) for i in range(6)]
         A_zeroed = np.where(valid_mask, A, 0.0)
 
         # Authentic counter-evidence target: 1.0 when an applicable axis is verified authentic (A == 0 on y == 0)
@@ -310,19 +312,21 @@ class MaskedAuxiliaryForensicHead:
         forgery_logits_out: List[float] = []
         counter_logits_out: List[float] = []
         for i, name in enumerate(RUBRIC_AXES):
-            if applicable_mask_6d is not None and not applicable_mask_6d[i]:
+            is_supervised = bool(self.axes_supervised[i]) if i < len(self.axes_supervised) else True
+            is_applicable = applicable_mask_6d is None or bool(applicable_mask_6d[i])
+            if not is_supervised or not is_applicable:
                 axis_probs[name] = None
                 forgery_logits_out.append(float("nan"))
                 counter_logits_out.append(float("nan"))
             else:
                 f_logit = float(raw_forgery[i])
                 c_logit = float(raw_counter[i])
-                forgery_logits_out.append(round(f_logit, 6))
-                counter_logits_out.append(round(c_logit, 6))
-                axis_probs[name] = round(float(1.0 / (1.0 + math.exp(-max(-30.0, min(30.0, f_logit))))), 4)
+                forgery_logits_out.append(f_logit)
+                counter_logits_out.append(c_logit)
+                axis_probs[name] = float(1.0 / (1.0 + math.exp(-max(-30.0, min(30.0, f_logit)))))
         return {
-            "class_prob": round(class_prob, 6),
-            "class_logit": round(class_logit, 6),
+            "class_prob": class_prob,
+            "class_logit": class_logit,
             "forgery_logits_6d": forgery_logits_out,
             "authentic_counter_logits_6d": counter_logits_out,
             "axis_probabilities": axis_probs,
@@ -332,12 +336,13 @@ class MaskedAuxiliaryForensicHead:
         return {
             "hidden_dim": self.hidden_dim,
             "axes": list(RUBRIC_AXES),
-            "w_class": [round(float(x), 6) for x in self.w_class.tolist()],
-            "b_class": round(float(self.b_class), 6),
-            "w_forgery_axes": [[round(float(v), 6) for v in row] for row in self.w_axes.T.tolist()],
-            "b_forgery_axes": [round(float(x), 6) for x in self.b_axes.tolist()],
-            "w_counter_axes": [[round(float(v), 6) for v in row] for row in self.w_counter_axes.T.tolist()],
-            "b_counter_axes": [round(float(x), 6) for x in self.b_counter_axes.tolist()],
+            "axes_supervised": [bool(x) for x in self.axes_supervised],
+            "w_class": [float(x) for x in self.w_class.tolist()],
+            "b_class": float(self.b_class),
+            "w_forgery_axes": [[float(v) for v in row] for row in self.w_axes.T.tolist()],
+            "b_forgery_axes": [float(x) for x in self.b_axes.tolist()],
+            "w_counter_axes": [[float(v) for v in row] for row in self.w_counter_axes.T.tolist()],
+            "b_counter_axes": [float(x) for x in self.b_counter_axes.tolist()],
         }
 
 
@@ -361,21 +366,27 @@ def select_tie_aware_threshold_for_fpr(real_scores: np.ndarray, target_fpr: floa
     """Selects the smallest decision threshold `t` such that under the rule `score >= t`,
     the empirical false positive rate on `real_scores` is strictly `<= target_fpr`.
 
-    If tied scores at `max(real_scores)` exceed `target_fpr` (for example, when all scores
-    equal `0.5`), returns `max(real_scores) + 1e-6` so that constant/useless predictors
-    yield `0%` TPR and `0%` FPR rather than `100%` TPR and `100%` FPR.
+    Guarantees float32 representation safety: when serialized to JSON and parsed as a 32-bit
+    IEEE 754 Float on Android, the threshold cannot round down and cause the empirical FPR
+    on calibration data to exceed `target_fpr`.
     """
     r = np.asarray(real_scores, dtype=np.float64).reshape(-1)
     r = r[np.isfinite(r)]
     if len(r) == 0:
-        return 1.0 + 1e-6
-    candidates = np.r_[np.unique(r), float(np.max(r)) + 1e-6]
+        return float(np.float32(1.0 + 1e-5))
+    candidates = np.r_[np.unique(r), float(np.max(r)) + 1e-5]
     n_real = float(len(r))
     for t in candidates:
         fpr = float(np.sum(r >= t)) / n_real
         if fpr <= target_fpr + 1e-12:
-            return float(t)
-    return float(np.max(r)) + 1e-6
+            # Ensure safety after float32 roundtrip in Android
+            t_f32 = np.float32(t)
+            fpr_f32 = float(np.sum(np.float32(r) >= t_f32)) / n_real
+            while fpr_f32 > target_fpr + 1e-12 and t_f32 < np.float32(np.inf):
+                t_f32 = np.nextafter(t_f32, np.float32(np.inf))
+                fpr_f32 = float(np.sum(np.float32(r) >= t_f32)) / n_real
+            return float(t_f32)
+    return float(np.float32(float(np.max(r)) + 1e-5))
 
 
 def fit_frozen_fpr_thresholds(cal_labels: np.ndarray, cal_scores: np.ndarray) -> Dict[str, float]:
@@ -432,9 +443,9 @@ def evaluate_candidate_at_fixed_fpr(
     fp_01pct = int(np.sum(real_scores >= thr_01pct))
 
     return {
-        "threshold_1pct_fpr": round(thr_1pct, 6),
-        "threshold_5pct_fpr": round(thr_5pct, 6),
-        "threshold_0_1pct_fpr": round(thr_01pct, 6),
+        "threshold_1pct_fpr": float(thr_1pct),
+        "threshold_5pct_fpr": float(thr_5pct),
+        "threshold_0_1pct_fpr": float(thr_01pct),
         "tpr_at_1pct_fpr": round(tp_1pct / max(1, n_fake_total), 6),
         "tpr_at_1pct_ci95": wilson_ci_95(tp_1pct, n_fake_total),
         "achieved_fpr_at_1pct": round(fp_1pct / max(1, n_real_total), 6),
@@ -452,33 +463,139 @@ def evaluate_candidate_at_fixed_fpr(
     }
 
 
+def route_with_policy(
+    policy: Dict[str, Any],
+    fast_fusion_prob: float,
+    srm_calibrated_score: float,
+    vfm_probe_score: Optional[float] = None,
+    hotspot_z_score: float = 0.0,
+    active_domain: str = "human_face",
+    doc_tamper_score: float = 0.0,
+    available_heap_mb: int = 256,
+    require_explanation: bool = False,
+) -> Dict[str, Any]:
+    """Single-sample routing function strictly implementing the deployed Android logic in
+    `OnDemandForensicVlmAnalyzer.kt:routeWithPolicy`.
+    """
+    if not bool(policy.get("feasible", True)):
+        return {
+            "mode": "FAST_EXIT_CONFIDENT",
+            "invoke_on_device_vlm": False,
+            "expected_voi_score": 0.0,
+            "target_domain": active_domain,
+            "trigger_reason": "routing_policy_infeasible",
+        }
+
+    EPS = 1e-6
+    def _logit(p: float) -> float:
+        c = max(EPS, min(1.0 - EPS, float(p)))
+        return math.log(c / (1.0 - c))
+
+    z_f = _logit(fast_fusion_prob)
+    z_thr = _logit(float(policy["decision_threshold_dev"]))
+    z_a = _logit(srm_calibrated_score)
+    llr_diff = abs(z_f - z_thr)
+    llr_hw = float(policy["llr_uncertainty_halfwidth"])
+    near_boundary = llr_diff < llr_hw
+
+    if vfm_probe_score is not None and math.isfinite(vfm_probe_score):
+        conflict_diff = abs(z_a - _logit(vfm_probe_score))
+    else:
+        conflict_diff = 0.0
+    conf_thr = float(policy["calibrated_conflict_logit_threshold"])
+    cross_engine_conflict = conflict_diff > conf_thr
+
+    hz_thr = float(policy["hotspot_z_threshold"])
+    localized_hotspot = math.isfinite(hotspot_z_score) and hotspot_z_score >= hz_thr
+
+    doc_thr = float(policy.get("doc_tamper_threshold", 0.48))
+    doc_tamper = (active_domain == "document_text") and math.isfinite(doc_tamper_score) and (doc_tamper_score >= doc_thr)
+
+    should_escalate = require_explanation or near_boundary or cross_engine_conflict or localized_hotspot or doc_tamper
+
+    boundary_score = max(0.0, 1.0 - llr_diff / max(0.25, llr_hw)) if llr_hw > 0.0 else 0.0
+    conflict_score = min(1.0, max(0.0, conflict_diff / max(0.5, conf_thr))) if conf_thr < 1e6 else 0.0
+    hotspot_score = min(1.0, max(0.0, (hotspot_z_score - hz_thr) / 1.5 + 0.5)) if localized_hotspot else 0.0
+
+    if not should_escalate:
+        voi = 0.10 * boundary_score
+    else:
+        voi = max(0.42, min(1.0, 0.40 * boundary_score + 0.35 * conflict_score + 0.25 * hotspot_score))
+
+    reason = (
+        "forensic_explanation_requested" if require_explanation
+        else "ambiguous_fast_margin" if near_boundary
+        else "cross_engine_disagreement" if cross_engine_conflict
+        else "localized_roi_hotspot" if localized_hotspot
+        else f"specialized_domain_{active_domain}" if doc_tamper
+        else "fast_tier_confident"
+    )
+
+    if not should_escalate:
+        return {
+            "mode": "FAST_EXIT_CONFIDENT",
+            "invoke_on_device_vlm": False,
+            "expected_voi_score": round(voi, 4),
+            "target_domain": active_domain,
+            "trigger_reason": "fast_tier_confident",
+        }
+    if available_heap_mb < 96:
+        return {
+            "mode": "MICRO_MOE_ONLY",
+            "invoke_on_device_vlm": False,
+            "expected_voi_score": round(voi, 4),
+            "target_domain": active_domain,
+            "trigger_reason": reason,
+        }
+    mode = "VLM_FULL_DIALECTICAL_COT" if (require_explanation or voi >= 0.68) else "VLM_SINGLE_PASS_LOGIT"
+    return {
+        "mode": mode,
+        "invoke_on_device_vlm": True,
+        "expected_voi_score": round(voi, 4),
+        "target_domain": active_domain,
+        "trigger_reason": reason,
+    }
+
+
 def learn_routing_thresholds_on_held_out(
     labels: np.ndarray,
     calibrated_fusion_probs: np.ndarray,
     calibrated_srm_probs: np.ndarray,
-    calibrated_probe_probs: np.ndarray,
-    hotspot_z_scores: np.ndarray,
+    calibrated_probe_probs: Optional[np.ndarray] = None,
+    hotspot_z_scores: Optional[np.ndarray] = None,
+    active_domains: Optional[Sequence[str]] = None,
+    doc_tamper_scores: Optional[np.ndarray] = None,
     max_escalation_budget: float = 0.30,
 ) -> Dict[str, Any]:
-    """Learns routing thresholds on held-out dev data to minimize `early_exit_fnr`
+    """Learns routing thresholds on held-out development data to minimize `early_exit_fnr`
     subject to `esc_rate <= max_escalation_budget`.
-
-    If no positive-escalation candidate satisfies `max_escalation_budget`, explicitly
-    returns `"feasible": False` and reports the actual measured `escalation_rate` and
-    `early_exit_fnr` rather than a fabricated `0.0`.
+    Models all triggers including boundary ambiguity, cross-engine conflict, localized hotspots,
+    and document tampering on `document_text`.
     """
     y = np.asarray(labels, dtype=np.int32).reshape(-1)
     p_f = np.clip(np.asarray(calibrated_fusion_probs, dtype=np.float64), 1e-6, 1.0 - 1e-6)
     p_a = np.clip(np.asarray(calibrated_srm_probs, dtype=np.float64), 1e-6, 1.0 - 1e-6)
-    p_c = np.clip(np.asarray(calibrated_probe_probs, dtype=np.float64), 1e-6, 1.0 - 1e-6)
-    hz = np.asarray(hotspot_z_scores, dtype=np.float64).reshape(-1)
+    if calibrated_probe_probs is not None:
+        p_c = np.asarray(calibrated_probe_probs, dtype=np.float64)
+    else:
+        p_c = np.full(len(y), np.nan, dtype=np.float64)
+    hz = np.asarray(hotspot_z_scores if hotspot_z_scores is not None else np.zeros(len(y)), dtype=np.float64).reshape(-1)
 
     thr_dev = select_tie_aware_threshold_for_fpr(p_f[y == 0], 0.01) if np.any(y == 0) else 0.5782
     thr_clipped = max(1e-6, min(1.0 - 1e-6, thr_dev))
     z_thr = math.log(thr_clipped / (1.0 - thr_clipped))
     z_f = np.log(p_f / (1.0 - p_f))
     z_a = np.log(p_a / (1.0 - p_a))
-    z_c = np.log(p_c / (1.0 - p_c))
+    valid_probe = np.isfinite(p_c)
+    p_c_clipped = np.clip(np.where(valid_probe, p_c, 0.5), 1e-6, 1.0 - 1e-6)
+    z_c = np.log(p_c_clipped / (1.0 - p_c_clipped))
+    conflict_diff = np.where(valid_probe, np.abs(z_a - z_c), 0.0)
+
+    doc_tamper = np.zeros(len(y), dtype=bool)
+    if active_domains is not None and doc_tamper_scores is not None:
+        is_doc = np.asarray([d == "document_text" for d in active_domains], dtype=bool)
+        doc_s = np.asarray(doc_tamper_scores, dtype=np.float64)
+        doc_tamper = is_doc & np.isfinite(doc_s) & (doc_s >= 0.48)
 
     n_fakes = max(1, int(np.sum(y == 1)))
     best_cfg: Optional[Dict[str, Any]] = None
@@ -488,8 +605,9 @@ def learn_routing_thresholds_on_held_out(
             for hz_thr in (1.65, 1.85, 2.10, 2.50, 2.90, 3.50):
                 escalate = (
                     (np.abs(z_f - z_thr) < llr_hw)
-                    | (np.abs(z_a - z_c) > conf_thr)
+                    | (conflict_diff > conf_thr)
                     | (hz >= hz_thr)
+                    | doc_tamper
                 )
                 esc_rate = float(np.mean(escalate))
                 if esc_rate > max_escalation_budget:
@@ -507,14 +625,13 @@ def learn_routing_thresholds_on_held_out(
                         "calibrated_conflict_logit_threshold": round(float(conf_thr), 4),
                         "hotspot_z_threshold": round(float(hz_thr), 4),
                         "doc_tamper_threshold": 0.48,
-                        "decision_threshold_dev": round(float(thr_dev), 6),
+                        "decision_threshold_dev": float(thr_dev),
                         "escalation_rate": round(esc_rate, 4),
                         "conditional_early_exit_miss_rate": round(cond_miss, 6),
                         "early_exit_fnr": round(total_fnr, 6),
                     }
 
     if best_cfg is None:
-        # Infeasible budget: return closed-gate thresholds (0.0, +inf, +inf) with actual measured FNR and feasible=False
         early_exit_missed_fakes = int(np.sum((y == 1) & (p_f < thr_dev)))
         unconditional_fnr = early_exit_missed_fakes / float(n_fakes)
         return {
@@ -523,7 +640,7 @@ def learn_routing_thresholds_on_held_out(
             "calibrated_conflict_logit_threshold": 1e9,
             "hotspot_z_threshold": 1e9,
             "doc_tamper_threshold": 1e9,
-            "decision_threshold_dev": round(float(thr_dev), 6),
+            "decision_threshold_dev": float(thr_dev),
             "escalation_rate": 0.0,
             "conditional_early_exit_miss_rate": round(unconditional_fnr, 6),
             "early_exit_fnr": round(unconditional_fnr, 6),
@@ -537,33 +654,43 @@ def evaluate_frozen_routing_on_test(
     test_labels: np.ndarray,
     test_calibrated_fusion_probs: np.ndarray,
     test_calibrated_srm_probs: np.ndarray,
-    test_calibrated_probe_probs: np.ndarray,
-    test_hotspot_z_scores: np.ndarray,
+    test_calibrated_probe_probs: Optional[np.ndarray] = None,
+    test_hotspot_z_scores: Optional[np.ndarray] = None,
+    test_active_domains: Optional[Sequence[str]] = None,
+    test_doc_tamper_scores: Optional[np.ndarray] = None,
+    test_available_heap_mb: Optional[Sequence[int]] = None,
+    test_require_explanations: Optional[Sequence[bool]] = None,
 ) -> Dict[str, Any]:
     """Evaluates a frozen routing policy on held-out test data using the exact same
-    log-odds equation deployed in `OnDemandForensicVlmAnalyzer.kt`.
+    per-sample routing engine as deployed in `OnDemandForensicVlmAnalyzer.kt`.
     """
     y = np.asarray(test_labels, dtype=np.int32).reshape(-1)
-    p_f = np.clip(np.asarray(test_calibrated_fusion_probs, dtype=np.float64), 1e-6, 1.0 - 1e-6)
-    p_a = np.clip(np.asarray(test_calibrated_srm_probs, dtype=np.float64), 1e-6, 1.0 - 1e-6)
-    p_c = np.clip(np.asarray(test_calibrated_probe_probs, dtype=np.float64), 1e-6, 1.0 - 1e-6)
-    hz = np.asarray(test_hotspot_z_scores, dtype=np.float64).reshape(-1)
+    n = len(y)
+    p_f = np.asarray(test_calibrated_fusion_probs, dtype=np.float64).reshape(-1)
+    p_a = np.asarray(test_calibrated_srm_probs, dtype=np.float64).reshape(-1)
+    p_c = np.asarray(test_calibrated_probe_probs, dtype=np.float64).reshape(-1) if test_calibrated_probe_probs is not None else np.full(n, np.nan)
+    hz = np.asarray(test_hotspot_z_scores, dtype=np.float64).reshape(-1) if test_hotspot_z_scores is not None else np.zeros(n)
+    domains = list(test_active_domains) if test_active_domains is not None else ["human_face"] * n
+    doc_scores = np.asarray(test_doc_tamper_scores, dtype=np.float64).reshape(-1) if test_doc_tamper_scores is not None else np.zeros(n)
+    heap_mbs = list(test_available_heap_mb) if test_available_heap_mb is not None else [256] * n
+    req_expls = list(test_require_explanations) if test_require_explanations is not None else [False] * n
 
     thr = float(frozen_cfg.get("decision_threshold_dev", 0.5782))
-    thr_clipped = max(1e-6, min(1.0 - 1e-6, thr))
-    z_thr = math.log(thr_clipped / (1.0 - thr_clipped))
-    z_f = np.log(p_f / (1.0 - p_f))
-    z_a = np.log(p_a / (1.0 - p_a))
-    z_c = np.log(p_c / (1.0 - p_c))
-
-    if not bool(frozen_cfg.get("feasible", True)):
-        escalate = np.zeros(len(y), dtype=bool)
-    else:
-        escalate = (
-            (np.abs(z_f - z_thr) < float(frozen_cfg["llr_uncertainty_halfwidth"]))
-            | (np.abs(z_a - z_c) > float(frozen_cfg["calibrated_conflict_logit_threshold"]))
-            | (hz >= float(frozen_cfg["hotspot_z_threshold"]))
+    escalate = np.zeros(n, dtype=bool)
+    for i in range(n):
+        res = route_with_policy(
+            policy=frozen_cfg,
+            fast_fusion_prob=float(p_f[i]),
+            srm_calibrated_score=float(p_a[i]),
+            vfm_probe_score=float(p_c[i]) if math.isfinite(p_c[i]) else None,
+            hotspot_z_score=float(hz[i]),
+            active_domain=domains[i],
+            doc_tamper_score=float(doc_scores[i]),
+            available_heap_mb=int(heap_mbs[i]),
+            require_explanation=bool(req_expls[i]),
         )
+        escalate[i] = bool(res["invoke_on_device_vlm"])
+
     n_fakes = max(1, int(np.sum(y == 1)))
     fakes_exited_early = int(np.sum((~escalate) & (y == 1)))
     early_exit_missed_fakes = int(np.sum((~escalate) & (y == 1) & (p_f < thr)))
@@ -671,7 +798,8 @@ def execute_supervised_vlm_lora_training(
     batch_collator: Any,
     train_records: Sequence[Dict[str, Any]],
     val_records: Sequence[Dict[str, Any]],
-    hidden_dim: int,
+    test_records: Optional[Sequence[Dict[str, Any]]] = None,
+    hidden_dim: int = 960,
     max_steps: int = 50,
     image_max_px: int = 512,
     lr: float = 2e-4,
@@ -680,9 +808,11 @@ def execute_supervised_vlm_lora_training(
     model_id: str = "Qwen/Qwen3.5-2B",
 ) -> Dict[str, Any]:
     """Executes `max_steps` supervised optimization steps over `train_records` (after
-    deduplicating against `val_records`), optimizes both LoRA parameters and the 13-output
-    forensic projection head (`class_logit` + `6` forgery logits + `6` counter logits),
-    records actual training peak memory, and exports `forensic_vlm_policy.json`.
+    deduplicating against both `val_records` and `test_records`), optimizes LoRA parameters
+    and the 13-output forensic projection head (`class_logit` + `6` forgery logits + `6` counter logits),
+    records actual training peak memory, fits frozen calibration on `val_records` using actual
+    pre-VLM baseline detector scores, evaluates frozen metrics on `test_records` (without ever leaking
+    test data into training or calibration), and exports `forensic_vlm_policy.json`.
     """
     import torch
     import torch.nn as nn
@@ -691,7 +821,8 @@ def execute_supervised_vlm_lora_training(
     if max_steps <= 0:
         raise ValueError("max_steps must be >= 1")
 
-    clean_train, removed_leaks = deduplicate_training_against_eval(train_records, val_records)
+    eval_for_dedup = list(val_records) + (list(test_records) if test_records is not None else [])
+    clean_train, removed_leaks = deduplicate_training_against_eval(train_records, eval_for_dedup)
     if len(clean_train) == 0:
         raise ValueError("No training records remain after source-level deduplication against eval.")
 
@@ -712,6 +843,7 @@ def execute_supervised_vlm_lora_training(
     forensic_proj.train()
     step_losses: List[float] = []
     downscale_ratios: List[float] = []
+    axis_supervised_counts = np.zeros(6, dtype=np.int64)
 
     for step_idx in range(max_steps):
         rec = clean_train[step_idx % len(clean_train)]
@@ -746,6 +878,7 @@ def execute_supervised_vlm_lora_training(
             loss_class = F.binary_cross_entropy_with_logits(class_logit, y_tensor)
 
             valid_mask = np.isfinite(axes_6d)
+            axis_supervised_counts += valid_mask.astype(np.int64)
             if np.any(valid_mask):
                 mask_t = torch.from_numpy(valid_mask).to(device=device)
                 target_f = torch.from_numpy(np.where(valid_mask, axes_6d, 0.0).astype(np.float32)).to(device=device)
@@ -789,46 +922,102 @@ def execute_supervised_vlm_lora_training(
         head_contract.b_axes = b_np[1:7].copy()
         head_contract.w_counter_axes = w_np[7:13].T.copy()
         head_contract.b_counter_axes = b_np[7:13].copy()
+        head_contract.axes_supervised = [bool(axis_supervised_counts[i] > 0) for i in range(6)]
 
-    # Evaluate on val_records to freeze calibration & routing policy
+    def _eval_records(recs: Sequence[Dict[str, Any]]) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, List[str], np.ndarray]:
+        lbls: List[int] = []
+        vlm_probs: List[float] = []
+        fast_fusion: List[float] = []
+        srm: List[float] = []
+        probe: List[float] = []
+        hz: List[float] = []
+        domains: List[str] = []
+        docs: List[float] = []
+        with torch.no_grad():
+            for r in recs:
+                img = r.get("pil_image") or Image.open(r["image_path"])
+                img_res, _ = resize_image_to_budget(img, image_max_px=image_max_px)
+                inp = batch_collator(img_res, r.get("prompt", "Assess forensic authenticity."), float(r["label"]), device)
+                out = model(**inp, output_hidden_states=True)
+                vh = out.hidden_states[-1][:, -1, :].to(torch.float32).squeeze(0).cpu().numpy()
+                pred = head_contract.predict(vh)
+                lbls.append(int(r["label"]))
+                vlm_probs.append(float(pred["class_prob"]))
+
+                if "fast_fusion_prob" in r:
+                    ff = float(r["fast_fusion_prob"])
+                elif "fusion_prob" in r:
+                    ff = float(r["fusion_prob"])
+                else:
+                    raise KeyError(f"Evaluation record '{r.get('image_id', 'unknown')}' missing required baseline 'fast_fusion_prob'")
+
+                if "srm_score" in r:
+                    sm = float(r["srm_score"])
+                elif "srm_prob" in r:
+                    sm = float(r["srm_prob"])
+                else:
+                    raise KeyError(f"Evaluation record '{r.get('image_id', 'unknown')}' missing required baseline 'srm_score'")
+
+                pr = float(r["vfm_probe_score"]) if ("vfm_probe_score" in r and r["vfm_probe_score"] is not None) else (
+                    float(r["probe_prob"]) if ("probe_prob" in r and r["probe_prob"] is not None) else float("nan")
+                )
+                fast_fusion.append(ff)
+                srm.append(sm)
+                probe.append(pr)
+                hz.append(float(r.get("hotspot_z", 0.0)))
+                domains.append(str(r.get("active_domain", "human_face")))
+                docs.append(float(r.get("doc_tamper_score", 0.0)))
+        return (
+            np.asarray(lbls, dtype=np.int32),
+            np.asarray(vlm_probs, dtype=np.float64),
+            np.asarray(fast_fusion, dtype=np.float64),
+            np.asarray(srm, dtype=np.float64),
+            np.asarray(probe, dtype=np.float64),
+            np.asarray(hz, dtype=np.float64),
+            domains,
+            np.asarray(docs, dtype=np.float64),
+        )
+
+    # 1. Fit calibration thresholds and learn routing strictly on val_records (development/calibration set)
     model.eval()
     forensic_proj.eval()
-    val_labels: List[int] = []
-    val_probs: List[float] = []
-    val_srm: List[float] = []
-    val_probe: List[float] = []
-    val_hz: List[float] = []
-    with torch.no_grad():
-        for v_rec in val_records:
-            v_img = v_rec.get("pil_image") or Image.open(v_rec["image_path"])
-            v_resized, _ = resize_image_to_budget(v_img, image_max_px=image_max_px)
-            v_inputs = batch_collator(v_resized, v_rec.get("prompt", "Assess forensic authenticity."), float(v_rec["label"]), device)
-            v_out = model(**v_inputs, output_hidden_states=True)
-            v_h = v_out.hidden_states[-1][:, -1, :].to(torch.float32).squeeze(0).cpu().numpy()
-            pred = head_contract.predict(v_h)
-            val_labels.append(int(v_rec["label"]))
-            val_probs.append(float(pred["class_prob"]))
-            val_srm.append(float(v_rec.get("srm_prob", pred["class_prob"])))
-            val_probe.append(float(v_rec.get("probe_prob", pred["class_prob"])))
-            val_hz.append(float(v_rec.get("hotspot_z", 1.0)))
+    val_y, val_vlm_p, val_ff, val_srm, val_probe, val_hz, val_dom, val_doc = _eval_records(val_records)
 
-    val_y_arr = np.asarray(val_labels, dtype=np.int32)
-    val_p_arr = np.asarray(val_probs, dtype=np.float64)
+    frozen_fpr_thrs = fit_frozen_fpr_thresholds(val_y, val_vlm_p)
     routing_cfg = learn_routing_thresholds_on_held_out(
-        labels=val_y_arr,
-        calibrated_fusion_probs=val_p_arr,
-        calibrated_srm_probs=np.asarray(val_srm, dtype=np.float64),
-        calibrated_probe_probs=np.asarray(val_probe, dtype=np.float64),
-        hotspot_z_scores=np.asarray(val_hz, dtype=np.float64),
+        labels=val_y,
+        calibrated_fusion_probs=val_ff,
+        calibrated_srm_probs=val_srm,
+        calibrated_probe_probs=val_probe,
+        hotspot_z_scores=val_hz,
+        active_domains=val_dom,
+        doc_tamper_scores=val_doc,
         max_escalation_budget=0.35,
     )
-    val_eval = evaluate_candidate_at_fixed_fpr(val_y_arr, val_p_arr)
+    val_eval = evaluate_candidate_at_fixed_fpr(val_y, val_vlm_p, frozen_thresholds=frozen_fpr_thrs)
+
+    # 2. Evaluate frozen calibration and frozen routing on sealed test_records (if provided)
+    test_eval: Optional[Dict[str, Any]] = None
+    test_routing: Optional[Dict[str, Any]] = None
+    if test_records is not None and len(test_records) > 0:
+        test_y, test_vlm_p, test_ff, test_srm, test_probe, test_hz, test_dom, test_doc = _eval_records(test_records)
+        test_eval = evaluate_candidate_at_fixed_fpr(test_y, test_vlm_p, frozen_thresholds=frozen_fpr_thrs)
+        test_routing = evaluate_frozen_routing_on_test(
+            frozen_cfg=routing_cfg,
+            test_labels=test_y,
+            test_calibrated_fusion_probs=test_ff,
+            test_calibrated_srm_probs=test_srm,
+            test_calibrated_probe_probs=test_probe,
+            test_hotspot_z_scores=test_hz,
+            test_active_domains=test_dom,
+            test_doc_tamper_scores=test_doc,
+        )
 
     output_dir.mkdir(parents=True, exist_ok=True)
     policy_path = output_dir / "forensic_vlm_policy.json"
     export_forensic_vlm_policy_artifact(policy_path, routing_cfg, head_contract, model_id=model_id)
 
-    metrics = {
+    metrics: Dict[str, Any] = {
         "model_id": model_id,
         "steps_completed": int(max_steps),
         "deduplicated_train_samples": len(clean_train),
@@ -839,15 +1028,24 @@ def execute_supervised_vlm_lora_training(
         "final_loss": round(float(step_losses[-1]), 6),
         "train_peak_allocated_gb": round(float(train_peak_alloc_gb), 4),
         "train_peak_reserved_gb": round(float(train_peak_res_gb), 4),
+        "frozen_fpr_thresholds": frozen_fpr_thrs,
         "val_metrics": val_eval,
         "routing_policy": routing_cfg,
         "policy_artifact_path": str(policy_path),
     }
+    if test_eval is not None:
+        metrics["test_metrics"] = test_eval
+    if test_routing is not None:
+        metrics["test_routing"] = test_routing
+
     (output_dir / "training_metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
     return metrics
 
 
-def _load_jsonl_records(dataset_jsonl: Path) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+def _load_jsonl_records(dataset_jsonl: Path) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Loads JSONL records and splits into disjoint train, val (calibration), and test sets
+    grouped strictly by root source ID to guarantee zero eval leakage.
+    """
     records: List[Dict[str, Any]] = []
     for line in dataset_jsonl.read_text(encoding="utf-8").splitlines():
         line = line.strip()
@@ -855,7 +1053,7 @@ def _load_jsonl_records(dataset_jsonl: Path) -> Tuple[List[Dict[str, Any]], List
             continue
         records.append(json.loads(line))
     splits = assign_disjoint_splits_by_root_source(records)
-    return splits["train"], splits["val"] + splits["test"]
+    return splits["train"], splits["val"], splits["test"]
 
 
 def run_colab_t4_lora_pilot(
@@ -910,7 +1108,7 @@ def run_colab_t4_lora_pilot(
     print(f"[Colab-T4 Pilot] Model initialized | Init Allocated={init_alloc_gb:.3f} GB")
 
     if dataset_jsonl is not None and dataset_jsonl.is_file():
-        train_records, val_records = _load_jsonl_records(dataset_jsonl)
+        train_records, val_records, test_records = _load_jsonl_records(dataset_jsonl)
     else:
         raise ValueError(
             "Provide `--dataset-jsonl <path>` pointing to a source-tagged forensic JSONL corpus "
@@ -936,6 +1134,7 @@ def run_colab_t4_lora_pilot(
         batch_collator=_hf_collator,
         train_records=train_records,
         val_records=val_records,
+        test_records=test_records,
         hidden_dim=hidden_dim,
         max_steps=max_steps,
         image_max_px=image_max_px,
@@ -1024,6 +1223,18 @@ def run_self_tests() -> None:
         f"TPR@1%FPR={ev_constant['tpr_at_1pct_fpr']:.4f}, AchievedFPR={ev_constant['achieved_fpr_at_1pct']:.4f}"
     )
 
+    # 4b. Verify fine-grained numerical precision preservation: 99 scores 0.5000002, 1 score 0.5000004
+    cal_precision = np.array([0.5000002] * 99 + [0.5000004], dtype=np.float64)
+    thr_precision = select_tie_aware_threshold_for_fpr(cal_precision, 0.01)
+    # Check that achieved FPR in float32 (Android representation) is strictly <= 1% (never 100%)
+    thr_precision_f32 = np.float32(thr_precision)
+    achieved_precision_fpr = float(np.sum(np.float32(cal_precision) >= thr_precision_f32)) / len(cal_precision)
+    assert achieved_precision_fpr <= 0.01 + 1e-12
+    print(
+        f"  [PASS] Precision Preservation (99x 0.5000002 vs 1x 0.5000004): threshold={thr_precision:.7f}, "
+        f"Float32 FPR={achieved_precision_fpr:.2%}"
+    )
+
     cal_y = np.array([0] * 200 + [1] * 200)
     cal_s = np.r_[rng.uniform(0.0, 0.4, 200), rng.uniform(0.35, 0.99, 200)]
     test_y = np.array([0] * 200 + [1] * 200)
@@ -1047,10 +1258,28 @@ def run_self_tests() -> None:
     p_srm = np.r_[rng.uniform(0.05, 0.40, 200), rng.uniform(0.30, 0.95, 200)]
     p_prb = np.r_[rng.uniform(0.02, 0.35, 200), rng.uniform(0.50, 0.99, 200)]
     hz_rt = np.r_[rng.uniform(0.2, 1.4, 200), rng.uniform(0.8, 3.2, 200)]
-    rt_cfg = learn_routing_thresholds_on_held_out(y_rt, p_fus, p_srm, p_prb, hz_rt, max_escalation_budget=0.35)
+    dom_rt = ["document_text" if i % 4 == 0 else "human_face" for i in range(400)]
+    doc_rt = np.r_[rng.uniform(0.0, 0.2, 200), rng.uniform(0.1, 0.9, 200)]
+    rt_cfg = learn_routing_thresholds_on_held_out(
+        labels=y_rt,
+        calibrated_fusion_probs=p_fus,
+        calibrated_srm_probs=p_srm,
+        calibrated_probe_probs=p_prb,
+        hotspot_z_scores=hz_rt,
+        active_domains=dom_rt,
+        doc_tamper_scores=doc_rt,
+        max_escalation_budget=0.35,
+    )
     assert rt_cfg["feasible"] is True and rt_cfg["escalation_rate"] <= 0.35
 
-    rt_infeasible = learn_routing_thresholds_on_held_out(y_rt, p_fus, p_srm, p_prb, hz_rt, max_escalation_budget=0.001)
+    rt_infeasible = learn_routing_thresholds_on_held_out(
+        labels=y_rt,
+        calibrated_fusion_probs=p_fus,
+        calibrated_srm_probs=p_srm,
+        calibrated_probe_probs=p_prb,
+        hotspot_z_scores=hz_rt,
+        max_escalation_budget=0.001,
+    )
     assert rt_infeasible["feasible"] is False
     rt_infeasible_test = evaluate_frozen_routing_on_test(rt_infeasible, y_rt, p_fus, p_srm, p_prb, hz_rt)
     assert rt_infeasible_test["test_escalation_rate"] == 0.0
@@ -1084,13 +1313,37 @@ def run_self_tests() -> None:
     stub_model = _TinyVisionLanguageStub(hidden_dim=16)
     synth_train = []
     synth_val = []
+    synth_test = []
     for idx in range(16):
         lbl = idx % 2
         color = (220, 40, 40) if lbl == 1 else (30, 180, 60)
         img = Image.new("RGB", (640, 480), color=color)
         axes = [float(lbl), float(lbl), np.nan, np.nan, np.nan, np.nan]
         synth_train.append({"image_id": f"train_src{idx}_crop1.png", "pil_image": img, "label": lbl, "axes_6d": axes})
-        synth_val.append({"image_id": f"val_src{idx}.png", "pil_image": img, "label": lbl, "axes_6d": axes})
+        synth_val.append({
+            "image_id": f"val_src{idx}.png",
+            "pil_image": img,
+            "label": lbl,
+            "axes_6d": axes,
+            "fast_fusion_prob": 0.85 if lbl == 1 else 0.15,
+            "srm_score": 0.80 if lbl == 1 else 0.10,
+            "vfm_probe_score": 0.88 if lbl == 1 else 0.12,
+            "hotspot_z": 2.2 if lbl == 1 else 0.4,
+            "doc_tamper_score": 0.0,
+            "active_domain": "human_face",
+        })
+        synth_test.append({
+            "image_id": f"test_src{idx}.png",
+            "pil_image": img,
+            "label": lbl,
+            "axes_6d": axes,
+            "fast_fusion_prob": 0.85 if lbl == 1 else 0.15,
+            "srm_score": 0.80 if lbl == 1 else 0.10,
+            "vfm_probe_score": 0.88 if lbl == 1 else 0.12,
+            "hotspot_z": 2.2 if lbl == 1 else 0.4,
+            "doc_tamper_score": 0.0,
+            "active_domain": "human_face",
+        })
 
     def _stub_collator(img: Image.Image, prompt: str, label: float, dev: Any) -> Dict[str, Any]:
         arr = np.asarray(img, dtype=np.float32).mean(axis=(0, 1)) / 255.0
@@ -1103,6 +1356,7 @@ def run_self_tests() -> None:
             batch_collator=_stub_collator,
             train_records=synth_train,
             val_records=synth_val,
+            test_records=synth_test,
             hidden_dim=16,
             max_steps=25,
             image_max_px=256,
@@ -1114,6 +1368,8 @@ def run_self_tests() -> None:
         assert train_metrics["final_loss"] < train_metrics["initial_loss"]
         assert train_metrics["mean_downscale_ratio"] > 1.0  # 640px resized to 256px
         assert Path(train_metrics["policy_artifact_path"]).is_file()
+        assert "val_metrics" in train_metrics and "test_metrics" in train_metrics
+        assert "test_routing" in train_metrics
         print(
             f"  [PASS] Supervised VLM Training Loop (25 steps): loss {train_metrics['initial_loss']:.4f} -> "
             f"{train_metrics['final_loss']:.4f}, downscale_ratio={train_metrics['mean_downscale_ratio']:.2f}"
@@ -1121,12 +1377,13 @@ def run_self_tests() -> None:
 
 
 def export_cross_language_parity_fixture(output_path: Path, hidden_dim: int = 8, seed: int = 20261028) -> Dict[str, Any]:
-    """Writes a deterministic, explicitly NON-TRAINED policy fixture plus expected head outputs.
+    """Writes a deterministic, explicitly NON-TRAINED policy fixture plus expected head outputs
+    and cross-language routing test fixtures.
 
-    Android's `OnDemandForensicVlmAnalyzerContractTest` loads this file and asserts that
-    `PolicyBundle.fromJson` + `projectWithHeadContract` reproduce Python's
-    `MaskedAuxiliaryForensicHead.predict` for the same `h_last`. The weights are random and
-    must never be shipped or treated as a forensic model.
+    Android's `OnDemandForensicVlmAnalyzerContractTest` loads this file and asserts that:
+    1. `PolicyBundle.fromJson` + `projectWithHeadContract` reproduce Python's `head.predict`.
+    2. `routeWithPolicy` reproduces Python's `route_with_policy` across all 10 routing fixtures.
+    3. Fine-grained threshold precision is preserved in float32.
     """
     rng = np.random.default_rng(seed)
     head = MaskedAuxiliaryForensicHead(hidden_dim=hidden_dim)
@@ -1136,6 +1393,8 @@ def export_cross_language_parity_fixture(output_path: Path, hidden_dim: int = 8,
     head.b_axes = np.round(rng.normal(0.0, 0.2, 6), 6)
     head.w_counter_axes = np.round(rng.normal(0.0, 0.5, (hidden_dim, 6)), 6)
     head.b_counter_axes = np.round(rng.normal(0.0, 0.2, 6), 6)
+    head.axes_supervised = [True, True, True, True, False, False]
+
     routing_cfg = {
         "feasible": True,
         "decision_threshold_dev": 0.5782,
@@ -1163,6 +1422,143 @@ def export_cross_language_parity_fixture(output_path: Path, hidden_dim: int = 8,
             None if not math.isfinite(v) else v for v in expected_masked["forgery_logits_6d"]
         ],
     }
+
+    # Cross-language routing fixtures covering documents, missing scores, memory limits, and threshold boundaries
+    routing_cases = [
+        {
+            "name": "confident_fast_face_no_escalate",
+            "fast_fusion_prob": 0.95,
+            "srm_calibrated_score": 0.90,
+            "vfm_probe_score": 0.92,
+            "hotspot_z_score": 0.5,
+            "active_domain": "human_face",
+            "doc_tamper_score": 0.0,
+            "available_heap_mb": 256,
+            "require_explanation": False,
+        },
+        {
+            "name": "boundary_uncertainty_escalates",
+            "fast_fusion_prob": routing_cfg["decision_threshold_dev"],
+            "srm_calibrated_score": 0.50,
+            "vfm_probe_score": 0.50,
+            "hotspot_z_score": 0.0,
+            "active_domain": "human_face",
+            "doc_tamper_score": 0.0,
+            "available_heap_mb": 256,
+            "require_explanation": False,
+        },
+        {
+            "name": "document_tamper_escalates_on_document_text",
+            "fast_fusion_prob": 0.10,
+            "srm_calibrated_score": 0.12,
+            "vfm_probe_score": 0.15,
+            "hotspot_z_score": 0.2,
+            "active_domain": "document_text",
+            "doc_tamper_score": 0.85,
+            "available_heap_mb": 256,
+            "require_explanation": False,
+        },
+        {
+            "name": "document_tamper_ignored_on_human_face",
+            "fast_fusion_prob": 0.10,
+            "srm_calibrated_score": 0.12,
+            "vfm_probe_score": 0.15,
+            "hotspot_z_score": 0.2,
+            "active_domain": "human_face",
+            "doc_tamper_score": 0.85,
+            "available_heap_mb": 256,
+            "require_explanation": False,
+        },
+        {
+            "name": "cross_engine_conflict_escalates",
+            "fast_fusion_prob": 0.90,
+            "srm_calibrated_score": 0.95,
+            "vfm_probe_score": 0.05,
+            "hotspot_z_score": 0.0,
+            "active_domain": "human_face",
+            "doc_tamper_score": 0.0,
+            "available_heap_mb": 256,
+            "require_explanation": False,
+        },
+        {
+            "name": "missing_probe_score_nan_safe",
+            "fast_fusion_prob": 0.95,
+            "srm_calibrated_score": 0.92,
+            "vfm_probe_score": None,
+            "hotspot_z_score": 0.0,
+            "active_domain": "human_face",
+            "doc_tamper_score": 0.0,
+            "available_heap_mb": 256,
+            "require_explanation": False,
+        },
+        {
+            "name": "localized_hotspot_roi_escalates",
+            "fast_fusion_prob": 0.95,
+            "srm_calibrated_score": 0.92,
+            "vfm_probe_score": 0.90,
+            "hotspot_z_score": 2.50,
+            "active_domain": "human_face",
+            "doc_tamper_score": 0.0,
+            "available_heap_mb": 256,
+            "require_explanation": False,
+        },
+        {
+            "name": "memory_constrained_micro_moe_only",
+            "fast_fusion_prob": routing_cfg["decision_threshold_dev"],
+            "srm_calibrated_score": 0.50,
+            "vfm_probe_score": 0.50,
+            "hotspot_z_score": 0.0,
+            "active_domain": "human_face",
+            "doc_tamper_score": 0.0,
+            "available_heap_mb": 64,
+            "require_explanation": False,
+        },
+        {
+            "name": "explanation_requested_forces_cot_mode",
+            "fast_fusion_prob": 0.95,
+            "srm_calibrated_score": 0.90,
+            "vfm_probe_score": 0.92,
+            "hotspot_z_score": 0.0,
+            "active_domain": "human_face",
+            "doc_tamper_score": 0.0,
+            "available_heap_mb": 256,
+            "require_explanation": True,
+        },
+        {
+            "name": "infeasible_policy_never_escalates",
+            "fast_fusion_prob": routing_cfg["decision_threshold_dev"],
+            "srm_calibrated_score": 0.95,
+            "vfm_probe_score": 0.05,
+            "hotspot_z_score": 3.0,
+            "active_domain": "document_text",
+            "doc_tamper_score": 0.99,
+            "available_heap_mb": 256,
+            "require_explanation": True,
+            "override_policy_infeasible": True,
+        },
+    ]
+
+    evaluated_routing_cases = []
+    for c in routing_cases:
+        pol = dict(routing_cfg)
+        if c.get("override_policy_infeasible"):
+            pol["feasible"] = False
+        res = route_with_policy(
+            policy=pol,
+            fast_fusion_prob=float(c["fast_fusion_prob"]),
+            srm_calibrated_score=float(c["srm_calibrated_score"]),
+            vfm_probe_score=float(c["vfm_probe_score"]) if c["vfm_probe_score"] is not None else None,
+            hotspot_z_score=float(c["hotspot_z_score"]),
+            active_domain=str(c["active_domain"]),
+            doc_tamper_score=float(c["doc_tamper_score"]),
+            available_heap_mb=int(c["available_heap_mb"]),
+            require_explanation=bool(c["require_explanation"]),
+        )
+        c_copy = dict(c)
+        c_copy["expected"] = res
+        evaluated_routing_cases.append(c_copy)
+
+    payload["routing_parity_fixtures"] = evaluated_routing_cases
     output_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return payload
 
