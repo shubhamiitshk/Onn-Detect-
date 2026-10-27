@@ -1246,14 +1246,30 @@ def _load_jsonl_records(dataset_jsonl: Path) -> Tuple[List[Dict[str, Any]], List
         raise FileNotFoundError(f"Dataset JSONL not found: {dataset_jsonl}")
 
     records: List[Dict[str, Any]] = []
+    jsonl_dir = dataset_jsonl.resolve().parent
     for line_idx, line in enumerate(dataset_jsonl.read_text(encoding="utf-8").splitlines()):
         line = line.strip()
         if not line:
             continue
         try:
-            records.append(json.loads(line))
+            rec = json.loads(line)
         except json.JSONDecodeError as e:
             raise ValueError(f"Failed to parse JSON on line {line_idx + 1} of {dataset_jsonl}: {e}")
+
+        if "image_path" in rec and rec["image_path"]:
+            p = Path(rec["image_path"])
+            if not p.is_file():
+                candidates = [
+                    jsonl_dir / rec["image_path"],
+                    jsonl_dir / "images" / p.name,
+                    Path.cwd() / rec["image_path"],
+                    Path.cwd() / "data" / "forensic_pilot" / "images" / p.name,
+                ]
+                for cand in candidates:
+                    if cand.is_file():
+                        rec["image_path"] = str(cand.resolve())
+                        break
+        records.append(rec)
 
     validate_dataset_records(records)
 
