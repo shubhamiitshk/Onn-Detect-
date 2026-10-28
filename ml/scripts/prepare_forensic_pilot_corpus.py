@@ -185,9 +185,6 @@ class FrozenSpecialistRunner:
                 self.siglip_out = self.siglip_interp.get_output_details()[0]["index"]
             except Exception:
                 self.siglip_interp = None
-            self.siglip_interp.allocate_tensors()
-            self.siglip_inp = self.siglip_interp.get_input_details()[0]["index"]
-            self.siglip_out = self.siglip_interp.get_output_details()[0]["index"]
 
     def score_srm_tensor(self, mosaic_128: Image.Image) -> float:
         if self.srm_interp is None:
