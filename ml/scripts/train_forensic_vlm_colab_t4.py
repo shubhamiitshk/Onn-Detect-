@@ -42,6 +42,14 @@ from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 import numpy as np
 from PIL import Image
 
+# Gracefully bypass broken torchvision / torchaudio C++ extension mismatches in Colab
+import sys
+for mod in ("torchvision", "torchaudio"):
+    try:
+        __import__(mod)
+    except Exception:
+        sys.modules[mod] = None
+
 
 # ============================================================================
 # 1. Published Reference Model Configurations (Language + Vision Projector)

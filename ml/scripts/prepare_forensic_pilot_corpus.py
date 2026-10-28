@@ -169,13 +169,22 @@ class FrozenSpecialistRunner:
         self.siglip_interp: Optional[Any] = None
 
         if litert is not None and SRM_MODEL_PATH.is_file():
-            self.srm_interp = litert.Interpreter(str(SRM_MODEL_PATH))
-            self.srm_interp.allocate_tensors()
-            self.srm_inp = self.srm_interp.get_input_details()[0]["index"]
-            self.srm_out = self.srm_interp.get_output_details()[0]["index"]
+            try:
+                self.srm_interp = litert.Interpreter(str(SRM_MODEL_PATH))
+                self.srm_interp.allocate_tensors()
+                self.srm_inp = self.srm_interp.get_input_details()[0]["index"]
+                self.srm_out = self.srm_interp.get_output_details()[0]["index"]
+            except Exception:
+                self.srm_interp = None
 
         if litert is not None and SIGLIP_MODEL_PATH.is_file():
-            self.siglip_interp = litert.Interpreter(str(SIGLIP_MODEL_PATH))
+            try:
+                self.siglip_interp = litert.Interpreter(str(SIGLIP_MODEL_PATH))
+                self.siglip_interp.allocate_tensors()
+                self.siglip_inp = self.siglip_interp.get_input_details()[0]["index"]
+                self.siglip_out = self.siglip_interp.get_output_details()[0]["index"]
+            except Exception:
+                self.siglip_interp = None
             self.siglip_interp.allocate_tensors()
             self.siglip_inp = self.siglip_interp.get_input_details()[0]["index"]
             self.siglip_out = self.siglip_interp.get_output_details()[0]["index"]
