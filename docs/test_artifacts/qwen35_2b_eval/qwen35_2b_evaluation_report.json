@@ -1,0 +1,54 @@
+{
+  "model_name": "Qwen/Qwen3.5-2B",
+  "embedding_dim": 2048,
+  "dtype": "bfloat16",
+  "selected_C": 100.0,
+  "decision_threshold": 0.6457,
+  "splits": {
+    "stacking": {
+      "n_samples": 100,
+      "real": 50,
+      "synthetic": 50
+    },
+    "fusion_val": {
+      "n_samples": 100,
+      "real": 50,
+      "synthetic": 50,
+      "auc": 0.9612
+    },
+    "calibration": {
+      "n_samples": 100,
+      "real": 50,
+      "synthetic": 50
+    },
+    "test": {
+      "n_samples": 200,
+      "real": 100,
+      "synthetic": 100,
+      "auc": 0.9295,
+      "eer": 0.1500,
+      "tpr_at_fpr_1pct": 0.4100,
+      "accuracy_at_threshold": 0.8300,
+      "decision_threshold": 0.6457
+    }
+  },
+  "comparison": {
+    "embeddinggemma2": {
+      "auc": 0.9006,
+      "tpr_at_fpr_1pct": 0.2100,
+      "eer": 0.1800,
+      "accuracy_at_threshold": 0.8200
+    },
+    "siglip_probe_int8": {
+      "auc_linear": 0.8919,
+      "auc_tap": 0.9921,
+      "tpr_at_fpr_1pct": 0.7243,
+      "eer": 0.1250,
+      "accuracy_at_threshold": 0.8800
+    }
+  },
+  "decision_gate": {
+    "slot_6_apk_inclusion": "REJECTED (0.4100 TPR@1%FPR < 0.7243 SigLIP; 1.95 GB Q4 footprint violates <150MB APK limit)",
+    "tier_2_deep_scan": "APPROVED (Strongest VLM backbone tested; 0.9295 AUC, +0.2000 TPR gain over Gemma 2; packaged as qwen3.5-2b.zip for VlmPackManager)"
+  }
+}
