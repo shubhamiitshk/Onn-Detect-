@@ -471,6 +471,7 @@ def main() -> None:
     parser.add_argument("--data-root", type=Path, help="Path to openfake_visual dataset root")
     parser.add_argument("--output-dir", type=Path, help="Directory for cache, head weights, and report")
     parser.add_argument("--model-name", default="Qwen/Qwen3.5-2B", help="HF Qwen model id (default: Qwen/Qwen3.5-2B)")
+    parser.add_argument("--adapter-dir", type=Path, default=None, help="Path to fine-tuned LoRA adapter directory (e.g. adapter_final)")
     parser.add_argument("--device", default="cuda", help="Torch device (cuda or cpu)")
     parser.add_argument("--self-test", action="store_true", help="Run offline synthetic self-test")
     args = parser.parse_args()
@@ -506,10 +507,19 @@ def main() -> None:
         torch_dtype=dtype,
         device_map="auto" if device == "cuda" else None,
     )
+    model_display_name = args.model_name
+    if args.adapter_dir is not None:
+        if not args.adapter_dir.exists():
+            raise FileNotFoundError(f"Adapter directory not found: {args.adapter_dir}")
+        print(f"[LoRA] Attaching fine-tuned LoRA adapter from: {args.adapter_dir}")
+        from peft import PeftModel
+        model = PeftModel.from_pretrained(model, str(args.adapter_dir))
+        model_display_name = f"{args.model_name} (LoRA Fine-Tuned)"
+
     model.eval()
 
     extractor = QwenFeatureExtractor(model, processor, device=device)
-    run_benchmark(args.data_root, args.output_dir, extractor, args.model_name)
+    run_benchmark(args.data_root, args.output_dir, extractor, model_display_name)
 
 
 if __name__ == "__main__":
