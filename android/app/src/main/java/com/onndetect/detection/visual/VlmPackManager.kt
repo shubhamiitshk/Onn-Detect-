@@ -52,7 +52,7 @@ object VlmPackManager {
 
     // Pre-configured public Google Drive / repository links
     const val DRIVE_FOLDER_URL = "https://drive.google.com/drive/folders/1_OnnDetect_Forensic_VLM_Packs"
-    const val QWEN_08B_DRIVE_URL = "https://drive.google.com/file/d/1fXMpdUyDywQ7mjunDfK5LupzAYgBX25s/view?usp=sharing"
+    const val QWEN_08B_DRIVE_URL = "https://drive.google.com/file/d/1RebNvwSFNQpJQeI4loPpdL13C3fuH5m1/view?usp=sharing"
     const val SMOLVLM_500M_DRIVE_URL = "https://drive.google.com/uc?export=download&id=1_SmolVLM2_500M_Pack"
     const val QWEN_2B_DRIVE_URL = "https://drive.google.com/uc?export=download&id=1_Qwen35_2B_Pack"
 
