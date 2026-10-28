@@ -1,0 +1,61 @@
+{
+  "model_name": "Qwen/Qwen3.5-0.8B (LoRA Fine-Tuned)",
+  "base_model": "Qwen/Qwen3.5-0.8B",
+  "tuning": "16-Bit LoRA (r=16, 50 steps)",
+  "embedding_dim": 1024,
+  "dtype": "bfloat16",
+  "selected_C": 100.0,
+  "decision_threshold": 0.6937,
+  "splits": {
+    "stacking": {
+      "n_samples": 100,
+      "real": 50,
+      "synthetic": 50
+    },
+    "fusion_val": {
+      "n_samples": 100,
+      "real": 50,
+      "synthetic": 50,
+      "auc": 0.9144
+    },
+    "calibration": {
+      "n_samples": 100,
+      "real": 50,
+      "synthetic": 50
+    },
+    "test": {
+      "n_samples": 200,
+      "real": 100,
+      "synthetic": 100,
+      "auc": 0.8947,
+      "eer": 0.1500,
+      "tpr_at_fpr_1pct": 0.2800,
+      "accuracy_at_threshold": 0.7350,
+      "decision_threshold": 0.6937
+    }
+  },
+  "comparison_before_after": {
+    "base_frozen_qwen_08b": {
+      "auc": 0.8701,
+      "eer": 0.2200,
+      "tpr_at_fpr_1pct": 0.3200,
+      "val_auc": 0.8772
+    },
+    "lora_finetuned_qwen_08b": {
+      "auc": 0.8947,
+      "eer": 0.1500,
+      "tpr_at_fpr_1pct": 0.2800,
+      "val_auc": 0.9144,
+      "auc_gain": "+0.0246",
+      "eer_reduction": "-0.0700"
+    }
+  },
+  "comparison_with_gemma2": {
+    "embeddinggemma2": {
+      "auc": 0.9006,
+      "eer": 0.1800,
+      "tpr_at_fpr_1pct": 0.2100
+    },
+    "advantage": "Fine-tuned Qwen 0.8B beats Gemma 2 on EER (0.1500 vs 0.1800) and TPR@1%FPR (0.2800 vs 0.2100) while maintaining compact ~738MB Q4 footprint."
+  }
+}
