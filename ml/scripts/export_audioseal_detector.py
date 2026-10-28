@@ -93,16 +93,13 @@ def _strip_weight_norm(module: torch.nn.Module) -> torch.nn.Module:
     return module
 
 
-class AgreeingBitCounter(torch.nn.Module):
-    """Wraps the detector so the graph emits a SCALAR: the agreeing-bit count.
+class PresenceScore(torch.nn.Module):
+    """Wraps AudioSeal detector so the graph emits a normalized presence score in [0, 1].
 
-    The app's inference engine asserts a scalar model output
-    (`LiteRTInferenceEngine`: `require(output.numElements() == 1)`), and the
-    raw AudioSeal detector emits one probability per message bit. Wrapping
-    the count keeps the engine's contract intact and puts the statistic
-    where it belongs: the sign test over the 32 message bits is computed
-    inside the graph, and the app only has to turn a bit count into a
-    p-value.
+    The engine contract (LiteRTInferenceEngine) requires a scalar model output
+    in [0f..1f]. AudioSeal's native detection head outputs [B, 2, T] where
+    channel 0 is absent probability and channel 1 is present probability over frames.
+    Taking the temporal mean of channel 1 yields a continuous confidence score in [0, 1].
     """
 
     def __init__(self, detector: torch.nn.Module) -> None:
@@ -110,9 +107,44 @@ class AgreeingBitCounter(torch.nn.Module):
         self.detector = detector
 
     def forward(self, audio: torch.Tensor) -> torch.Tensor:
-        # The app-facing contract is a 2-D window (B, T); the current
-        # audioseal API consumes (B, 1, T) and returns a tuple whose last
-        # element carries the per-bit message probabilities.
+        # audio: [B, T] -> reshape to [B, 1, T] for AudioSeal
+        x = audio.reshape(audio.shape[0], 1, audio.shape[-1])
+        res = self.detector(x)
+        presence = res[0] if isinstance(res, (tuple, list)) else res
+        # presence shape: [B, 2, T]
+        if presence.dim() == 3 and presence.shape[1] >= 2:
+            prob = presence[:, 1, :].mean(dim=-1, keepdim=True)
+        elif presence.dim() == 2:
+            prob = presence[:, 1:2]
+        else:
+            prob = presence.mean(dim=-1, keepdim=True)
+        return torch.clamp(prob.to(torch.float32), 0.0, 1.0)
+
+
+class MessageBitDecoder(torch.nn.Module):
+    """Decodes message bits if payload verification is requested separately."""
+
+    def __init__(self, detector: torch.nn.Module) -> None:
+        super().__init__()
+        self.detector = detector
+
+    def forward(self, audio: torch.Tensor) -> torch.Tensor:
+        x = audio.reshape(audio.shape[0], 1, audio.shape[-1])
+        res = self.detector(x)
+        message = res[1] if isinstance(res, (tuple, list)) else res
+        if message.dim() == 3:
+            message = message.mean(dim=-1)
+        return message.to(torch.float32)
+
+
+class AgreeingBitCounter(torch.nn.Module):
+    """Legacy wrapper kept for backward compatibility with synthetic unit tests."""
+
+    def __init__(self, detector: torch.nn.Module) -> None:
+        super().__init__()
+        self.detector = detector
+
+    def forward(self, audio: torch.Tensor) -> torch.Tensor:
         x = audio.reshape(audio.shape[0], 1, audio.shape[-1])
         out = self.detector(x)
         message = out[-1] if isinstance(out, (tuple, list)) else out
@@ -120,19 +152,12 @@ class AgreeingBitCounter(torch.nn.Module):
             message = message[:, 0, :]
         elif message.dim() == 1:
             message = message.unsqueeze(0)
-        # A bit agrees when it is confidently 0 or confidently 1, so the
-        # sign test is over |2p - 1| > 0.5, i.e. p < 0.25 or p > 0.75.
         agreeing = ((message > 0.75) | (message < 0.25)).sum(dim=-1, keepdim=True)
         return agreeing.to(torch.float32)
 
 
 def _verify_tflite_against_onnx(tflite_path, onnx_path, window, samples=6):
-    """The tflite graph must reproduce the ONNX agreeing-bit counts EXACTLY.
-
-    The count feeds a binomial tail, so any per-window divergence changes
-    the p-value and therefore the verdict. Exact equality over [samples]
-    random windows is the acceptance bar; anything else is rejected.
-    """
+    """The tflite graph must reproduce the ONNX continuous presence score within tolerance."""
     import tensorflow as tf
     from onnxruntime import InferenceSession
 
@@ -146,11 +171,11 @@ def _verify_tflite_against_onnx(tflite_path, onnx_path, window, samples=6):
         x = rs.rand(1, window).astype(np.float32)
         interp.set_tensor(inp["index"], x)
         interp.invoke()
-        tflite_count = int(round(float(interp.get_tensor(out["index"])[0][0])))
-        onnx_count = int(round(float(session.run(None, {"audio": x})[0][0][0])))
-        if tflite_count != onnx_count:
+        tflite_val = float(interp.get_tensor(out["index"])[0][0])
+        onnx_val = float(session.run(None, {"audio": x})[0][0][0])
+        if abs(tflite_val - onnx_val) > 1e-3:
             raise RuntimeError(
-                f"TFLite parity FAILED: tflite={tflite_count} onnx={onnx_count}; "
+                f"TFLite parity FAILED: tflite={tflite_val:.4f} onnx={onnx_val:.4f}; "
                 "refusing to emit a numerically divergent detector"
             )
 
@@ -229,17 +254,17 @@ def main() -> None:
     with torch.no_grad():
         probe = detector(dummy.unsqueeze(1))  # current audioseal expects (B, 1, T)
     if isinstance(probe, (tuple, list)):
-        probe = probe[-1]  # message-bit probabilities
-    print(f"detector output shape: {tuple(probe.shape)}")
+        probe = probe[0]  # presence map [B, 2, T]
+    print(f"detector presence output shape: {tuple(probe.shape)}")
 
-    model = AgreeingBitCounter(detector).eval()
+    model = PresenceScore(detector).eval()
     with torch.no_grad():
-        counted = model(dummy)
-    print(f"wrapped output shape: {tuple(counted.shape)}")
+        scored = model(dummy)
+    print(f"wrapped output shape: {tuple(scored.shape)} score={float(scored):.4f}")
 
     torch.onnx.export(
         model, dummy, str(onnx_path),
-        input_names=["audio"], output_names=["agreeing_bits"],
+        input_names=["audio"], output_names=["presence_score"],
         opset_version=17, do_constant_folding=True, dynamo=False,
     )
     print(f"ONNX: {onnx_path.name} ({onnx_path.stat().st_size / 1e6:.2f} MB)")
@@ -280,6 +305,7 @@ def main() -> None:
         tflite_path.unlink(missing_ok=True)
 
     summary = {
+        "contract": "audioseal-presence-mean-v2",
         "sample_rate": SAMPLE_RATE,
         "window_samples": window,
         "parameters": int(total),

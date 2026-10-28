@@ -66,8 +66,11 @@ class AudioSealDetector internal constructor(
     data class DetectionResult(
         val detected: Boolean,
         val pValue: Double,
-        val agreeingBits: Int,
-        val totalBits: Int,
+        val agreeingBits: Int = 0,
+        val totalBits: Int = MESSAGE_BITS,
+        val presenceScore: Float = 0f,
+        val uncorrectedPValue: Double = pValue,
+        val windowCount: Int = 1,
     )
 
     /**
@@ -83,13 +86,17 @@ class AudioSealDetector internal constructor(
         return ProvenanceEvidence.WatermarkMark(
             detected = true,
             kind = "AudioSeal",
+            score = result.presenceScore,
             pValue = result.pValue,
         )
     }
 
     /**
      * Run the detector over fixed windows and aggregate the strongest
-     * message.
+     * message or highest temporal presence confidence.
+     *
+     * Applies Bonferroni multiple testing correction over the number of windows
+     * to eliminate family-wise error inflation on long recordings.
      *
      * Returns null when the detector graph is not available.
      */
@@ -108,12 +115,29 @@ class AudioSealDetector internal constructor(
             val offset = index * windowSamples
             val result = runCatching { scoreWindow(samples, offset, windowSamples, contract.inputBytes) }
                 .getOrNull() ?: continue
-            if (best == null || result.pValue < best.pValue) best = result
+            if (best == null || result.pValue < best.pValue || result.presenceScore > best.presenceScore) {
+                best = result
+            }
         }
-        return best
+        if (best == null) return null
+
+        // Apply Bonferroni correction for multiple hypothesis testing over M windows:
+        val adjustedPValue = (best.pValue * windows).coerceIn(0.0, 1.0)
+        val isDetected = if (best.presenceScore > 0f) {
+            best.presenceScore >= PRESENCE_THRESHOLD
+        } else {
+            best.agreeingBits >= MIN_AGREEING_BITS && adjustedPValue < SIGNIFICANT_P_VALUE
+        }
+
+        return best.copy(
+            detected = isDetected,
+            pValue = adjustedPValue,
+            uncorrectedPValue = best.pValue,
+            windowCount = windows,
+        )
     }
 
-    /** Score one window and turn the message bits into a p-value. */
+    /** Score one window and turn the model output into a calibrated presence or p-value statistic. */
     private fun scoreWindow(
         samples: FloatArray,
         offset: Int,
@@ -123,19 +147,30 @@ class AudioSealDetector internal constructor(
         val input = ByteBuffer.allocateDirect(inputBytes).order(ByteOrder.nativeOrder())
         for (i in 0 until windowSamples) input.putFloat(samples[offset + i])
         input.flip()
-        // The exported graph emits a SCALAR: the number of message bits
-        // that agree (confidently 0 or confidently 1). The app's inference
-        // engine asserts a scalar output, so the sign test is computed
-        // inside the graph and only the bit count crosses the boundary.
-        val agreeing = predictor(MODEL_FILE, input)
-        if (!agreeing.isFinite() || agreeing < 0f) return null
-        val count = agreeing.roundToInt().coerceIn(0, MESSAGE_BITS)
+        // The exported graph emits a SCALAR: either a normalized presence confidence score
+        // in [0f..1f] (contract `audioseal-presence-mean-v2`), or an agreeing bit count [0..16]
+        // in legacy compatibility mode.
+        val raw = predictor(MODEL_FILE, input)
+        if (!raw.isFinite() || raw < 0f) return null
+
+        val count = raw.roundToInt().coerceIn(0, MESSAGE_BITS)
         val pValue = binomialTwoTailed(count, MESSAGE_BITS)
+        val isContinuous = raw > 0f && raw < 1.0f
+        val presence = if (isContinuous) raw else (if (raw >= 1.0f) 1.0f else 0f)
+        val isDetected = if (isContinuous) {
+            raw >= PRESENCE_THRESHOLD
+        } else {
+            count >= MIN_AGREEING_BITS && pValue < SIGNIFICANT_P_VALUE
+        }
+
         return DetectionResult(
-            detected = count >= MIN_AGREEING_BITS && pValue < SIGNIFICANT_P_VALUE,
+            detected = isDetected,
             pValue = pValue,
             agreeingBits = count,
             totalBits = MESSAGE_BITS,
+            presenceScore = if (isContinuous) raw else 0f,
+            uncorrectedPValue = pValue,
+            windowCount = 1,
         )
     }
 
@@ -158,6 +193,9 @@ class AudioSealDetector internal constructor(
     companion object {
         const val MODEL_FILE = "audioseal_detector_int8.tflite"
         const val SAMPLE_RATE = 16000
+
+        /** Calibrated watermark presence probability threshold for v2 presence detector. */
+        const val PRESENCE_THRESHOLD = 0.50f
 
         /**
          * The published detector carries a 16-bit message head. Requiring

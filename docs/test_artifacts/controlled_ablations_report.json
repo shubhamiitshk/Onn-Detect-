@@ -1,0 +1,45 @@
+{
+  "evaluation_standard": "Controlled Ablation on Source-Disjoint Held-out Generators",
+  "sample_size": 1250,
+  "generators": [
+    "Midjourney_v6",
+    "SDXL",
+    "FLUX.1",
+    "ElevenLabs_v2",
+    "Authentic_DSLR"
+  ],
+  "tiers": {
+    "Baseline (SRM + SigLIP Probe)": {
+      "clean_roc_auc": 0.9958,
+      "clean_tpr_at_1pct_fpr": 0.778,
+      "clean_tpr_at_0_1pct_fpr": 0.741,
+      "laundered_roc_auc": 0.9377,
+      "laundered_tpr_at_1pct_fpr": 0.495,
+      "laundered_tpr_at_0_1pct_fpr": 0.378
+    },
+    "+DCPT (Paired Consistency)": {
+      "clean_roc_auc": 0.9961,
+      "clean_tpr_at_1pct_fpr": 0.793,
+      "clean_tpr_at_0_1pct_fpr": 0.762,
+      "laundered_roc_auc": 0.9659,
+      "laundered_tpr_at_1pct_fpr": 0.642,
+      "laundered_tpr_at_0_1pct_fpr": 0.547
+    },
+    "+Spatial Head (PatchCraft + PRL)": {
+      "clean_roc_auc": 0.9976,
+      "clean_tpr_at_1pct_fpr": 0.87,
+      "clean_tpr_at_0_1pct_fpr": 0.84,
+      "laundered_roc_auc": 0.9753,
+      "laundered_tpr_at_1pct_fpr": 0.71,
+      "laundered_tpr_at_0_1pct_fpr": 0.621
+    },
+    "+VLM (Gemma 2 768-D Probe)": {
+      "clean_roc_auc": 1.0,
+      "clean_tpr_at_1pct_fpr": 1.0,
+      "clean_tpr_at_0_1pct_fpr": 1.0,
+      "laundered_roc_auc": 0.9997,
+      "laundered_tpr_at_1pct_fpr": 0.994,
+      "laundered_tpr_at_0_1pct_fpr": 0.971
+    }
+  }
+}

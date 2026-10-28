@@ -24,7 +24,7 @@ Selected file -> bounded import and sRGB/alpha/orientation-aware bitmap decode
     -> memory budget selects full diagnostics, math-only diagnostics, or abstention
     -> per-request RGB float32 tensor sized from the real TFLite input shape
     -> Engine A: SRM PatchCraft 20-channel CNN score
-    -> Engine C: SigLIP-B/16 TAP Foundation Probe score (slot 6, or NaN if unbundled)
+    -> Engine C: SigLIP-B/16 Foundation Probe score (linear probe head in shipped INT8; slot 6, or NaN if unbundled)
     -> Spectral descriptors: 2D FFT azimuthal slope, KL adjacent-pixel difference histogram
     -> Rich-vs-poor texture contrast & sliding-window hotspot localization
     -> 10-slot XGBoost Meta-Fusion over the continuous logit base-margin prior
@@ -33,7 +33,7 @@ Selected file -> bounded import and sRGB/alpha/orientation-aware bitmap decode
 
 The visual forensic pipeline deploys two complementary neural engines:
 1. **Residual Spatial Engine (`srm_forensic_cnn_int8.tflite`)**: Operates on `[1, 128, 128, 3]` float32 input (142 KiB INT8). Dynamic frontend routing dispatches `-patchcraft-mosaic-tile32` checkpoints to `extractPatchCraftMosaics` (which selects the top-16 rich-texture 32×32 tiles based on L1 gradient energy and tiles them into a 128×128 mosaic without downsampling-induced anti-aliasing loss) and legacy checkpoints to `createScaledBitmap` (`-bilinear-square-v2-size128-float32`). The first convolutional layer consists of a fixed, non-trainable 20-channel stem: 12 SRM high-pass filters, 4 NPR upsampling kernels, and 4 centered RGB low-pass filters.
-2. **Vision Foundation Probe (`siglip_probe_int8.tflite`)**: Operates on `[1, 224, 224, 3]` float32 input (89.96 MB INT8). Employs Tunable Attention Pooling (TAP) over 196 patch tokens folded directly into the pre-trained `_SiglipMAPAttention` head (`vm.head`), introducing zero additional ops, zero extra bytes, and 0 ms added inference latency. Memory-mapped directly from the APK page cache with < 14 MB Java heap overhead.
+2. **Vision Foundation Probe (`siglip_probe_int8.tflite`)**: Operates on `[1, 224, 224, 3]` float32 input (89.96 MB INT8). The shipped production model (hash `1b8c4f3de7822196...`) deploys a frozen SigLIP-B/16 tower with a folded linear attention probe (`head_type: linear_probe`). Advanced heads including Tunable Attention Pooling (TAP) and PatchHead/PRL are maintained as experimental candidate training workflows (`train_siglip_tap.py`) documented in `docs/EVIDENCE_CHAIN.md`. Memory-mapped directly from the APK page cache with < 14 MB Java heap overhead.
 3. **Multi-Instance Localization (MIL)**: The diagnostic stack (`patch_extractor.py`, `HeatmapViewer.kt`) supports full-resolution patch extraction with top-$k$ texture selection, rich-vs-poor contrast evaluation (`analyzeWithContrast`), and sliding-window anomaly localization (`extractHotspotBoundingBox`) for reticle overlays.
 
 Image preprocessing normalizes EXIF orientation, sRGB profile conversion, solid white alpha compositing, and power-of-two cap1024 (`rgb-exif-srgb-whitealpha-pow2cap1024-bilinear-square-v2-sizeN-float32`). FFT computes a 256-square radix-2 power spectrum with uint8-truncated luma, matching the declared Python grayscale convention. KL is a 21-bin horizontal adjacent-pixel difference histogram. The diagnostic class historically named `PRNUAnalyzer` reports a residual-energy proxy; it does not perform camera attribution and does not alter the verdict.
@@ -58,10 +58,10 @@ Audio File -> AudioDecoder (16 kHz PCM extraction)
  -> Calibrated Threshold Comparison (0.35547) -> Audio Outcome
 ```
 
-1. **Passive Anti-Spoofing (`lcnn_audio_int8.tflite`)**: 508 KiB INT8 LCNN-MFM scoring 4-second LFCC spectrograms in < 25 ms. Calibrated decision threshold: `0.35546875` (`lcnn_audio_threshold.json`), achieving 0.8747 ROC-AUC and 65.0% TPR @ 1% FPR.
+1. **Passive Anti-Spoofing (`lcnn_audio_int8.tflite`)**: 508 KiB INT8 LCNN-MFM scoring 4-second LFCC spectrograms in < 25 ms. Calibrated decision threshold: `0.35546875` (`lcnn_audio_threshold.json`), achieving 0.8747 ROC-AUC and 65.0% TPR @ 1% FPR. Sub-band non-vocal features are custom lightweight adaptations inspired by MN-P. Balanced watermark decorrelation training reflects WASP guidelines.
 2. **Speech Content & Voiced Duration Gate (`VoicedDurationGate.kt`)**: Non-speech audio (music, silence, acoustic background noise) is safely gated as `INCONCLUSIVE` when voiced duration is under 300 ms (`voicedMs < 300L`), preventing false-positive spoof alarms.
 3. **Log-Sum-Exp Window Pooling (`WindowPooling.kt`)**: Multi-window audio aggregation operates in logit space with temperature $\tau = 3.0$, preventing localized glitches from dominating while preserving genuine spoofing indicators.
-4. **Proactive Watermarking (AudioSeal)**: Sample-level neural watermark detection via 1D SEANet convolutions and exact two-tailed binomial sign test ($k \ge 12, p < 10^{-4}$). Watermark absence evaluates as unknown provenance (`ProvenanceEvidence.Absent`), never penalizing the authentic score.
+4. **Proactive Watermarking (AudioSeal)**: Sample-level neural watermark detection via 1D SEANet convolutions emitting continuous presence probability $\in [0, 1]$ (`audioseal-presence-mean-v2`) and multi-window Bonferroni-corrected binomial sign testing. Watermark presence confirms watermark detection, not definitive proof of AI voice generation (authentic speech may carry watermarks). Watermark absence strictly evaluates as unknown provenance (`ProvenanceEvidence.Absent`), never penalizing authentic scores.
 
 ---
 
@@ -73,10 +73,10 @@ Audio File -> AudioDecoder (16 kHz PCM extraction)
 Video File -> VideoDecoder (sampled timeline frames, N >= 3)
  -> Keyframe Selection (Capping SigLIP tower at 4 keyframes)
  -> PerioralLandmarkAnalyzer (MediaPipe 478-point FaceMesh, microsecond timestamps)
- -> BioLip Biomechanical Forensics:
+ -> BioLip Biomechanical Forensics (Diagnostic Telemetry, inspired by LADDER):
     - 64 perioral landmarks normalized by inter-ocular distance
     - Second-order acceleration jitter across contiguous triplets -> Slot 9
- -> Bilateral Malar rPPG Phase Coherence:
+ -> Bilateral Malar rPPG Phase Coherence (Diagnostic Telemetry, inspired by CHROM):
     - Left and right malar cheek green chrominance BVP tracking
     - First-difference detrending & Pearson correlation across contiguous runs (>= 4 frames)
  -> AVFF Cross-Modal Lip-Sync:
@@ -84,7 +84,7 @@ Video File -> VideoDecoder (sampled timeline frames, N >= 3)
  -> VideoScorePolicy Multimodal Escalation:
     - Threshold-aligned audio projection
     - Monotonic candidate update: base = candidate if candidate > base
-    - Temporal and lip-sync anomaly boost capped at +0.30
+    - Monotonic candidate update: base = candidate if candidate > base (heuristics decoupled to telemetry by default)
  -> Final Calibrated Video Verdict
 ```
 
@@ -132,6 +132,7 @@ The single-sourced 10-feature schema (`FusionFeatureSchema.kt`) is:
   This guarantees that the decision tree refines the probe's ranking rather than diluting confident predictions.
 - **Slots 7–9**: Held at compatibility defaults (`0.05`, `0.9`, `0.1`) until populated by active provenance, lip-sync, and landmark tracking.
 - **Cascade Arbitration (`CascadePolicy.kt`)**: Ambiguity band $[e_{\text{below}}, e_{\text{above}}] = [0.5801, 0.9546]$ (coverage: 97.25%, abstention: 2.75%). Disagreements inside the band map strictly to `DetectionVerdict.INCONCLUSIVE`, optimizing selective accuracy on decisive classifications.
+- **Conformal Prediction Exchangeability & Evidence Chain**: Conformal coverage guarantees require exchangeability ($Z \sim \mathcal{D}$); in out-of-distribution deepfake scenarios, guarantees degrade to empirical bounds. Full paper-to-artifact mapping is maintained in `docs/EVIDENCE_CHAIN.md`.
 
 ---
 

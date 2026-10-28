@@ -16,17 +16,17 @@ ONN-DETECT delivers zero-cloud, privacy-preserving AI media forensics directly o
 ├─────────────────────────────────────────────────────────────────────────────────┤
 │  IMAGE FORENSICS                                                                │
 │  - Engine A: 20-Channel SRM PatchCraft CNN (142 KiB INT8, 128×128)              │
-│  - Engine C: SigLIP-B/16 TAP Foundation Probe (89.96 MB INT8, 224×224)          │
+│  - Engine C: SigLIP-B/16 Foundation Probe (Linear head shipped; TAP candidate)  │
 │  - Meta-Fusion: 10-Slot Base-Margin XGBoost Meta-Classifier (20 KiB)            │
 ├─────────────────────────────────────────────────────────────────────────────────┤
 │  AUDIO & VOICE FORENSICS                                                        │
 │  - Passive Anti-Spoofing: LCNN-MFM + Versioned LFCC v3 Frontend (508 KiB INT8)  │
 │  - Temporal Gating: VoicedDurationGate (≥ 300 ms) & Log-Sum-Exp Pooling         │
-│  - Proactive Watermarking: AudioSeal 1D SEANet with Exact Binomial Sign Test   │
+│  - Proactive Watermarking: AudioSeal Continuous Presence & Bonferroni Bit Sign │
 ├─────────────────────────────────────────────────────────────────────────────────┤
 │  VIDEO & PHYSIOLOGICAL DYNAMICS                                                 │
-│  - Perioral Biomechanics: BioLip 64-Point Landmark Acceleration Jitter (Slot 9) │
-│  - Physiological Signals: Bilateral Malar rPPG Green Chrominance Phase Coherence│
+│  - Perioral Biomechanics: Landmark Jitter Telemetry (LADDER-inspired, Slot 9)   │
+│  - Physiological Signals: Bilateral Malar rPPG Phase Telemetry (CHROM-inspired) │
 │  - Cross-Modal Synchrony: AVFF Lip-Sync Cross-Correlation (MAR vs. RMS, Slot 8) │
 │  - Multimodal Escalation: VideoScorePolicy with Monotonic Candidate Updates    │
 ├─────────────────────────────────────────────────────────────────────────────────┤
@@ -66,7 +66,7 @@ ONN-DETECT delivers zero-cloud, privacy-preserving AI media forensics directly o
   - Lower the model directly via `tf.lite.TFLiteConverter.from_keras_model` with INT8 quantization, packaging `assets/models/audioseal_detector_int8.tflite` with bit-exact agreeing-bit parity ($|\Delta \text{bits}| = 0$).
 - [ ] **Dynamic Mondrian Conformal Prediction Calibration Export**:
   - Export stratified non-conformity quantiles $\hat{q}_{1-\alpha}(m)$ into `assets/constants/conformal_calibration.json` across the 4 primary missingness masks.
-  - Expose prediction set size $|\mathcal{C}(X, m)|$ in the UI, enforcing automatic abstention to `INCONCLUSIVE` when $|\mathcal{C}| \neq 1$.
+  - Expose prediction set size $|\mathcal{C}(X, m)|$ in the UI, enforcing automatic abstention to `INCONCLUSIVE` when $|\mathcal{C}| \neq 1$ (noting exchangeability assumption required for theoretical error bounds).
 
 ---
 

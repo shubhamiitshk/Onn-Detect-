@@ -6,7 +6,7 @@ Read README.md and docs/FIX_STATUS_2026-10-07.md for current behavior. Historica
 
 Keep real=0, synthetic=1 and model scores finite in [0,1]. Missing evidence is unavailable, not zero. Unvalidated releases, failed inference, unsupported media and unvalidated sampled aggregation must abstain. Never invert scores automatically because AUC is below chance. Diagnose labels, frontend and domain.
 
-Do not label a model score as confidence or a calibrated posterior without evidence. Byte-pattern EXIF/C2PA/SynthID matches are not cryptographic attestation. Speaker verification and lip-sync are unavailable; do not synthesize observations for them.
+Do not label a model score as confidence or a calibrated posterior without evidence. Byte-pattern EXIF/C2PA/SynthID matches are not cryptographic attestation. Speaker verification and lip-sync are unavailable; do not synthesize observations for them. Research paper mapping, custom adaptation specifications, and model digests are tracked in docs/EVIDENCE_CHAIN.md. Video heuristics (LADDER-inspired jitter, CHROM-inspired rPPG) are diagnostic telemetry only and decoupled from production verdicts. Conformal prediction theoretical coverage bounds require data exchangeability, which does not hold under arbitrary out-of-distribution generator shifts.
 
 ## Shared contracts
 

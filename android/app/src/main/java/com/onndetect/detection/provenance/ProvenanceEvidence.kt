@@ -42,17 +42,27 @@ sealed interface ProvenanceEvidence {
     /**
      * A watermark mark was detected by a neural watermark detector.
      *
-     * [pValue] is the detector's probability-value-style confidence; a
-     * detection is only treated as positive evidence below
-     * [SIGNIFICANT_P_VALUE].
+     * [pValue] is the detector's probability-value-style confidence;
+     * [score] is the continuous watermark presence confidence in [0f..1f].
+     *
+     * In accordance with the WASP protocol and forensic provenance standards,
+     * detecting a watermark is evidence of watermarking, NOT automatic proof
+     * that speech is synthetic (authentic audio may be watermarked). Absence
+     * remains strictly neutral.
      */
     data class WatermarkMark(
         val detected: Boolean,
         val kind: String,
         val pValue: Double = 1.0,
+        val score: Float = 0f,
     ) : ProvenanceEvidence {
+        /**
+         * Watermark presence provides evidence of neural watermarking, but does NOT
+         * automatically confirm AI generation (authentic recordings may also be watermarked).
+         * Provenance and detector verdicts remain distinct evidence channels.
+         */
         val confirmsAiInvolvement: Boolean
-            get() = detected && pValue < SIGNIFICANT_P_VALUE
+            get() = false
     }
 
     companion object {

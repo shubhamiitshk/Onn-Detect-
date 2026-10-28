@@ -208,9 +208,11 @@ class C2PAManifestCheckerTest {
     }
 
     @Test
-    fun aSignificantWatermarkDetectionConfirms() {
+    fun aSignificantWatermarkDetectionRecordsDetectedWithoutAutomaticAiVerdict() {
         val mark = ProvenanceEvidence.WatermarkMark(detected = true, kind = "audioseal", pValue = 1e-9)
-        assertTrue(mark.confirmsAiInvolvement)
+        assertTrue(mark.detected)
+        // Decoupled: authentic audio can be watermarked, so watermark presence does not prove AI involvement
+        assertFalse(mark.confirmsAiInvolvement)
     }
 
     @Test

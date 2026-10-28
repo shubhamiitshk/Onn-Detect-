@@ -158,7 +158,25 @@ class AudioSealDetectorTest {
         assertTrue("WatermarkMark.detected must be true", mark.detected)
         assertEquals("AudioSeal", mark.kind)
         assertEquals(3.0517578125e-5, mark.pValue, 1e-9)
-        assertTrue("mark must confirm AI involvement", mark.confirmsAiInvolvement)
+        assertFalse("mark presence alone does not confirm AI involvement (authentic audio can be watermarked)", mark.confirmsAiInvolvement)
+    }
+
+    @Test
+    fun `continuous presence score in 0 to 1 range triggers detection without LiteRT contract failure`() {
+        val detector = createDetector(predictor = { _, _ -> 0.95f })
+        val samples = FloatArray(16000) { 0.1f }
+
+        val detail = detector.detectWatermark(samples)
+        assertNotNull(detail)
+        assertTrue("High presence score >= 0.5 must be detected", detail!!.detected)
+        assertEquals(0.95f, detail.presenceScore, 1e-6f)
+
+        val evidence = detector.analyze(samples)
+        assertTrue("Evidence must be WatermarkMark on detection", evidence is ProvenanceEvidence.WatermarkMark)
+        val mark = evidence as ProvenanceEvidence.WatermarkMark
+        assertTrue(mark.detected)
+        assertEquals(0.95f, mark.score, 1e-6f)
+        assertFalse(mark.confirmsAiInvolvement)
     }
 
     @Test
@@ -297,7 +315,9 @@ class AudioSealDetectorTest {
 
         assertNotNull(result)
         assertEquals("Detector must select best window (Window 1)", 16, result!!.agreeingBits)
-        assertEquals(3.0517578125e-5, result.pValue, 1e-9)
+        // Bonferroni adjustment: 2 windows * 3.0517578125e-5 = 6.103515625e-5 < 1e-4
+        assertEquals(2.0 * 3.0517578125e-5, result.pValue, 1e-9)
+        assertEquals(3.0517578125e-5, result.uncorrectedPValue, 1e-9)
         assertTrue(result.detected)
 
         val evidence = detector.analyze(samples)
@@ -319,7 +339,8 @@ class AudioSealDetectorTest {
 
         assertNotNull(result)
         assertEquals("Detector must retain Window 0", 16, result!!.agreeingBits)
-        assertEquals(3.0517578125e-5, result.pValue, 1e-9)
+        assertEquals(2.0 * 3.0517578125e-5, result.pValue, 1e-9)
+        assertEquals(3.0517578125e-5, result.uncorrectedPValue, 1e-9)
         assertTrue(result.detected)
     }
 
@@ -338,6 +359,7 @@ class AudioSealDetectorTest {
 
         assertNotNull("Detector must recover from first window failure and score second window", result)
         assertEquals(16, result!!.agreeingBits)
+        assertEquals(2.0 * 3.0517578125e-5, result.pValue, 1e-9)
         assertTrue(result.detected)
     }
 

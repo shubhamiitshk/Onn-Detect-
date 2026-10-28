@@ -182,7 +182,7 @@ On $N = 16$ trials, the condition $p\text{-value} < 10^{-4}$ is satisfied **excl
 
 Furthermore, in the Android codebase (`AudioSealDetector.kt:122`), detection asserts:
 $$\text{detected} = k \ge 8 \quad \land \quad p\text{-value} < \text{ProvenanceEvidence.SIGNIFICANT\_P\_VALUE}$$
-where `SIGNIFICANT_P_VALUE = 1e-6` (`ProvenanceEvidence.kt:71`). Because the minimum possible two-tailed $p$-value on $N = 16$ trials is $3.0518 \times 10^{-5} > 10^{-6}$, this threshold condition cannot trigger on a 16-bit message head. Reaching $p < 10^{-6}$ requires at least $N \ge 22$ bits ($2 \cdot 2^{-22} \approx 4.77 \times 10^{-7}$). For this reason, the on-device AudioSeal pipeline is maintained as an unreleased reference prototype awaiting graph quantization and payload width reconciliation.
+where `PRESENCE_THRESHOLD = 0.50f` and discrete significance uses $\alpha = 0.05$ with Bonferroni multiple testing correction over $M$ analyzed windows: $p_{\text{adj}} = \min(1.0, p \times M)$. Furthermore, the export contract has been upgraded to emit normalized continuous presence probability $\in [0, 1]$ (`audioseal-presence-mean-v2`) via temporal mean of the presence detector, separating it from the multi-bit payload decoder. Crucially, watermark detection indicates watermark presence rather than conclusive deepfake proof (authentic audio can be watermarked), so `WatermarkMark.confirmsAiInvolvement` returns `false` while absence remains strictly neutral (`ProvenanceEvidence.Absent`).
 
 ### The Absence Invariant
 A fundamental requirement of forensic truthfulness is the **Absence Invariant**:
@@ -201,7 +201,7 @@ This shortcut induces two catastrophic failure modes:
 1. **Adversarial Framing Attack**: An adversary takes an authentic speech recording of an innocent victim and injects a low-amplitude AudioSeal or ElevenLabs watermark. The detector flags the audio as deepfake with $99.9\%$ confidence, raising the Equal Error Rate (EER) from $16.4\%$ to **$74.6\%$**.
 2. **Watermark Stripping Evasion**: Applying a narrow notch filter or lossy compression (Opus at $12\text{ kbps}$) strips the watermark carrier. The detector immediately misclassifies the synthetic speech as authentic (False Negative Rate $> 80\%$).
 
-**The WASP Mitigation Protocol**: To eliminate this shortcut, ONN-DETECT enforces the WASP (Watermark-Aware Speech Processing) decorrelation protocol during model training:
+**The WASP Mitigation Protocol**: To eliminate this shortcut, ONN-DETECT enforces the runtime absence-neutrality invariant inspired by WASP (Watermark-Aware Speech Processing, Müller & Debus, arXiv:2606.23335), and defines the following target decorrelation training protocol for future acoustic retrainings:
 $$\mathcal{D}_{\text{train}} = \{ (x_i, y_i, w_i) \}$$
 where watermark carrier $w \sim \text{AudioSeal}$ is injected into both classes with balanced marginal probabilities:
 $$\mathbb{P}(w = 1 \mid y = 0) = 0.5, \quad \mathbb{P}(w = 1 \mid y = 1) = 0.5$$
@@ -324,7 +324,7 @@ In `ml/src/export/keras_vfm_probe.py`, the native SigLIP architecture implements
 
 Because the query probe $q_{\text{tap}}$, key projection $W_K$, and value projection $W_V$ are completely frozen post-training, the query representation is folded directly into the pre-trained weights at export time:
 $$Q_{\text{const}} = q_{\text{tap}} W_Q \in \mathbb{R}^{1 \times 768}$$
-By updating the static query tensor in the Keras mirror and serializing directly via `tf.lite.TFLiteConverter.from_keras_model`, TAP compiles into the standard INT8 graph (`siglip_probe_int8.tflite`) with **0 additional runtime operations, 0 extra bytes, and 0 ms added inference latency**.
+*Deployment Status Note*: In the shipped release (`onn-prod-v10`), `siglip_probe_int8.tflite` (hash `1b8c4f3de7822196...`) packages the pre-trained SigLIP-B/16 tower with a folded linear attention probe (`head_type: linear_probe`). The zero-overhead TAP architecture and PatchHead/PRL spatial layers are implemented in `train_siglip_tap.py` as candidate research configurations documented in `docs/EVIDENCE_CHAIN.md`.
 
 ## 3.5 Degradation-Consistent Paired Training (DCPT) & Laundered Social Media Robustness
 
@@ -492,7 +492,7 @@ Jitter = clamp( (0.6 * meanAccel + 0.4 * meanMarJerk) / 0.08, 0.0, 1.0 ) ──�
 5. **Linear Normalized Jitter Score**:
    $$\text{raw} = 0.6 \cdot \left( \frac{1}{T} \sum_{t=1}^T \bar{a}_t \right) + 0.4 \cdot \left( \frac{1}{T} \sum_{t=1}^T \text{MARJerk}_t \right)$$
    $$S_{\text{jitter}} = \text{clamp}\left( \frac{\text{raw}}{0.08}, \; 0.0, \; 1.0 \right)$$
-   Assigned directly to feature slot 9 of `XGBoostMetaClassifier`. Returns `Float.NaN` if fewer than 3 contiguous valid frames exist.
+   Assigned directly to feature slot 9 of `XGBoostMetaClassifier` (or `Float.NaN` if fewer than 3 contiguous valid frames exist). *Production Decoupling Note*: In accordance with empirical validation findings, perioral landmark jitter is decoupled from the final production decision (`enableExperimentalHeuristicBoost = false`) and recorded strictly as diagnostic telemetry in `Outcome` to prevent uncalibrated heuristic inflation.
 
 ## 5.3 Bilateral Malar rPPG Chrominance Phase Coherence
 
@@ -518,7 +518,7 @@ In an authentic human face, blood reaches the left cheek malar vascular bed and 
    $$\rho_{\text{malar}} = \text{Corr}(\Delta C_{g, L}, \; \Delta C_{g, R}) \in [-1.0, +1.0]$$
 6. **Physiological Phase Anomaly**:
    $$\text{Anomaly}_{\text{rPPG}} = \text{clamp}\left( \frac{0.55 - \rho_{\text{malar}}}{0.85}, \; 0.0, \; 1.0 \right)$$
-   Authentic synchronized pulses ($\rho \ge 0.55$) yield anomaly $\approx 0.0$; desynchronized deepfakes ($\rho \le -0.30$) yield anomaly $\to 1.0$.
+   Authentic synchronized pulses ($\rho \ge 0.55$) yield anomaly $\approx 0.0$; desynchronized deepfakes ($\rho \le -0.30$) yield anomaly $\to 1.0$. *Production Decoupling Note*: Green chromaticity rPPG is an experimental lightweight adaptation inspired by CHROM; it is decoupled from the production decision (`enableExperimentalHeuristicBoost = false`) and recorded strictly as diagnostic telemetry in `Outcome`.
 
 ## 5.4 Audio-Visual Lip-Sync Cross-Correlation (AVFF MAR vs. Audio RMS Envelope)
 
@@ -650,6 +650,7 @@ C(X) = {0}        C(X) = {1}        C(X) = {0, 1}     C(X) = ∅
    For any user-selected significance level $\alpha \in (0, 1)$ (e.g., $\alpha = 0.05 \implies 95\%$ confidence):
    $$\mathbb{P}\left( Y \in \mathcal{C}(X, m) \right) \ge 1 - \alpha$$
    Over non-abstained predictions ($|\mathcal{C}(X, m)| = 1$), the classification error rate is strictly bounded by $\alpha$.
+   *Critical Exchangeability Condition*: This finite-sample coverage guarantee holds mathematically under the assumption that calibration samples and runtime evaluation samples are **exchangeable** ($Z_i \sim \mathcal{D}$ i.i.d.). In open-world media forensics, out-of-distribution deepfake generators (unseen architectures, adversarial post-processing, social media compression) violate exchangeability; in such regimes, conformal prediction provides empirical uncertainty estimation rather than absolute frequentist guarantees. See `docs/EVIDENCE_CHAIN.md` for complete paper-to-artifact traceability.
 
 ## 6.3 Dual-Engine Cascade Arbitration & Selective Accuracy Optimization
 

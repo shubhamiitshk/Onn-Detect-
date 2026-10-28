@@ -39,11 +39,14 @@ The APK verifier inspects:
 - **16 KiB ELF Alignment**: Verifies that all 64-bit native shared libraries (`arm64-v8a`) comply with 16 KiB page size boundaries for Android 15/16.
 - **Model Contract & Hash Integrity**: Verifies SHA-256 hashes against `constants/release_manifest.json`.
 
-## Device Tests
+## Device Tests & Physical Benchmarking
 
 With a supported emulator or test phone connected via ADB:
 
 ```powershell
+# Automated physical device benchmark & packaging validation gate
+python scripts/benchmark_device_arm64.py --package com.onndetect --min-runs 30
+
 Push-Location android
 try {
     .\gradlew.bat connectedDebugAndroidTest
@@ -59,7 +62,7 @@ try {
 android/app/src/main/assets/
   models/
     srm_forensic_cnn_int8.tflite     (145 KiB residual high-pass CNN)
-    siglip_probe_int8.tflite         (89.96 MB INT8 SigLIP-B/16 + TAP)
+    siglip_probe_int8.tflite         (89.96 MB INT8 SigLIP-B/16 linear probe; TAP in scripts)
     lcnn_audio_int8.tflite           (508 KiB LCNN-MFM speech countermeasure)
     face_landmarker.task             (3.6 MB MediaPipe FaceMesh model)
   trust/

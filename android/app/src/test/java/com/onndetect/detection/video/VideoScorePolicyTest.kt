@@ -30,7 +30,7 @@ class VideoScorePolicyTest {
     }
 
     @Test
-    fun `temporal and lip sync anomaly boosts score toward 1`() {
+    fun `production combineMultimodalScore decouples unvalidated heuristics from final score`() {
         val baseScore = VideoScorePolicy.combineMultimodalScore(
             visualScore = 0.50f,
             visualThreshold = 0.50f,
@@ -39,6 +39,30 @@ class VideoScorePolicyTest {
             temporalScore = Float.NaN,
             lipSyncAnomaly = 0f,
         )
+        val scoreWithHeuristics = VideoScorePolicy.combineMultimodalScore(
+            visualScore = 0.50f,
+            visualThreshold = 0.50f,
+            audioScore = Float.NaN,
+            audioValidatedSuccess = false,
+            temporalScore = 0.85f,
+            lipSyncAnomaly = 0.70f,
+            rppgPhaseAnomaly = 0.90f,
+            enableExperimentalHeuristicBoost = false,
+        )
+        assertEquals("Production score must preserve base without heuristic distortion", baseScore, scoreWithHeuristics, 1e-6f)
+    }
+
+    @Test
+    fun `temporal and lip sync anomaly boosts score when experimental boost explicitly enabled`() {
+        val baseScore = VideoScorePolicy.combineMultimodalScore(
+            visualScore = 0.50f,
+            visualThreshold = 0.50f,
+            audioScore = Float.NaN,
+            audioValidatedSuccess = false,
+            temporalScore = Float.NaN,
+            lipSyncAnomaly = 0f,
+            enableExperimentalHeuristicBoost = true,
+        )
         val boostedScore = VideoScorePolicy.combineMultimodalScore(
             visualScore = 0.50f,
             visualThreshold = 0.50f,
@@ -46,6 +70,7 @@ class VideoScorePolicyTest {
             audioValidatedSuccess = false,
             temporalScore = 0.85f,
             lipSyncAnomaly = 0.70f,
+            enableExperimentalHeuristicBoost = true,
         )
         assertTrue(boostedScore > baseScore)
     }
@@ -132,6 +157,7 @@ class VideoScorePolicyTest {
             audioValidatedSuccess = false,
             temporalScore = 1.0f,
             lipSyncAnomaly = 1.0f,
+            enableExperimentalHeuristicBoost = true,
         )
         // Max boost = 0.30 -> final = 0.0 + (1.0 - 0.0) * 0.30 = 0.30
         assertEquals(0.30f, score, 1e-4f)

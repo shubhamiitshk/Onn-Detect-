@@ -147,6 +147,7 @@ class DeepThinkAlgorithmsTest {
             temporalScore = 0.10f,
             lipSyncAnomaly = 0.10f,
             rppgPhaseAnomaly = 0.05f,
+            enableExperimentalHeuristicBoost = true,
         )
         val withRppg = VideoScorePolicy.combineMultimodalScore(
             visualScore = 0.53f,
@@ -156,6 +157,7 @@ class DeepThinkAlgorithmsTest {
             temporalScore = 0.10f,
             lipSyncAnomaly = 0.10f,
             rppgPhaseAnomaly = 0.92f,
+            enableExperimentalHeuristicBoost = true,
         )
         assertTrue("Expected rPPG phase anomaly to boost video score above $withoutRppg, got $withRppg", withRppg > withoutRppg)
         assertTrue("Expected rPPG anomaly to push borderline 0.53 video >= threshold ($threshold), got $withRppg", withRppg >= threshold)

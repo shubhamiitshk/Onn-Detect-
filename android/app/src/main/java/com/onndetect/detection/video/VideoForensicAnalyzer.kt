@@ -47,6 +47,7 @@ object VideoScorePolicy {
         temporalScore: Float = Float.NaN,
         lipSyncAnomaly: Float = 0f,
         rppgPhaseAnomaly: Float = Float.NaN,
+        enableExperimentalHeuristicBoost: Boolean = false,
     ): Float {
         if (!visualScore.isFinite() || visualScore !in 0f..1f) return Float.NaN
         var base = visualScore.coerceIn(0f, 1f)
@@ -75,22 +76,46 @@ object VideoScorePolicy {
             }
         }
 
-        // 2. One-sided temporal & BioLip anomaly boost: high frame-to-frame discontinuity (> 0.30)
-        // or high perioral landmark acceleration jitter boosts suspicion toward 1.0, while 0.0
-        // (smooth video / no jitter) leaves `base` untouched.
+        // 2. Temporal & BioLip / rPPG signals: decoupled from production verdict to preserve
+        // calibration integrity. Unvalidated landmark second-order differences and short-run
+        // green chromaticity deltas serve strictly as telemetry / diagnostic indicators unless
+        // experimental heuristic boost is explicitly requested.
+        if (enableExperimentalHeuristicBoost) {
+            val tempAnomaly = if (temporalScore.isFinite() && temporalScore > 0.30f) {
+                ((temporalScore - 0.30f) / 0.70f).coerceIn(0f, 1f)
+            } else 0f
+            val lipAnomaly = if (lipSyncAnomaly.isFinite() && lipSyncAnomaly > 0f) {
+                lipSyncAnomaly.coerceIn(0f, 1f)
+            } else 0f
+            val rppgAnom = if (rppgPhaseAnomaly.isFinite() && rppgPhaseAnomaly > 0.35f) {
+                ((rppgPhaseAnomaly - 0.35f) / 0.65f).coerceIn(0f, 1f)
+            } else 0f
+
+            val boost = (TEMPORAL_WEIGHT * tempAnomaly + 0.15f * lipAnomaly + 0.10f * rppgAnom).coerceIn(0f, 0.35f)
+            return (base + (1f - base) * boost).coerceIn(0f, 1f)
+        }
+
+        return base.coerceIn(0f, 1f)
+    }
+
+    /**
+     * Computes experimental composite diagnostic anomaly score strictly for UI telemetry / diagnostics.
+     */
+    fun computeDiagnosticHeuristicAnomaly(
+        temporalScore: Float = Float.NaN,
+        lipSyncAnomaly: Float = 0f,
+        rppgPhaseAnomaly: Float = Float.NaN,
+    ): Float {
         val tempAnomaly = if (temporalScore.isFinite() && temporalScore > 0.30f) {
             ((temporalScore - 0.30f) / 0.70f).coerceIn(0f, 1f)
         } else 0f
         val lipAnomaly = if (lipSyncAnomaly.isFinite() && lipSyncAnomaly > 0f) {
             lipSyncAnomaly.coerceIn(0f, 1f)
         } else 0f
-
         val rppgAnom = if (rppgPhaseAnomaly.isFinite() && rppgPhaseAnomaly > 0.35f) {
             ((rppgPhaseAnomaly - 0.35f) / 0.65f).coerceIn(0f, 1f)
         } else 0f
-
-        val boost = (TEMPORAL_WEIGHT * tempAnomaly + 0.15f * lipAnomaly + 0.10f * rppgAnom).coerceIn(0f, 0.35f)
-        return (base + (1f - base) * boost).coerceIn(0f, 1f)
+        return (TEMPORAL_WEIGHT * tempAnomaly + 0.15f * lipAnomaly + 0.10f * rppgAnom).coerceIn(0f, 0.35f)
     }
 
     /**

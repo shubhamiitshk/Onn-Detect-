@@ -36,4 +36,6 @@ exported/
 downloaded_models/
 outputs/
 *.gguf
+gemma_cache/
+.agents/
 

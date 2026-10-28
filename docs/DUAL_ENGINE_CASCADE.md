@@ -21,7 +21,7 @@ Early forensic prototypes explored two alternative second-engine paths that were
 ### 1.2 The Production Solution: SigLIP-B/16 TAP Foundation Probe + Base-Margin Fusion
 The production architecture pairs a high-frequency spatial residual CNN with a frozen vision foundation transformer:
 - **Engine A (Spatial Residual Engine)**: `srm_forensic_cnn_int8.tflite` ($142\text{ KiB}$ INT8, $128 \times 128$). Evaluates 20-channel high-pass residual kernels (12 SRM + 4 NPR + 4 RGB stem) over native $4 \times 4$ PatchCraft texture mosaics (`-patchcraft-mosaic-tile32`).
-- **Engine C (Semantic Foundation Probe)**: `siglip_probe_int8.tflite` ($89.96\text{ MB}$ INT8, $224 \times 224$). Employs `google/siglip-base-patch16-224` with Tunable Attention Pooling (TAP, CVPRW 2026) over 196 patch tokens. The query probe $q_{\text{tap}}$ is folded into the native `_SiglipMAPAttention` head via a Keras mirror, introducing **zero extra ops and 0 ms added latency**.
+- **Engine C (Semantic Foundation Probe)**: `siglip_probe_int8.tflite` ($89.96\text{ MB}$ INT8, $224 \times 224$). Employs `google/siglip-base-patch16-224` with a folded linear attention probe (`head_type: linear_probe`). Advanced heads such as Tunable Attention Pooling (TAP) and PatchHead are maintained as experimental candidate training workflows (`train_siglip_tap.py`) documented in `docs/EVIDENCE_CHAIN.md`.
 - **Multimodal Meta-Fusion**: `XGBoostMetaClassifier.kt` ($20\text{ KiB}$). A 10-slot gradient boosted tree ensemble evaluated over the continuous logit base-margin prior of Engine C.
 
 ---
@@ -36,7 +36,7 @@ The production architecture pairs a high-frequency spatial residual CNN with a f
 ┌──────────────────────────────────────┐  ┌──────────────────────────────────────┐
 │ Engine A: Spatial Residual Engine    │  │ Engine C: Foundation Probe (Optional)│
 │ - 32×32 PatchCraft Native Mosaic     │  │ - SigLIP-B/16 (224×224, 89.96 MB)    │
-│ - 20-Channel Conv Stem (SRM+NPR+RGB) │  │ - Tunable Attention Pooling (196 pts)│
+│ - 20-Channel Conv Stem (SRM+NPR+RGB) │  │ - Linear Head (shipped; TAP candidate)│
 │ - Score: srm_score (Slot 0)          │  │ - Score: semantic_probe_score (Slot 6)
 └──────────────────────────────────────┘  └──────────────────────────────────────┘
                    │                                         │ (or Float.NaN)
