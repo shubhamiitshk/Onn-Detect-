@@ -10,6 +10,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.onndetect.ui.screens.history.HistoryScreen
 import com.onndetect.ui.screens.home.HomeScreen
+import com.onndetect.ui.screens.modelmanager.ModelManagerScreen
 import com.onndetect.ui.screens.result.ResultScreen
 import com.onndetect.ui.screens.scanner.ScannerScreen
 import com.onndetect.ui.share.SharedMedia
@@ -20,6 +21,7 @@ object Routes {
     const val RESULT = "result/{scanId}"
     const val HISTORY = "history"
     const val VOICE_VAULT = "voice_vault"
+    const val MODEL_MANAGER = "model_manager"
 
     /** The scanner route for a URI, with the URI encoded for the route. */
     fun scanner(uri: String, mode: String): String =
@@ -71,6 +73,10 @@ fun ONNNavGraph(navController: NavHostController, sharedMedia: SharedMedia? = nu
 
         composable(Routes.VOICE_VAULT) {
             com.onndetect.ui.screens.enrollment.VoiceEnrollmentScreen(navController)
+        }
+
+        composable(Routes.MODEL_MANAGER) {
+            ModelManagerScreen(navController)
         }
 
     }

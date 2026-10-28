@@ -33,4 +33,6 @@ release_v9/
 exported/
 .cxx/
 **/build/
+downloaded_models/
+*.gguf
 

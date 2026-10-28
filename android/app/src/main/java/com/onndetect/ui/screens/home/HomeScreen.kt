@@ -163,6 +163,54 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = hiltView
             }
         }
 
+        // VLM Model Pack Manager Button
+        OutlinedButton(
+            onClick = { navController.navigate("model_manager") },
+            shape = RoundedCornerShape(14.dp),
+            colors = ButtonDefaults.outlinedButtonColors(
+                containerColor = SurfaceCard,
+                contentColor = TextPrimary
+            ),
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp,
+                Brush.horizontalGradient(listOf(BorderSubtle, BorderLight))
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("🧠", fontSize = 16.sp)
+                    Text(
+                        text = "VLM Model Pack Manager",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(CyberCyan.copy(alpha = 0.15f))
+                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = "Drive & Packs",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = CyberCyan,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+
         // Privacy Guarantee Card
         PrivacyGuaranteeCard()
     }

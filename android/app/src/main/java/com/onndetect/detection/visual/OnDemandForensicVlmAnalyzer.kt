@@ -62,6 +62,13 @@ object OnDemandForensicVlmAnalyzer {
     var experimentalDiagnosticOnly: Boolean = true
 
     /**
+     * When true, allows user-imported packs signed by custom or development keys
+     * (e.g. self-trained LoRA models) instead of strictly requiring [OFFICIAL_PUBLISHER_PUBLIC_KEY_HEX].
+     */
+    @Volatile
+    var allowUntrustedPublisherForTesting: Boolean = false
+
+    /**
      * Optional runtime prefill backend (`llama.cpp` `mtmd` JNI, LiteRT-LM session, or test fixture).
      */
     @Volatile
@@ -1072,7 +1079,11 @@ object OnDemandForensicVlmAnalyzer {
      * when present on device.
      */
     fun loadInstalledPolicyBundleOrNull(context: Context): PolicyBundle? =
-        loadInstalledPolicyBundleOrNull(File(context.filesDir, "vlm_packs"))
+        loadInstalledPolicyBundleOrNull(
+            packDir = File(context.filesDir, "vlm_packs"),
+            expectedPublisherPublicKeyHex = pinnedPublisherPublicKeyHex ?: OFFICIAL_PUBLISHER_PUBLIC_KEY_HEX,
+            allowUntrustedPublisherForTesting = allowUntrustedPublisherForTesting,
+        )
 
     /**
      * Discovers, cryptographically verifies, and initializes the native prefill backend
@@ -1164,7 +1175,11 @@ object OnDemandForensicVlmAnalyzer {
         context: Context,
         expectedPublisherPublicKeyHex: String? = pinnedPublisherPublicKeyHex,
     ): VlmPrefillBackend? =
-        initializeActiveBackendIfAvailable(File(context.filesDir, "vlm_packs"), expectedPublisherPublicKeyHex)
+        initializeActiveBackendIfAvailable(
+            packDir = File(context.filesDir, "vlm_packs"),
+            expectedPublisherPublicKeyHex = expectedPublisherPublicKeyHex,
+            allowUntrustedPublisherForTesting = allowUntrustedPublisherForTesting,
+        )
 
     /**
      * Resets mutable singleton state for test isolation.
@@ -1174,6 +1189,7 @@ object OnDemandForensicVlmAnalyzer {
         overridePolicyBundle = null
         experimentalVlmCascadeEnabled = false
         experimentalDiagnosticOnly = true
+        allowUntrustedPublisherForTesting = false
         pinnedPublisherPublicKeyHex = null
     }
 }
