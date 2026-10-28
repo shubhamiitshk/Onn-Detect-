@@ -49,7 +49,10 @@ from train_srm_dcpt_patchcraft import extract_patchcraft_mosaic
 try:
     import ai_edge_litert.interpreter as litert
 except ImportError:
-    import tensorflow.lite as litert
+    try:
+        import tensorflow.lite as litert
+    except ImportError:
+        litert = None
 
 SRM_MODEL_PATH = REPO_ROOT / "android" / "app" / "src" / "main" / "assets" / "models" / "srm_forensic_cnn_int8.tflite"
 SIGLIP_MODEL_PATH = REPO_ROOT / "android" / "app" / "src" / "main" / "assets" / "models" / "siglip_probe_int8.tflite"
@@ -165,13 +168,13 @@ class FrozenSpecialistRunner:
         self.srm_interp: Optional[Any] = None
         self.siglip_interp: Optional[Any] = None
 
-        if SRM_MODEL_PATH.is_file():
+        if litert is not None and SRM_MODEL_PATH.is_file():
             self.srm_interp = litert.Interpreter(str(SRM_MODEL_PATH))
             self.srm_interp.allocate_tensors()
             self.srm_inp = self.srm_interp.get_input_details()[0]["index"]
             self.srm_out = self.srm_interp.get_output_details()[0]["index"]
 
-        if SIGLIP_MODEL_PATH.is_file():
+        if litert is not None and SIGLIP_MODEL_PATH.is_file():
             self.siglip_interp = litert.Interpreter(str(SIGLIP_MODEL_PATH))
             self.siglip_interp.allocate_tensors()
             self.siglip_inp = self.siglip_interp.get_input_details()[0]["index"]
@@ -206,8 +209,9 @@ class FrozenSpecialistRunner:
         return float(np.clip(out.flat[0], 0.0, 1.0))
 
     def compute_hotspot_z(self, img: Image.Image) -> float:
-        gray = img.convert("L").resize((128, 128), Image.Resampling.BILINEAR)
-        arr = np.asarray(gray, dtype=np.float32)
+        rgb = img.convert("RGB").resize((128, 128), Image.Resampling.BILINEAR)
+        arr_rgb = np.asarray(rgb, dtype=np.float32)
+        arr = (arr_rgb[..., 0] * 299.0 + arr_rgb[..., 1] * 587.0 + arr_rgb[..., 2] * 114.0) / 1000.0
         lap = np.abs(arr[1:-1, 1:-1] * 4 - arr[:-2, 1:-1] - arr[2:, 1:-1] - arr[1:-1, :-2] - arr[1:-1, 2:])
         h, w = lap.shape
         ph, pw = max(1, h // 8), max(1, w // 8)

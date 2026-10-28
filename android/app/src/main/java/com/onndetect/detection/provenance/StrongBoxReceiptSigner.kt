@@ -58,6 +58,20 @@ class StrongBoxReceiptSigner @JvmOverloads constructor(
         }
 
     /**
+     * Pre-generates the signing key on a background thread so the first
+     * [sign] call on the UI thread does not pay the key-generation cost.
+     * Safe to call multiple times; no-op once initialized.
+     */
+    fun warmUp() {
+        if (isInitialized) return
+        try {
+            ensureKeyPair()
+        } catch (_: Exception) {
+            // Initialization failures surface on the next sign() call.
+        }
+    }
+
+    /**
      * Signs [canonicalPayloadJson] using the hardware-backed private key.
      * Generates the key pair on first invocation with StrongBox preference and TEE fallback.
      * Falls back to standard JVM EC keys in test environments where AndroidKeyStore is absent.
@@ -193,7 +207,13 @@ class StrongBoxReceiptSigner @JvmOverloads constructor(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             keyInfo.securityLevel == KeyProperties.SECURITY_LEVEL_STRONGBOX
         } else {
-            false
+            // On API < S, KeyInfo.securityLevel is unavailable. Fall back to
+            // the best-effort heuristic: the key must be inside secure hardware
+            // AND the device must advertise StrongBox. This can still report a
+            // TEE key as StrongBox on a StrongBox-capable device, so callers
+            // should treat the tier as advisory on those API levels.
+            keyInfo.isInsideSecureHardware &&
+                (context?.packageManager?.hasSystemFeature(PackageManager.FEATURE_STRONGBOX_KEYSTORE) == true)
         }
     } catch (_: Exception) {
         false

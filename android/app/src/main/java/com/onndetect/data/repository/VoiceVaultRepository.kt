@@ -37,10 +37,10 @@ class VoiceVaultRepository @Inject constructor(
         profile.encryptedEmbedding?.let { sealed ->
             val iv = profile.embeddingIv ?: return null
             val plaintext = crypto.unseal(SealedBlob(iv, sealed), vaultAad(profile.id, profile.contactName))
-            return decodeEmbedding(plaintext)
+            return decodeEmbedding(plaintext)?.takeIf { it.isNotEmpty() }
         }
         profile.embeddingCsv?.let { csv ->
-            if (csv.isNotBlank()) return decodeEmbedding(csv.encodeToByteArray())
+            if (csv.isNotBlank()) return decodeEmbedding(csv.encodeToByteArray())?.takeIf { it.isNotEmpty() }
         }
         return null
     }

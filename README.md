@@ -77,7 +77,7 @@ cd ..
 .\.venv\Scripts\python.exe -m pytest ml/tests
 .\.venv\Scripts\python.exe tests/e2e/run_e2e_tests.py
 ```
-*All 168 Python ML tests and all 145 E2E tests pass across Tiers 1-4 with 100% success rate.*
+*All 176 Python ML tests and all 145 E2E tests pass across Tiers 1-4 with 100% success rate.*
 
 ---
 

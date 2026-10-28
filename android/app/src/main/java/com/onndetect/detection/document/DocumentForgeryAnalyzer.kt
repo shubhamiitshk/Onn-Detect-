@@ -46,7 +46,7 @@ class DocumentForgeryAnalyzer {
     /**
      * Analyzes an Android [Bitmap] for digital splicing, fake payment templates, and document forgery.
      */
-    fun analyze(bitmap: Bitmap, isPng: Boolean = false): DocumentForgeryReport {
+    fun analyze(bitmap: Bitmap, isPng: Boolean = false, checkStop: () -> Unit = {}): DocumentForgeryReport {
         if (bitmap.isRecycled || bitmap.width < 32 || bitmap.height < 32) {
             return DocumentForgeryReport(
                 isDocumentOrScreenshot = false,
@@ -88,7 +88,9 @@ class DocumentForgeryAnalyzer {
             (r * 299 + g * 587 + b * 114) / 1000
         }
 
+        checkStop()
         val elaPeakRatio = runCatching { computeEla(bitmap) }.getOrDefault(1f)
+        checkStop()
         return analyzeGrayscale(
             gray = gray,
             width = scaledWidth,

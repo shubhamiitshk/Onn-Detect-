@@ -80,8 +80,8 @@ object FrameCosineDelta {
         val evalSims = if (intraShotSims.size >= 2) intraShotSims else sims
         val mean = evalSims.sum() / evalSims.size
         var vr = 0.0
-        for (s in sims) vr += (s - mean).toDouble() * (s - mean)
-        val std = kotlin.math.sqrt(vr / sims.size).toFloat()
+        for (s in evalSims) vr += (s - mean).toDouble() * (s - mean)
+        val std = kotlin.math.sqrt(vr / evalSims.size).toFloat()
 
         // Frozen content: similarity pinned near 1.0
         val frozenness = max(0f, (mean - 0.995f) / 0.005f)

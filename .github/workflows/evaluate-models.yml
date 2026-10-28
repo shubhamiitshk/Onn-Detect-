@@ -37,6 +37,7 @@ jobs:
         run: |
           python onn_release_lineage_gate.py --repo .
           python scripts/check_android_consistency.py
+          python scripts/verify_docs_consistency.py
           python -m unittest discover -s scripts/tests -v
           python -m unittest discover -s ml/tests -p 'test_*.py' -v
           python -m unittest discover -s tests -p 'tier5_adversarial_stress_test.py' -v

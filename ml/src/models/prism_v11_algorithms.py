@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """ONN-DETECT v11 (PRISM-Forensics): Next-Generation On-Device Detection & Meta-Fusion Algorithms.
 
+EXPERIMENTAL / NOT SHIPPED: research-only module. Not wired into ml/src/training/entrypoint.py
+or the Android pipeline. Do not treat as current detector performance.
+
 Designed and verified for the `shubhamiitshk/onn-detect-` repository (`onn-prod-v10` -> `v11`).
 Operates strictly within ONN-DETECT's zero-cloud, zero-network Android sandbox constraints
 (<180 ms image latency, <25 ms audio latency, 10-slot `FusionFeatureSchema` wire compatibility).
@@ -67,7 +70,7 @@ Algorithms Implemented
 
 Usage
 -----
-    python3 onn_prism_v11_algorithms.py --self-test --benchmark
+    python3 ml/src/models/prism_v11_algorithms.py --self-test --benchmark
 """
 from __future__ import annotations
 

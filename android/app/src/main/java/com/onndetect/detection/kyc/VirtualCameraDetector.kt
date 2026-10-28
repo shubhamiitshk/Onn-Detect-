@@ -62,7 +62,8 @@ class VirtualCameraDetector {
 
                 if (facing == CameraCharacteristics.LENS_FACING_FRONT) {
                     hasPhysicalFrontCamera = true
-                    hardwareLevelInt = chars.get(CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL) ?: -1
+                    val hl = chars.get(CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL) ?: -1
+                    if (hl > hardwareLevelInt) hardwareLevelInt = hl
 
                     val sensorSize = chars.get(CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE)
                     if (sensorSize != null && sensorSize.width > 0f && sensorSize.height > 0f) {
@@ -73,7 +74,8 @@ class VirtualCameraDetector {
                     if (exposureRange != null && exposureRange.lower > 0) {
                         hasExposureRange = true
                     }
-                    break
+                    // Do not break: devices may expose multiple front-facing
+                    // cameras; aggregate evidence across all of them.
                 }
             }
         }

@@ -76,7 +76,7 @@ class Tower:
     def frontend_id(self) -> str:
         return (
             f"vfm-{self.pooling}{self.size}-{self.repo.split('/')[-1]}"
-            f"-bicubic-clamp-meanstd-float32"
+            f"-boxpredecimate1024-bicubic-clamp-meanstd-float32"
         )
 
     def preprocess(self, img: Image.Image) -> np.ndarray:
@@ -86,6 +86,12 @@ class Tower:
         frontend already established bicubic as the contract, and because a
         bilinear resize is not the filter these towers were trained with.
         """
+        w, h = img.size
+        sample = 1
+        while max(w, h) // sample > 1024:
+            sample *= 2
+        if sample > 1:
+            img = img.resize((max(1, w // sample), max(1, h // sample)), Image.Resampling.BOX)
         resized = img.convert("RGB").resize((self.size, self.size), Image.Resampling.BICUBIC)
         arr = np.asarray(resized, dtype=np.float32) / 255.0
         arr = (arr - self.mean) / self.std

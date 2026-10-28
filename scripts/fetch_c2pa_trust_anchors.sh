@@ -18,9 +18,22 @@ SRC="https://raw.githubusercontent.com/c2pa-org/conformance-public/refs/heads/ma
 curl -fsSL --max-time 60 "$SRC" -o "$DEST"
 
 anchors=$(grep -c -- '-----BEGIN CERTIFICATE-----' "$DEST" || true)
-if [ "${anchors:-0}" -lt 20 ]; then
-  echo "REFUSING: suspiciously small trust list (${anchors} anchors) — keeping would fail closed anyway." >&2
-  exit 1
+if [ "${anchors:-0}" -lt 30 ]; then
+    echo "REFUSING: suspiciously small trust list (${anchors} anchors) — keeping would fail closed anyway." >&2
+    exit 1
+fi
+
+# Optional pinning: set C2PA_TRUST_ANCHORS_SHA256 to the expected digest.
+# When unset, print the digest so it can be reviewed and pinned in CI.
+actual_sha=$(sha256sum "$DEST" | awk '{print $1}')
+if [ -n "${C2PA_TRUST_ANCHORS_SHA256:-}" ]; then
+    if [ "$actual_sha" != "$C2PA_TRUST_ANCHORS_SHA256" ]; then
+        echo "REFUSING: trust-anchor SHA-256 mismatch (expected $C2PA_TRUST_ANCHORS_SHA256, got $actual_sha)" >&2
+        exit 1
+    fi
+    echo "OK: SHA-256 verified (${actual_sha})"
+else
+    echo "WARNING: C2PA_TRUST_ANCHORS_SHA256 not set; staged digest is ${actual_sha}. Pin it before release." >&2
 fi
 
 echo "OK: ${anchors} production anchors staged at ${DEST}"

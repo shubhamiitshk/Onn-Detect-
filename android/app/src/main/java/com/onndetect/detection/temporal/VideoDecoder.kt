@@ -100,9 +100,22 @@ class VideoDecoder(private val context: Context) {
                 if (!captured) break
             }
             require(picked.isNotEmpty()) { "No supported frames could be decoded" }
+            // Deduplicate frames that landed on the same presentation timestamp
+            // (common when seekTo snaps to the same sync sample repeatedly).
+            val seen = mutableSetOf<Long>()
+            val dedupPicked = ArrayList<Bitmap>()
+            val dedupTimestamps = ArrayList<Long>()
+            for (i in picked.indices) {
+                if (seen.add(timestamps[i])) {
+                    dedupPicked.add(picked[i])
+                    dedupTimestamps.add(timestamps[i])
+                } else {
+                    if (!picked[i].isRecycled) picked[i].recycle()
+                }
+            }
             transferred = true
             val rotated = rotation % 180 != 0
-            return SampledVideo(picked, if (rotated) height else width, if (rotated) width else height, duration / 1000, hasAudio, timestamps)
+            return SampledVideo(dedupPicked, if (rotated) height else width, if (rotated) width else height, duration / 1000, hasAudio, dedupTimestamps)
         } finally {
             if (!transferred) picked.forEach { if (!it.isRecycled) it.recycle() }
             runCatching { codec?.stop() }; runCatching { codec?.release() }; extractor.release()
