@@ -15,6 +15,7 @@ import os
 import re
 import shutil
 import sys
+import zipfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -652,6 +653,16 @@ def main() -> None:
             sys.exit(1)
 
         print("[Export] Complete runnable pack verified successfully in output directory.")
+
+        # Create ready-to-upload Google Drive zip archive
+        zip_path = args.output_dir.parent / f"{args.pack_id}.zip"
+        print(f"[Export] Creating ready-to-upload Google Drive zip archive: {zip_path}...")
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
+            for item in args.output_dir.iterdir():
+                if item.is_file() and not item.name.endswith(".zip"):
+                    zipf.write(item, arcname=item.name)
+        print(f"[Export] Ready for Google Drive: {zip_path} ({zip_path.stat().st_size / (1024 * 1024):.1f} MB)")
+        print(f"[Export] -> Upload '{zip_path.name}' to Google Drive for 1-tap import in Onn-Detect app.")
 
 
 if __name__ == "__main__":
