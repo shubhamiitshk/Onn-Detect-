@@ -1,5 +1,10 @@
 package com.onndetect.ui.components
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.*
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -9,17 +14,25 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.onndetect.ui.navigation.Routes
 import com.onndetect.ui.theme.*
+import kotlin.math.cos
+import kotlin.math.sin
 
 /**
  * Primary destinations in the 3-Window Bottom Liquid Glass Dock:
@@ -108,14 +121,21 @@ fun LiquidGlassScaffold(
         val contentPadding = PaddingValues(bottom = 104.dp)
         content(contentPadding)
 
-        LiquidGlassBottomBar(
-            activeTab = activeTab,
-            onSelectTab = onSelectTab,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 10.dp)
-        )
+        val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
+        AnimatedVisibility(
+            visible = imeBottom == 0,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.align(Alignment.BottomCenter)
+        ) {
+            LiquidGlassBottomBar(
+                activeTab = activeTab,
+                onSelectTab = onSelectTab,
+                modifier = Modifier
+                    .navigationBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 10.dp)
+            )
+        }
     }
 }
 
@@ -287,3 +307,135 @@ fun LiquidGlassBottomBar(
         }
     }
 }
+
+/**
+ * High-tech spinning liquid glass running circle thinking indicator.
+ * Combines an infinite sweep gradient ring with an orbital glow particle
+ * and a pulsing core orb, symbolizing real-time neural prefill & forensic analysis.
+ */
+@Composable
+fun RunningCircleIndicator(
+    modifier: Modifier = Modifier,
+    size: Dp = 22.dp,
+    strokeWidth: Dp = 2.5.dp,
+    primaryColor: Color = CyberCyan,
+    secondaryColor: Color = NeonPurple,
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "running_circle")
+    val rotation by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1100, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "rotation"
+    )
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.30f,
+        targetValue = 0.95f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(850, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulseAlpha"
+    )
+    val coreScale by infiniteTransition.animateFloat(
+        initialValue = 0.20f,
+        targetValue = 0.36f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(850, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "coreScale"
+    )
+
+    Canvas(modifier = modifier.size(size)) {
+        val strokePx = strokeWidth.toPx()
+        val diameter = this.size.minDimension
+        val ringRadius = (diameter - strokePx) / 2f
+        val centerOffset = Offset(this.size.width / 2f, this.size.height / 2f)
+
+        val sweepBrush = Brush.sweepGradient(
+            colors = listOf(
+                primaryColor.copy(alpha = 0.05f),
+                primaryColor.copy(alpha = 0.35f),
+                secondaryColor,
+                primaryColor,
+            ),
+            center = centerOffset
+        )
+        // Center pulsing neural core
+        drawCircle(
+            color = primaryColor.copy(alpha = pulseAlpha),
+            radius = ringRadius * coreScale,
+            center = centerOffset
+        )
+        // Rotating outer gradient ring + orbiting glowing particle
+        rotate(rotation, pivot = centerOffset) {
+            drawCircle(
+                brush = sweepBrush,
+                radius = ringRadius,
+                center = centerOffset,
+                style = Stroke(width = strokePx, cap = StrokeCap.Round)
+            )
+            // Orbiting particle tip at the head of the sweep gradient
+            val radAngle = 0.0
+            val particleX = centerOffset.x + ringRadius * cos(radAngle).toFloat()
+            val particleY = centerOffset.y + ringRadius * sin(radAngle).toFloat()
+            drawCircle(
+                color = Color.White,
+                radius = strokePx * 0.95f,
+                center = Offset(particleX, particleY)
+            )
+        }
+    }
+}
+
+/**
+ * Compact frosted liquid glass pill container for badges, citations, or status chips.
+ */
+@Composable
+fun LiquidGlassPill(
+    modifier: Modifier = Modifier,
+    accentColor: Color = CyberCyan,
+    cornerRadius: Dp = 14.dp,
+    onClick: (() -> Unit)? = null,
+    content: @Composable RowScope.() -> Unit,
+) {
+    val shape = RoundedCornerShape(cornerRadius)
+    val clickableMod = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier
+    Box(
+        modifier = modifier
+            .clip(shape)
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        SurfaceElevated.copy(alpha = 0.85f),
+                        SurfaceCard.copy(alpha = 0.72f)
+                    )
+                )
+            )
+            .border(
+                1.dp,
+                Brush.horizontalGradient(
+                    listOf(
+                        Color.White.copy(alpha = 0.22f),
+                        accentColor.copy(alpha = 0.45f),
+                        DeepIndigo.copy(alpha = 0.18f)
+                    )
+                ),
+                shape
+            )
+            .then(clickableMod)
+            .padding(horizontal = 9.dp, vertical = 5.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            content()
+        }
+    }
+}
+

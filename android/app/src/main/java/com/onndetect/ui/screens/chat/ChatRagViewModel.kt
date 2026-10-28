@@ -4,33 +4,47 @@ import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.onndetect.data.local.ScanHistoryEntity
 import com.onndetect.data.repository.ScanHistoryRepository
 import com.onndetect.rag.ForensicRagEngine
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
+data class AttachedMedia(
+    val uri: Uri,
+    val kind: ForensicRagEngine.RagMediaKind,
+    val fileName: String,
+    val mimeType: String? = null,
+    val fileSizeFormatted: String? = null,
+)
+
 data class ChatMessage(
     val id: String,
     val isUser: Boolean,
     val text: String,
+    val attachment: AttachedMedia? = null,
     val citedTimestamps: List<String> = emptyList(),
     val engineBadge: String? = null,
+    val isStreaming: Boolean = false,
 )
 
 data class ChatRagUiState(
     val isIndexing: Boolean = false,
     val indexingProgressText: String = "",
     val isGenerating: Boolean = false,
+    val streamingStatus: String? = null,
     val knowledgeBase: ForensicRagEngine.IndexedMediaKnowledgeBase? = null,
     val messages: List<ChatMessage> = emptyList(),
+    val stagedAttachment: AttachedMedia? = null,
     val selectedChunkIndex: Int? = null,
     val errorMessage: String? = null,
 )
@@ -45,6 +59,8 @@ class ChatRagViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(ChatRagUiState())
     val uiState: StateFlow<ChatRagUiState> = _uiState.asStateFlow()
 
+    private var generationJob: Job? = null
+
     init {
         val initialScanId = savedStateHandle.get<String>("scanId")?.takeIf { it.isNotBlank() }
         if (initialScanId != null) {
@@ -57,7 +73,13 @@ class ChatRagViewModel @Inject constructor(
     private fun loadMostRecentHistoryIfAvailable() {
         viewModelScope.launch {
             val latest = withContext(Dispatchers.IO) {
-                runCatching { historyRepository.observePage(1, 0).first().firstOrNull() }.getOrNull()
+                runCatching {
+                    var found: ScanHistoryEntity? = null
+                    historyRepository.observeAll().firstOrNull()?.let { list ->
+                        found = list.firstOrNull()
+                    }
+                    found
+                }.getOrNull()
             }
             if (latest != null && _uiState.value.knowledgeBase == null) {
                 loadFromScanHistory(latest.id)
@@ -94,7 +116,7 @@ class ChatRagViewModel @Inject constructor(
                     id = "sys_${System.currentTimeMillis()}",
                     isUser = false,
                     text = "Indexed **${kb.mediaTitle}** — Verdict: **${kb.headlineVerdict}**.\n" +
-                        "Ask me anything about this scan, or attach a Video / Audio / Image above for frame-by-frame timeline RAG.",
+                        "Ask me anything about this scan, or attach an Image / Video / Audio / Document file below for frame-by-frame multimodal RAG.",
                     citedTimestamps = kb.chunks.map { it.formattedTimeRange },
                     engineBadge = kb.activeEngineLabel,
                 )
@@ -117,118 +139,231 @@ class ChatRagViewModel @Inject constructor(
         }
     }
 
-    fun indexMedia(uri: Uri, mediaKind: ForensicRagEngine.RagMediaKind) {
-        viewModelScope.launch {
-            _uiState.update {
-                it.copy(
-                    isIndexing = true,
-                    indexingProgressText = "Starting offline multimodal RAG indexing...",
-                    errorMessage = null,
+    fun stageAttachment(
+        uri: Uri,
+        kind: ForensicRagEngine.RagMediaKind,
+        fileName: String,
+        mimeType: String? = null,
+        fileSizeFormatted: String? = null,
+    ) {
+        _uiState.update {
+            it.copy(
+                stagedAttachment = AttachedMedia(
+                    uri = uri,
+                    kind = kind,
+                    fileName = fileName,
+                    mimeType = mimeType,
+                    fileSizeFormatted = fileSizeFormatted,
                 )
-            }
-            try {
-                val kb = withContext(Dispatchers.IO) {
-                    when (mediaKind) {
-                        ForensicRagEngine.RagMediaKind.VIDEO ->
-                            ragEngine.indexVideoUri(uri) { msg ->
-                                _uiState.update { s -> s.copy(indexingProgressText = msg) }
-                            }
-                        ForensicRagEngine.RagMediaKind.AUDIO ->
-                            ragEngine.indexAudioUri(uri) { msg ->
-                                _uiState.update { s -> s.copy(indexingProgressText = msg) }
-                            }
-                        else ->
-                            ragEngine.indexImageUri(uri) { msg ->
-                                _uiState.update { s -> s.copy(indexingProgressText = msg) }
-                            }
-                    }
-                }
-                val introText = buildString {
-                    append("Indexed **${kb.mediaTitle}** (${kb.chunks.size} timeline segments).\n")
-                    append("• **Forensic Verdict**: **${kb.headlineVerdict}** (${(kb.overallAiProb * 100f).toInt()}% AI risk)\n")
-                    append("• **Voice Vault**: ${kb.voiceVaultMatchSummary}\n")
-                    append("Ask a question below (e.g., *\"When did a boy come into the scene?\"* or *\"Where is the fake anomaly?\"*).")
-                }
-                val welcomeMsg = ChatMessage(
-                    id = "sys_${System.currentTimeMillis()}",
-                    isUser = false,
-                    text = introText,
-                    citedTimestamps = kb.chunks.take(3).map { it.formattedTimeRange },
-                    engineBadge = kb.activeEngineLabel,
-                )
-                _uiState.update {
-                    it.copy(
-                        isIndexing = false,
-                        knowledgeBase = kb,
-                        messages = listOf(welcomeMsg),
-                        selectedChunkIndex = 0,
-                        errorMessage = null,
-                    )
-                }
-            } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(
-                        isIndexing = false,
-                        errorMessage = e.message ?: "Failed to index media file",
-                    )
-                }
-            }
+            )
         }
     }
 
-    fun askQuestion(question: String) {
-        val trimmed = question.trim()
-        if (trimmed.isEmpty()) return
-        val currentKb = _uiState.value.knowledgeBase
-        val userMsg = ChatMessage(
-            id = "usr_${System.currentTimeMillis()}",
-            isUser = true,
-            text = trimmed,
-        )
+    fun clearStagedAttachment() {
+        _uiState.update { it.copy(stagedAttachment = null) }
+    }
 
-        if (currentKb == null) {
-            val promptAttach = ChatMessage(
-                id = "bot_${System.currentTimeMillis()}",
-                isUser = false,
-                text = "Please select a **Video**, **Audio**, or **Image** above (or tap **Ask Forensic AI** from any scan result) so I can index its timeline and forensic signals offline.",
-                engineBadge = "Offline RAG Router",
+    fun clearConversation() {
+        generationJob?.cancel()
+        generationJob = null
+        _uiState.update {
+            it.copy(
+                messages = emptyList(),
+                isGenerating = false,
+                streamingStatus = null,
+                selectedChunkIndex = null,
+                errorMessage = null,
             )
-            _uiState.update { it.copy(messages = it.messages + userMsg + promptAttach) }
-            return
+        }
+    }
+
+    fun cancelGeneration() {
+        generationJob?.cancel()
+        generationJob = null
+        _uiState.update { state ->
+            val updated = state.messages.mapNotNull { msg ->
+                if (msg.isStreaming) {
+                    if (msg.text.isBlank()) null
+                    else msg.copy(isStreaming = false, text = "${msg.text}\n\n*[Generation stopped]*")
+                } else msg
+            }
+            state.copy(
+                isGenerating = false,
+                isIndexing = false,
+                streamingStatus = null,
+                messages = updated,
+            )
+        }
+    }
+
+    fun indexMedia(uri: Uri, mediaKind: ForensicRagEngine.RagMediaKind) {
+        val defaultName = when (mediaKind) {
+            ForensicRagEngine.RagMediaKind.VIDEO -> "Video Clip"
+            ForensicRagEngine.RagMediaKind.AUDIO -> "Voice Recording"
+            ForensicRagEngine.RagMediaKind.DOCUMENT -> "Document File"
+            else -> "Image ROI"
+        }
+        stageAttachment(uri, mediaKind, defaultName)
+        sendMessage("")
+    }
+
+    fun askQuestion(question: String) {
+        sendMessage(question)
+    }
+
+    fun sendMessage(text: String) {
+        val query = text.trim()
+        val staged = _uiState.value.stagedAttachment
+        if (query.isEmpty() && staged == null) return
+
+        val effectiveText = if (query.isNotBlank()) {
+            query
+        } else {
+            when (staged?.kind) {
+                ForensicRagEngine.RagMediaKind.VIDEO -> "Analyze this video for AI manipulation, scene cuts, and deepfake anomalies."
+                ForensicRagEngine.RagMediaKind.AUDIO -> "Inspect this voice recording for synthetic cloning and Family Voice Vault match."
+                ForensicRagEngine.RagMediaKind.DOCUMENT -> "Verify this document for layout tampering, ELA compression anomalies, and forged edits."
+                else -> "Examine this image for generative artifacts, high-pass SRM noise, and localized tampering."
+            }
         }
 
-        viewModelScope.launch {
-            _uiState.update {
-                it.copy(
-                    isGenerating = true,
-                    messages = it.messages + userMsg,
-                    errorMessage = null,
-                )
-            }
+        val userMsgId = "usr_${System.currentTimeMillis()}"
+        val userMsg = ChatMessage(
+            id = userMsgId,
+            isUser = true,
+            text = effectiveText,
+            attachment = staged,
+        )
+
+        _uiState.update {
+            it.copy(
+                messages = it.messages + userMsg,
+                stagedAttachment = null,
+                errorMessage = null,
+            )
+        }
+
+        generationJob?.cancel()
+        generationJob = viewModelScope.launch {
             try {
-                val ragAnswer = withContext(Dispatchers.IO) {
-                    ragEngine.askQuestion(currentKb, trimmed)
+                var currentKb = _uiState.value.knowledgeBase
+
+                if (staged != null) {
+                    _uiState.update {
+                        it.copy(
+                            isIndexing = true,
+                            isGenerating = true,
+                            streamingStatus = "Indexing ${staged.fileName}...",
+                            indexingProgressText = "Analyzing multimodal embeddings...",
+                        )
+                    }
+                    val newKb = withContext(Dispatchers.IO) {
+                        when (staged.kind) {
+                            ForensicRagEngine.RagMediaKind.VIDEO ->
+                                ragEngine.indexVideoUri(staged.uri) { progress ->
+                                    _uiState.update { s -> s.copy(indexingProgressText = progress, streamingStatus = progress) }
+                                }
+                            ForensicRagEngine.RagMediaKind.AUDIO ->
+                                ragEngine.indexAudioUri(staged.uri) { progress ->
+                                    _uiState.update { s -> s.copy(indexingProgressText = progress, streamingStatus = progress) }
+                                }
+                            ForensicRagEngine.RagMediaKind.DOCUMENT ->
+                                ragEngine.indexDocumentUri(staged.uri, fileName = staged.fileName, mimeType = staged.mimeType) { progress ->
+                                    _uiState.update { s -> s.copy(indexingProgressText = progress, streamingStatus = progress) }
+                                }
+                            else ->
+                                ragEngine.indexImageUri(staged.uri) { progress ->
+                                    _uiState.update { s -> s.copy(indexingProgressText = progress, streamingStatus = progress) }
+                                }
+                        }
+                    }
+                    currentKb = newKb
+                    _uiState.update {
+                        it.copy(
+                            isIndexing = false,
+                            knowledgeBase = newKb,
+                            selectedChunkIndex = 0,
+                            indexingProgressText = "",
+                        )
+                    }
                 }
-                val botMsg = ChatMessage(
-                    id = "bot_${System.currentTimeMillis()}",
-                    isUser = false,
-                    text = ragAnswer.answerText,
-                    citedTimestamps = ragAnswer.citedTimestamps,
-                    engineBadge = ragAnswer.engineBadge,
-                )
-                val firstIdx = ragAnswer.retrievedChunks.firstOrNull()?.index ?: _uiState.value.selectedChunkIndex
+
                 _uiState.update {
                     it.copy(
-                        isGenerating = false,
-                        messages = it.messages + botMsg,
-                        selectedChunkIndex = firstIdx,
+                        isGenerating = true,
+                        streamingStatus = if (currentKb != null) "Searching timeline embeddings..." else "Accessing forensic AI knowledge...",
                     )
                 }
+
+                val botMsgId = "bot_${System.currentTimeMillis()}"
+                val initialBotMsg = ChatMessage(
+                    id = botMsgId,
+                    isUser = false,
+                    text = "",
+                    isStreaming = true,
+                )
+                _uiState.update { it.copy(messages = it.messages + initialBotMsg) }
+
+                var streamedContent = ""
+                withContext(Dispatchers.IO) {
+                    ragEngine.askQuestionStream(currentKb, effectiveText).collect { event ->
+                        when (event) {
+                            is ForensicRagEngine.RagStreamEvent.Status -> {
+                                _uiState.update { it.copy(streamingStatus = event.statusText) }
+                            }
+                            is ForensicRagEngine.RagStreamEvent.TokenChunk -> {
+                                streamedContent += event.token
+                                _uiState.update { state ->
+                                    val updated = state.messages.map { msg ->
+                                        if (msg.id == botMsgId) msg.copy(text = streamedContent) else msg
+                                    }
+                                    state.copy(messages = updated)
+                                }
+                            }
+                            is ForensicRagEngine.RagStreamEvent.Complete -> {
+                                val finalAns = event.answer
+                                val firstIdx = finalAns.retrievedChunks.firstOrNull()?.index ?: _uiState.value.selectedChunkIndex
+                                _uiState.update { state ->
+                                    val updated = state.messages.map { msg ->
+                                        if (msg.id == botMsgId) {
+                                            msg.copy(
+                                                text = finalAns.answerText,
+                                                citedTimestamps = finalAns.citedTimestamps,
+                                                engineBadge = finalAns.engineBadge,
+                                                isStreaming = false,
+                                            )
+                                        } else msg
+                                    }
+                                    state.copy(
+                                        messages = updated,
+                                        isGenerating = false,
+                                        streamingStatus = null,
+                                        selectedChunkIndex = firstIdx,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                _uiState.update { state ->
+                    val updated = state.messages.mapNotNull { msg ->
+                        if (msg.isStreaming) {
+                            if (msg.text.isBlank()) null
+                            else msg.copy(
+                                text = "${msg.text}\n\n*[Interrupted: ${e.message ?: "Analysis failed"}]*",
+                                isStreaming = false,
+                                engineBadge = "Error"
+                            )
+                        } else msg
+                    }
+                    state.copy(
                         isGenerating = false,
-                        errorMessage = e.message ?: "RAG query failed",
+                        isIndexing = false,
+                        streamingStatus = null,
+                        messages = updated,
+                        errorMessage = e.message ?: "Analysis failed",
                     )
                 }
             }
@@ -239,17 +374,26 @@ class ChatRagViewModel @Inject constructor(
         _uiState.update { it.copy(selectedChunkIndex = index) }
     }
 
-    fun selectTimelineTimestamp(tsStr: String) {
+    fun selectTimelineChunkForTimestamp(timestamp: String) {
         val kb = _uiState.value.knowledgeBase ?: return
-        val clean = tsStr.trim().removePrefix("⏱").trim()
-        val idx = kb.chunks.indexOfFirst { chunk ->
-            chunk.formattedTimeRange.contains(clean) ||
-                clean.contains(ForensicRagEngine.formatMs(chunk.startTimeMs)) ||
-                ForensicRagEngine.formatMs(chunk.startTimeMs).contains(clean)
+        if (kb.chunks.isEmpty()) return
+
+        val match = Regex("(\\d{1,2}):(\\d{2})").find(timestamp)
+        val targetMs = if (match != null) {
+            val minutes = match.groupValues[1].toLongOrNull() ?: 0L
+            val seconds = match.groupValues[2].toLongOrNull() ?: 0L
+            (minutes * 60L + seconds) * 1000L
+        } else null
+
+        val chunk = if (targetMs != null) {
+            kb.chunks.firstOrNull { targetMs in it.startTimeMs..it.endTimeMs } ?: kb.chunks.minByOrNull {
+                kotlin.math.abs(it.startTimeMs - targetMs)
+            }
+        } else {
+            kb.chunks.firstOrNull { it.formattedTimeRange.contains(timestamp) }
         }
-        if (idx >= 0) {
-            _uiState.update { it.copy(selectedChunkIndex = idx) }
-        }
+
+        chunk?.let { selectTimelineChunk(it.index) }
     }
 
     fun clearError() {

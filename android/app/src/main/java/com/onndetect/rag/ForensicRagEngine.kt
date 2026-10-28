@@ -30,6 +30,9 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import org.json.JSONObject
 import java.io.File
 import java.util.Locale
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.abs
@@ -62,7 +65,14 @@ class ForensicRagEngine @Inject constructor(
         VIDEO,
         AUDIO,
         IMAGE,
+        DOCUMENT,
         SCAN_HISTORY_RECORD,
+    }
+
+    sealed class RagStreamEvent {
+        data class Status(val statusText: String) : RagStreamEvent()
+        data class TokenChunk(val token: String) : RagStreamEvent()
+        data class Complete(val answer: RagAnswer) : RagStreamEvent()
     }
 
     data class TimelineChunk(
@@ -281,7 +291,33 @@ class ForensicRagEngine @Inject constructor(
             val asksVoiceOrAudio = AUDIO_VOICE_SYNONYMS.any { qLower.contains(it) }
             val asksFakeOrWhy = FAKE_FORENSIC_SYNONYMS.any { qLower.contains(it) }
             val asksHotspot = setOf("hotspot", "roi", "heatmap", "splice", "region", "patch", "box", "crop", "residual").any { qLower.contains(it) }
-            val asksDocument = setOf("document", "receipt", "invoice", "text", "altered", "font", "ocr", "letter", "screenshot").any { qLower.contains(it) }
+            val asksDocument = setOf("document", "receipt", "invoice", "text", "altered", "font", "ocr", "letter", "screenshot", "file", "pdf").any { qLower.contains(it) }
+
+            if (kb.mediaKind == RagMediaKind.DOCUMENT || asksDocument) {
+                val hasDocTag = kb.chunks.any { c -> c.sceneTags.any { it in listOf("document", "receipt", "text", "ocr", "screenshot", "file") } }
+                val docChunk = kb.chunks.firstOrNull()
+                return buildString {
+                    append("• **Document & Receipt Authenticity Report**: ")
+                    if (hasDocTag || kb.mediaKind == RagMediaKind.DOCUMENT) {
+                        append("Structured document layout and compression history was evaluated. ")
+                        if (docChunk != null && docChunk.visualDescription.contains("Document", ignoreCase = true)) {
+                            append(docChunk.visualDescription.substringAfter("analysis.").trim())
+                            append("\n")
+                        } else {
+                            append("Micro-geometry and spatial noise-floor consistency were analyzed.\n")
+                        }
+                        if (docChunk?.hotspotBoxNorm != null || (docChunk?.hotspotZScore ?: 0f) >= 1.5f) {
+                            append("• **Tampered ROI Bounding Zone**: Residual energy spikes indicate local copy-paste or text modification (Z=${String.format(Locale.US, "%.2f", docChunk?.hotspotZScore ?: 0f)}σ).\n")
+                        }
+                    } else {
+                        append("This media was analyzed as a natural camera capture. ")
+                    }
+                    append("• **Headline Assessment**: Overall tampering risk is **${(kb.overallAiProb * 100f).toInt()}%** (${kb.headlineVerdict}).")
+                    if (kb.scamRiskWarnings.isNotEmpty()) {
+                        append("\n• **Warning**: ${kb.scamRiskWarnings.joinToString(" ")}")
+                    }
+                }
+            }
 
             if (kb.mediaKind == RagMediaKind.VIDEO && asksWhenPersonOrBoy) {
                 val personChunks = kb.chunks.filter { it.hasPersonOrFace }
@@ -330,25 +366,6 @@ class ForensicRagEngine @Inject constructor(
                 }
             }
 
-            if (asksDocument) {
-                val hasDocTag = kb.chunks.any { c -> c.sceneTags.any { it in listOf("document", "receipt", "text", "ocr", "screenshot") } }
-                return buildString {
-                    append("• **Document & Receipt Authenticity Report**: ")
-                    if (hasDocTag) {
-                        append("Structured document layout analysis was performed on this item. ")
-                        val chunkWithDoc = kb.chunks.firstOrNull { it.visualDescription.contains("tamper score", ignoreCase = true) }
-                        if (chunkWithDoc != null) {
-                            append(chunkWithDoc.visualDescription.substringAfter("Document/Receipt").trim())
-                        } else {
-                            append("Character alignment and baseline spacing show high variance consistent with digital text splicing.\n")
-                        }
-                    } else {
-                        append("This media was analyzed as a natural camera capture. ")
-                    }
-                    append("\n• **Headline Assessment**: Overall AI risk is **${(kb.overallAiProb * 100f).toInt()}%** (${kb.headlineVerdict}).")
-                }
-            }
-
             if (asksVoiceOrAudio) {
                 return buildString {
                     append("• **Voice & Audio Verdict**: **${kb.headlineVerdict}** (AI spoof score **${(kb.overallAiProb * 100f).toInt()}%**).\n")
@@ -378,6 +395,51 @@ class ForensicRagEngine @Inject constructor(
 
             return "Indexed **${kb.mediaTitle}** (${kb.chunks.size} timeline segments). Overall verdict: **${kb.headlineVerdict}** " +
                 "(${(kb.overallAiProb * 100f).toInt()}% AI risk). Ask about specific timestamps, person appearances, or voice-clone checks."
+        }
+
+        fun synthesizeGeneralForensicAnswer(query: String): String {
+            val qLower = query.lowercase(Locale.US)
+            val asksDoc = setOf("document", "receipt", "invoice", "upi", "screenshot", "font", "tamper", "forged", "pdf").any { qLower.contains(it) }
+            val asksBoyPerson = BOY_CHILD_SYNONYMS.any { qLower.contains(it) }
+            val asksVoice = AUDIO_VOICE_SYNONYMS.any { qLower.contains(it) }
+            val asksHotspot = setOf("hotspot", "roi", "heatmap", "splice", "noise", "srm", "residual").any { qLower.contains(it) }
+            val asksAboutModels = setOf("model", "qwen", "llama", "vlm", "siglip", "offline", "how", "what", "help").any { qLower.contains(it) }
+
+            return when {
+                asksDoc -> buildString {
+                    append("• **UPI & Document Forgery Detection**: ONN-DETECT executes on-device forensic verification for payment receipts (Google Pay, PhonePe, Paytm) and KYC files.\n")
+                    append("• **Forensic Techniques**: Evaluates Error Level Analysis (ELA) for double-compression anomalies, Manhattan-grid typography alignment, and PRNU noise-floor discontinuity to pinpoint copy-pasted transaction amounts or names.\n")
+                    append("• **How to Test**: Tap the **+** button in the composer below and attach an **Image** or **Document** (PDF/Screenshot) to run an immediate tamper audit.")
+                }
+                asksBoyPerson -> buildString {
+                    append("• **Timeline Person & Scene Entry Tracking**: ONN-DETECT samples video keyframes at native scene boundaries, computing inter-frame cosine similarity deltas to register subject transitions.\n")
+                    append("• **Heuristic Biometrics**: Tracks face mesh landmarks and chromatic skin-ratio distributions to isolate when a person or child enters the viewport, logging precise `[mm:ss]` timestamps.\n")
+                    append("• **How to Test**: Attach any MP4/MKV video clip below using the **+** button to search timeline appearances.")
+                }
+                asksVoice -> buildString {
+                    append("• **Voice Clone & Deepfake Audio Verification**: Inspects speech recordings using a 16 kHz LCNN-MFM (Lightweight CNN with Max-Feature-Map) acoustic anti-spoofing model.\n")
+                    append("• **Family Safe-Voice Vault**: Biometrically compares incoming audio against your locally enrolled family voiceprints using cosine similarity with zero cloud transmission.\n")
+                    append("• **How to Test**: Attach a voice note or call recording via the **+** button below to check authenticity and vault matching.")
+                }
+                asksHotspot -> buildString {
+                    append("• **Spatial Residual Noise & SRM Hotspots**: Real camera sensors create a natural, spatially uniform photo-response non-uniformity (PRNU) noise pattern.\n")
+                    append("• **20-Channel SRM Extraction**: Digital in-painting, generative diffusion blending, or copy-paste edits disrupt this noise floor, producing localized residual variance spikes (Z-score > 1.8σ).\n")
+                    append("• **How to Test**: Attach any suspicious photo or graphic to visualize localized tampered ROI bounding boxes.")
+                }
+                asksAboutModels -> buildString {
+                    append("• **ONN-DETECT Multimodal Engine Architecture**:\n")
+                    append("1. **Visual Synthesis**: 20-channel SRM high-pass residual filter + SigLIP-B/16 foundation vision probe.\n")
+                    append("2. **Audio Anti-Spoofing**: 16 kHz LCNN-MFM vocoder artifact detector + Family Safe-Voice Vault.\n")
+                    append("3. **Document / Receipt Guard**: Multi-scale ELA + Manhattan typography grid.\n")
+                    append("4. **Conversational Synthesis**: Qwen 3.5 0.8B / 2B GGUF via llama.cpp + deterministic specialist RAG.\n")
+                    append("• **Privacy**: 100% on-device inference with zero network permissions.")
+                }
+                else -> buildString {
+                    append("• **Forensic AI Assistant Ready**: I am ONN-DETECT's on-device multimodal forensic assistant running 100% locally.\n")
+                    append("• **Direct Multimodal Attachments**: Tap **+** in the composer below to attach an **Image**, **Video**, **Audio note**, or **Document**.\n")
+                    append("• **Instant Forensic Inspection**: I'll index the file frame-by-frame, highlight tampered hotspots, and stream grounded answers with interactive timestamp citations.")
+                }
+            }
         }
     }
 
@@ -854,19 +916,213 @@ class ForensicRagEngine @Inject constructor(
         }
     }
 
-    fun retrieveTopChunks(
-        kb: IndexedMediaKnowledgeBase,
-        query: String,
-        topK: Int = 3,
-    ): List<TimelineChunk> = Companion.retrieveTopChunks(kb, query, topK)
+    suspend fun indexDocumentUri(
+        uri: Uri,
+        fileName: String? = null,
+        mimeType: String? = null,
+        onProgress: (String) -> Unit = {},
+    ): IndexedMediaKnowledgeBase {
+        onProgress("Reading document & inspecting file signature...")
+        val contentResolver = context.contentResolver
+        val resolvedMime = mimeType ?: contentResolver.getType(uri) ?: ""
+        val resolvedName = fileName ?: "Document"
+
+        // Sniff header bytes for magic signatures
+        val headerBytes = ByteArray(32)
+        val bytesRead = runCatching {
+            contentResolver.openInputStream(uri)?.use { it.read(headerBytes) }
+        }.getOrNull() ?: 0
+
+        val isPdfMagic = bytesRead >= 4 &&
+            headerBytes[0] == 0x25.toByte() && // %
+            headerBytes[1] == 0x50.toByte() && // P
+            headerBytes[2] == 0x44.toByte() && // D
+            headerBytes[3] == 0x46.toByte()    // F
+
+        val isImageMagic = bytesRead >= 3 && (
+            (headerBytes[0] == 0xFF.toByte() && headerBytes[1] == 0xD8.toByte() && headerBytes[2] == 0xFF.toByte()) || // JPEG
+            (bytesRead >= 8 && headerBytes[0] == 0x89.toByte() && headerBytes[1] == 0x50.toByte()) || // PNG
+            (bytesRead >= 4 && headerBytes[0] == 0x52.toByte() && headerBytes[1] == 0x49.toByte()) // WEBP (RIFF)
+        )
+
+        val isPdf = isPdfMagic ||
+            resolvedMime.equals("application/pdf", ignoreCase = true) ||
+            resolvedName.endsWith(".pdf", ignoreCase = true) ||
+            uri.toString().endsWith(".pdf", ignoreCase = true)
+
+        val isText = !isPdf && !isImageMagic && (
+            resolvedMime.startsWith("text/") ||
+            resolvedName.endsWith(".txt", ignoreCase = true) ||
+            resolvedName.endsWith(".json", ignoreCase = true) ||
+            resolvedName.endsWith(".csv", ignoreCase = true)
+        )
+
+        var docBitmap: Bitmap? = null
+        var extractedText: String? = null
+        var pdfPageCount = 1
+
+        val tempPdfFile = File(context.cacheDir, "rag_doc_${System.currentTimeMillis()}.pdf")
+        try {
+            if (isPdf) {
+                onProgress("Rasterizing PDF page via Android PdfRenderer...")
+                // Copy stream to cached file to ensure 100% seekable ParcelFileDescriptor
+                runCatching {
+                    contentResolver.openInputStream(uri)?.use { input ->
+                        tempPdfFile.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    if (tempPdfFile.exists() && tempPdfFile.length() > 0) {
+                        android.os.ParcelFileDescriptor.open(tempPdfFile, android.os.ParcelFileDescriptor.MODE_READ_ONLY)?.use { pfd ->
+                            val renderer = android.graphics.pdf.PdfRenderer(pfd)
+                            pdfPageCount = renderer.pageCount
+                            if (renderer.pageCount > 0) {
+                                val page = renderer.openPage(0)
+                                val bmpWidth = (page.width * 2).coerceIn(400, 2048)
+                                val bmpHeight = (page.height * 2).coerceIn(400, 2048)
+                                val bmp = Bitmap.createBitmap(bmpWidth, bmpHeight, Bitmap.Config.ARGB_8888)
+                                val canvas = android.graphics.Canvas(bmp)
+                                canvas.drawColor(android.graphics.Color.WHITE)
+                                page.render(bmp, null, null, android.graphics.pdf.PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                                page.close()
+                                docBitmap = bmp
+                            }
+                            renderer.close()
+                        }
+                    }
+                }
+            } else if (isText) {
+                onProgress("Parsing plain-text document structure...")
+                extractedText = runCatching {
+                    contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                }.getOrNull()
+            }
+
+            if (docBitmap == null && !isText) {
+                onProgress("Decoding document bitmap for visual layout verification...")
+                docBitmap = runCatching {
+                    contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) }
+                }.getOrNull()
+            }
+
+            if (docBitmap != null) {
+                val bmp = docBitmap!!
+                val srm = srmAnalyzer.analyze(bmp)
+                val docReport = runCatching { DocumentForgeryAnalyzer().analyze(bmp) }.getOrNull()
+                val hm = runCatching { ResidualHeatmapExtractor.computeResidualHeatmap(bmp, 32) }.getOrNull()
+                val hotspot = if (hm != null && hm.isNotEmpty()) {
+                    ResidualHeatmapExtractor.extractHotspotBoundingBox(hm, 32, 8)
+                } else null
+
+                val forgeryScore = docReport?.forgeryScore ?: srm.coerceIn(0f, 1f)
+                val isForged = docReport?.isForged ?: (forgeryScore >= 0.58f)
+
+                val visualDesc = buildString {
+                    append(if (isPdf) "PDF Document ($pdfPageCount pages). " else "Document (${bmp.width}x${bmp.height}) analysis. ")
+                    append("Document forgery score=${(forgeryScore * 100f).toInt()}% (SRM=${String.format(Locale.US, "%.2f", srm)}, ")
+                    append("ELA peak=${String.format(Locale.US, "%.2f", docReport?.elaPeakRatio ?: 1f)}, ")
+                    append("Noise discontinuity=${String.format(Locale.US, "%.2f", docReport?.noiseDiscontinuity ?: 0f)}). ")
+                    if (hotspot != null) {
+                        append("Tampered ROI box=[${String.format(Locale.US, "%.2f", hotspot.normX0)}, ${String.format(Locale.US, "%.2f", hotspot.normY0)} -> ${String.format(Locale.US, "%.2f", hotspot.normX1)}, ${String.format(Locale.US, "%.2f", hotspot.normY1)}] (Z=${String.format(Locale.US, "%.2f", hotspot.zScore)}). ")
+                    }
+                    if (docReport != null && docReport.indicators.isNotEmpty()) {
+                        append("Indicators: ${docReport.indicators.joinToString("; ")}.")
+                    }
+                }
+
+                val chunk = TimelineChunk(
+                    index = 0,
+                    startTimeMs = 0L,
+                    endTimeMs = 0L,
+                    formattedTimeRange = if (isPdf) "Page 1 Tamper Grid" else "Document Page 1 + Tamper Grid",
+                    sceneTags = listOf("document", "file", "receipt", "invoice", "text", "forgery", if (isForged) "tampered" else "clean", "roi"),
+                    visualDescription = visualDesc,
+                    audioSummary = "Document file (no audio).",
+                    voiceVaultSummary = "Not applicable for document files.",
+                    aiProbability = forgeryScore,
+                    srmScore = srm,
+                    hotspotBoxNorm = hotspot?.let { floatArrayOf(it.normX0, it.normY0, it.normX1, it.normY1) },
+                    hotspotZScore = hotspot?.zScore ?: 0f,
+                    hasPersonOrFace = false,
+                    estimatedSubjectTag = if (isPdf) "PDF Document ($pdfPageCount pgs)" else "Document / Screenshot",
+                    featureVector = floatArrayOf(forgeryScore, srm, hotspot?.zScore ?: 0f),
+                )
+
+                val headline = if (isForged) "FORGED / ALTERED DOCUMENT" else "AUTHENTIC DOCUMENT"
+                val warnings = if (isForged) {
+                    listOf("Document layout or compression discontinuity detected (${(forgeryScore * 100f).toInt()}% risk). Verify recipient and amounts.")
+                } else emptyList()
+
+                return IndexedMediaKnowledgeBase(
+                    sessionId = "doc_${System.currentTimeMillis()}",
+                    mediaKind = RagMediaKind.DOCUMENT,
+                    mediaTitle = resolvedName,
+                    sourceUri = uri.toString(),
+                    durationMs = 0L,
+                    overallAiProb = forgeryScore,
+                    headlineVerdict = headline,
+                    activeEngineLabel = "Document Forgery Analyzer (ELA + Noise Floor + Grid)",
+                    chunks = listOf(chunk),
+                    voiceVaultMatchSummary = "Document verification",
+                    scamRiskWarnings = warnings,
+                )
+            } else {
+                val sampleText = extractedText ?: (if (isPdf) "PDF document (encrypted or protected text content)." else "Document file metadata indexed.")
+                val chunk = TimelineChunk(
+                    index = 0,
+                    startTimeMs = 0L,
+                    endTimeMs = 0L,
+                    formattedTimeRange = "Document Content",
+                    sceneTags = listOf("document", "file", "text", "ocr", "receipt"),
+                    visualDescription = "Document text content: ${sampleText.take(200)}",
+                    audioSummary = "No audio track.",
+                    voiceVaultSummary = "Not applicable.",
+                    aiProbability = 0.05f,
+                    srmScore = 0.05f,
+                    hasPersonOrFace = false,
+                    estimatedSubjectTag = resolvedName,
+                )
+                return IndexedMediaKnowledgeBase(
+                    sessionId = "doc_${System.currentTimeMillis()}",
+                    mediaKind = RagMediaKind.DOCUMENT,
+                    mediaTitle = resolvedName,
+                    sourceUri = uri.toString(),
+                    durationMs = 0L,
+                    overallAiProb = 0.05f,
+                    headlineVerdict = "PARSED DOCUMENT",
+                    activeEngineLabel = "Offline Document Parser",
+                    chunks = listOf(chunk),
+                    voiceVaultMatchSummary = "Text file indexed",
+                    scamRiskWarnings = emptyList(),
+                )
+            }
+        } finally {
+            if (tempPdfFile.exists()) tempPdfFile.delete()
+            docBitmap?.let { if (!it.isRecycled) it.recycle() }
+        }
+    }
 
     suspend fun askQuestion(
-        kb: IndexedMediaKnowledgeBase,
+        kb: IndexedMediaKnowledgeBase?,
         question: String,
     ): RagAnswer {
         val t0 = System.currentTimeMillis()
-        val retrieved = retrieveTopChunks(kb, question, topK = 3)
         val qLower = question.lowercase(Locale.US)
+
+        if (kb == null) {
+            val answerText = synthesizeGeneralForensicAnswer(question)
+            val elapsed = max(1L, System.currentTimeMillis() - t0)
+            return RagAnswer(
+                answerText = answerText,
+                citedTimestamps = emptyList(),
+                retrievedChunks = emptyList(),
+                usedOnDeviceVlm = false,
+                engineBadge = "Forensic Assistant (${elapsed}ms)",
+                latencyMs = elapsed,
+            )
+        }
+
+        val retrieved = retrieveTopChunks(kb, question, topK = 3)
 
         val installedPack = VlmPackManager.getInstalledPackDetails(context)
         val packDir = File(context.filesDir, "vlm_packs")
@@ -879,40 +1135,28 @@ class ForensicRagEngine @Inject constructor(
         if (installedPack != null && langFile != null && langFile.isFile &&
             (LlamaCppVlmPrefillBackend.isNativeLibraryLoaded() || LlamaCppVlmPrefillBackend.testGenerationDelegate != null)
         ) {
-            val ragPrompt = Companion.buildRagPrompt(kb, retrieved, question)
-            var queryBitmap: Bitmap? = null
-            if (kb.mediaKind == RagMediaKind.IMAGE && kb.sourceUri != null) {
-                queryBitmap = runCatching {
-                    context.contentResolver.openInputStream(Uri.parse(kb.sourceUri))?.use {
-                        BitmapFactory.decodeStream(it)
+            val ragPrompt = buildRagPrompt(kb, retrieved, question)
+            vlmOutput = runCatching {
+                inferenceEngine.acquireExclusiveVlmSession().use {
+                    LlamaCppVlmPrefillBackend(
+                        modelPath = langFile.absolutePath,
+                        mmprojPath = mmprojFile?.takeIf { it.isFile }?.absolutePath,
+                        hiddenDim = if (installedPack.modelId.contains("2B", ignoreCase = true)) 2048 else 1024,
+                    ).use { backend ->
+                        backend.generateMultimodalResponse(
+                            prompt = ragPrompt,
+                            bitmap = null,
+                            maxNewTokens = 160,
+                        )
                     }
-                }.getOrNull()
-            }
-            try {
-                vlmOutput = runCatching {
-                    inferenceEngine.acquireExclusiveVlmSession().use {
-                        LlamaCppVlmPrefillBackend(
-                            modelPath = langFile.absolutePath,
-                            mmprojPath = mmprojFile?.takeIf { it.isFile }?.absolutePath,
-                            hiddenDim = if (installedPack.modelId.contains("2B", ignoreCase = true)) 2048 else 1024,
-                        ).use { backend ->
-                            backend.generateMultimodalResponse(
-                                prompt = ragPrompt,
-                                bitmap = queryBitmap,
-                                maxNewTokens = 160,
-                            )
-                        }
-                    }
-                }.getOrNull()?.takeIf { it.isNotBlank() }
-            } finally {
-                queryBitmap?.let { if (!it.isRecycled) it.recycle() }
-            }
+                }
+            }.getOrNull()?.takeIf { it.isNotBlank() }
             if (vlmOutput != null) {
                 usedVlm = true
             }
         }
 
-        val finalAnswer = vlmOutput ?: Companion.synthesizeDeterministicGroundedAnswer(kb, retrieved, qLower)
+        val finalAnswer = vlmOutput ?: synthesizeDeterministicGroundedAnswer(kb, retrieved, qLower)
         val cited = retrieved.map { it.formattedTimeRange }.distinct()
         val elapsed = max(1L, System.currentTimeMillis() - t0)
 
@@ -928,5 +1172,38 @@ class ForensicRagEngine @Inject constructor(
             },
             latencyMs = elapsed,
         )
+    }
+
+    fun askQuestionStream(
+        kb: IndexedMediaKnowledgeBase?,
+        question: String,
+    ): Flow<RagStreamEvent> = flow {
+        if (kb != null) {
+            emit(RagStreamEvent.Status("Searching timeline & forensic embeddings..."))
+            delay(35)
+            emit(RagStreamEvent.Status("Analyzing grounded visual & acoustic signals..."))
+            delay(35)
+        } else {
+            emit(RagStreamEvent.Status("Accessing offline forensic knowledge..."))
+            delay(35)
+            emit(RagStreamEvent.Status("Synthesizing forensic guidance..."))
+            delay(35)
+        }
+
+        val answer = askQuestion(kb, question)
+
+        emit(RagStreamEvent.Status("Synthesizing answer..."))
+        delay(25)
+
+        // Stream typewriter tokens
+        val tokens = answer.answerText.split(Regex("(?<=\\s)|(?<=\\n)"))
+        for (token in tokens) {
+            if (token.isNotEmpty()) {
+                emit(RagStreamEvent.TokenChunk(token))
+                delay(14)
+            }
+        }
+
+        emit(RagStreamEvent.Complete(answer))
     }
 }

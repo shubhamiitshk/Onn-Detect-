@@ -39,3 +39,4 @@ outputs/
 gemma_cache/
 .agents/
 
+*.apk
