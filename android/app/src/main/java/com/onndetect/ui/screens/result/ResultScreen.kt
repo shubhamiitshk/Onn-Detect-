@@ -39,15 +39,20 @@ import java.util.Date
 fun ResultScreen(navController: NavController, viewModel: ResultViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
 
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .background(BackgroundVoid)
-            .safeDrawingPadding()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .safeDrawingPadding()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 16.dp)
+                .padding(bottom = 76.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
         // Result Top Bar
         ResultTopBar(onBackClick = { navController.popBackStack() })
 
@@ -135,6 +140,50 @@ fun ResultScreen(navController: NavController, viewModel: ResultViewModel = hilt
             }
         }
     }
+
+    // Floating Glass FAB: "💬 Ask Forensic AI"
+    if (state is ResultState.Ready) {
+        val ready = state as ResultState.Ready
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .navigationBarsPadding()
+                .padding(end = 20.dp, bottom = 20.dp)
+                .clip(RoundedCornerShape(26.dp))
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(
+                            NeonPurple.copy(alpha = 0.92f),
+                            DeepIndigo.copy(alpha = 0.95f)
+                        )
+                    )
+                )
+                .border(
+                    width = 1.4.dp,
+                    brush = Brush.horizontalGradient(
+                        listOf(Color.White.copy(alpha = 0.55f), CyberCyan.copy(alpha = 0.75f))
+                    ),
+                    shape = RoundedCornerShape(26.dp)
+                )
+                .clickable { navController.navigate(Routes.chatRag(ready.entry.id)) }
+                .padding(horizontal = 20.dp, vertical = 14.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("💬", fontSize = 17.sp)
+                Text(
+                    text = "Ask Forensic AI",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp
+                )
+            }
+        }
+    }
+}
 }
 
 @Composable
@@ -214,6 +263,7 @@ fun AssessmentDetails(
         HeatmapViewer(
             heatmap = heatmap,
             roiProbeScore = decodedSignals?.perturbationScore ?: -1f,
+            onInspectRoiClick = onAskRagClick,
         )
     }
 

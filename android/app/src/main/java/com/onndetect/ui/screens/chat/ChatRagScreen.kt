@@ -325,7 +325,10 @@ fun ChatRagScreen(
                     }
                 } else {
                     items(uiState.messages, key = { it.id }) { msg ->
-                        ChatBubble(msg = msg)
+                        ChatBubble(
+                            msg = msg,
+                            onTimestampClick = { ts -> viewModel.selectTimelineTimestamp(ts) }
+                        )
                     }
                 }
             }
@@ -421,6 +424,9 @@ private fun TimelineScrubberCard(
     selectedIndex: Int?,
     onSelectChunk: (Int) -> Unit,
 ) {
+    val activeIndex = selectedIndex ?: 0
+    val activeChunk = kb.chunks.getOrNull(activeIndex)
+
     LiquidGlassCard(
         accentColor = CyberCyan,
         cornerRadius = 16.dp,
@@ -429,94 +435,216 @@ private fun TimelineScrubberCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            // Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "TIMELINE SCENE & FORENSIC PINS (${kb.chunks.size} SEGMENTS)",
+                    text = "DUAL-TRACK TIMELINE SCRUBBER (${kb.chunks.size} SEGMENTS)",
                     style = MaterialTheme.typography.labelSmall,
                     color = CyberCyan,
                     fontWeight = FontWeight.Bold,
                     fontSize = 10.sp
                 )
                 Text(
-                    text = "Cyan = Person/Scene • Red = AI Anomaly",
+                    text = "Red: AI Spikes • Cyan: Semantic Pins",
                     style = MaterialTheme.typography.labelSmall,
                     color = TextTertiary,
                     fontSize = 9.sp
                 )
             }
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                kb.chunks.forEach { chunk ->
-                    val isSelected = chunk.index == selectedIndex
-                    val isAnomaly = chunk.aiProbability >= 0.58f
-                    val pinColor = when {
-                        isAnomaly -> SyntheticRed
-                        chunk.hasPersonOrFace -> CyberCyan
-                        else -> TextTertiary
+            // Track 1: Red Forensic Spikes (Visual Waveform / Spike Graph)
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "FORENSIC MANIPULATION SPIKES",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = SyntheticRedLight,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = "Anomaly Thr: 58%",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = WarningAmber,
+                        fontSize = 9.sp
+                    )
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(SurfaceCard.copy(alpha = 0.85f))
+                        .border(1.dp, BorderSubtle, RoundedCornerShape(8.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.Bottom
+                ) {
+                    kb.chunks.forEach { chunk ->
+                        val isSelected = chunk.index == activeIndex
+                        val isAnomaly = chunk.aiProbability >= 0.58f
+                        val barColor = when {
+                            isAnomaly -> SyntheticRed
+                            chunk.hasPersonOrFace -> CyberCyan
+                            else -> TextTertiary
+                        }
+                        val barHeightFraction = chunk.aiProbability.coerceIn(0.12f, 1f)
+
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight(barHeightFraction)
+                                .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
+                                .background(if (isSelected) barColor else barColor.copy(alpha = 0.55f))
+                                .border(
+                                    width = if (isSelected) 1.5.dp else 0.5.dp,
+                                    color = if (isSelected) Color.White else Color.Transparent,
+                                    shape = RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp)
+                                )
+                                .clickable { onSelectChunk(chunk.index) }
+                        )
                     }
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(
-                                if (isSelected) pinColor.copy(alpha = 0.28f)
-                                else SurfaceCard.copy(alpha = 0.7f)
-                            )
-                            .border(
-                                width = if (isSelected) 1.5.dp else 1.dp,
-                                color = if (isSelected) pinColor else pinColor.copy(alpha = 0.4f),
-                                shape = RoundedCornerShape(10.dp)
-                            )
-                            .clickable { onSelectChunk(chunk.index) }
-                            .padding(horizontal = 9.dp, vertical = 6.dp)
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                text = ForensicRagEngine.formatMs(chunk.startTimeMs),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = TextPrimary,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 10.sp
-                            )
-                            Text(
-                                text = if (chunk.hasPersonOrFace) "👤 ${chunk.estimatedSubjectTag.take(8)}"
-                                else "🎞️ ${(chunk.aiProbability * 100f).toInt()}%",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = pinColor,
-                                fontSize = 9.sp
-                            )
+                }
+            }
+
+            // Track 2: Cyan Semantic Scene & Event Pins (Horizontal Scroller)
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = "SEMANTIC RAG SCENE PINS",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = CyberCyan,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    kb.chunks.forEach { chunk ->
+                        val isSelected = chunk.index == activeIndex
+                        val isAnomaly = chunk.aiProbability >= 0.58f
+                        val pinColor = when {
+                            isAnomaly -> SyntheticRed
+                            chunk.hasPersonOrFace -> CyberCyan
+                            else -> TextTertiary
+                        }
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(
+                                    if (isSelected) pinColor.copy(alpha = 0.28f)
+                                    else SurfaceCard.copy(alpha = 0.7f)
+                                )
+                                .border(
+                                    width = if (isSelected) 1.5.dp else 1.dp,
+                                    color = if (isSelected) pinColor else pinColor.copy(alpha = 0.4f),
+                                    shape = RoundedCornerShape(10.dp)
+                                )
+                                .clickable { onSelectChunk(chunk.index) }
+                                .padding(horizontal = 9.dp, vertical = 6.dp)
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = ForensicRagEngine.formatMs(chunk.startTimeMs),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = TextPrimary,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 10.sp
+                                )
+                                Text(
+                                    text = if (chunk.hasPersonOrFace) "👤 ${chunk.estimatedSubjectTag.take(8)}"
+                                    else if (chunk.isSceneCut) "🎬 Cut"
+                                    else "🎞️ ${(chunk.aiProbability * 100f).toInt()}%",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = pinColor,
+                                    fontSize = 9.sp
+                                )
+                            }
                         }
                     }
                 }
             }
 
-            val activeChunk = kb.chunks.getOrNull(selectedIndex ?: 0)
+            // Selected Segment Telemetry Inspector Box
             if (activeChunk != null) {
-                Text(
-                    text = "[${activeChunk.formattedTimeRange}] ${activeChunk.visualDescription}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextSecondary,
-                    fontSize = 11.sp,
-                    lineHeight = 15.sp
-                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(SurfaceElevated.copy(alpha = 0.85f))
+                        .border(1.dp, BorderLight, RoundedCornerShape(10.dp))
+                        .padding(10.dp)
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "⏱ [${activeChunk.formattedTimeRange}]",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = CyberCyan,
+                                fontWeight = FontWeight.Bold
+                            )
+                            val riskColor = if (activeChunk.aiProbability >= 0.58f) SyntheticRed else AuthenticGreen
+                            Text(
+                                text = "${(activeChunk.aiProbability * 100f).toInt()}% AI Risk (SRM ${(activeChunk.srmScore * 100).toInt()}%)",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = riskColor,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        Text(
+                            text = activeChunk.visualDescription,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextSecondary,
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp
+                        )
+                        if (activeChunk.audioSummary.isNotBlank()) {
+                            Text(
+                                text = "Audio: ${activeChunk.audioSummary}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TextTertiary,
+                                fontSize = 10.sp
+                            )
+                        }
+                        if (activeChunk.hotspotBoxNorm != null || activeChunk.hotspotZScore >= 1.5f) {
+                            Text(
+                                text = "Hotspot ROI: ${String.format(java.util.Locale.US, "%.2fσ", activeChunk.hotspotZScore)} localized anomaly cluster",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = SyntheticRedLight,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun ChatBubble(msg: ChatMessage) {
+private fun ChatBubble(
+    msg: ChatMessage,
+    onTimestampClick: (String) -> Unit = {},
+) {
     val align = if (msg.isUser) Alignment.End else Alignment.Start
     val bubbleBrush = if (msg.isUser) {
         Brush.horizontalGradient(listOf(DeepIndigo.copy(alpha = 0.75f), CyberCyanDark.copy(alpha = 0.65f)))
@@ -565,16 +693,26 @@ private fun ChatBubble(msg: ChatMessage) {
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(8.dp))
                                     .background(CyberCyan.copy(alpha = 0.16f))
-                                    .border(1.dp, CyberCyan.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
-                                    .padding(horizontal = 7.dp, vertical = 3.dp)
+                                    .border(1.dp, CyberCyan.copy(alpha = 0.45f), RoundedCornerShape(8.dp))
+                                    .clickable { onTimestampClick(ts) }
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
                             ) {
-                                Text(
-                                    text = "⏱ $ts",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = CyberCyan,
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 10.sp
-                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Text(
+                                        text = "⏱",
+                                        fontSize = 10.sp
+                                    )
+                                    Text(
+                                        text = ts,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = CyberCyan,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 10.sp
+                                    )
+                                }
                             }
                         }
                     }

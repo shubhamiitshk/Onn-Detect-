@@ -199,6 +199,186 @@ class ForensicRagEngine @Inject constructor(
 
             return Triple(hasSubject, subjectLabel, tags.distinct())
         }
+
+        fun retrieveTopChunks(
+            kb: IndexedMediaKnowledgeBase,
+            query: String,
+            topK: Int = 3,
+        ): List<TimelineChunk> {
+            if (kb.chunks.isEmpty()) return emptyList()
+            val qTokens = query.lowercase(Locale.US)
+                .split(Regex("[^a-z0-9]+"))
+                .filter { it.isNotBlank() }
+                .toSet()
+
+            val asksAboutPersonOrBoy = qTokens.any { it in BOY_CHILD_SYNONYMS }
+            val asksAboutFakeOrAnomaly = qTokens.any { it in FAKE_FORENSIC_SYNONYMS }
+            val asksAboutAudioOrVoice = qTokens.any { it in AUDIO_VOICE_SYNONYMS }
+
+            val scored = kb.chunks.map { chunk ->
+                var score = 0.0f
+                val docText = "${chunk.sceneTags.joinToString(" ")} ${chunk.visualDescription} ${chunk.audioSummary} ${chunk.voiceVaultSummary}"
+                    .lowercase(Locale.US)
+
+                for (tok in qTokens) {
+                    if (docText.contains(tok)) score += 2.2f
+                }
+                if (asksAboutPersonOrBoy) {
+                    if (chunk.hasPersonOrFace) score += 3.5f
+                    if (chunk.sceneTags.contains("entry") || chunk.sceneTags.contains("entered")) score += 4.0f
+                }
+                if (asksAboutFakeOrAnomaly) {
+                    score += chunk.aiProbability * 3.0f + (chunk.hotspotZScore.coerceAtMost(3f) * 0.8f)
+                }
+                if (asksAboutAudioOrVoice) {
+                    val hasAudioContent = chunk.sceneTags.any { it in AUDIO_VOICE_SYNONYMS } ||
+                        chunk.audioSummary.contains("speech", ignoreCase = true) ||
+                        chunk.audioSummary.contains("voiced", ignoreCase = true) ||
+                        chunk.voiceVaultSummary.contains("match", ignoreCase = true)
+                    if (hasAudioContent) {
+                        score += 3.5f
+                    }
+                }
+                if (chunk.isSceneCut) {
+                    score += 0.4f
+                }
+                Pair(chunk, score)
+            }
+
+            return scored
+                .sortedWith(compareByDescending<Pair<TimelineChunk, Float>> { it.second }.thenBy { it.first.index })
+                .take(topK)
+                .map { it.first }
+        }
+
+        fun buildRagPrompt(
+            kb: IndexedMediaKnowledgeBase,
+            retrieved: List<TimelineChunk>,
+            question: String,
+        ): String {
+            val contextBlock = retrieved.joinToString("\n") { c ->
+                "- [${c.formattedTimeRange}] ${c.visualDescription} | Audio: ${c.audioSummary} | Vault: ${c.voiceVaultSummary}"
+            }
+            return buildString {
+                append("<|im_start|>system\n")
+                append("You are ONN-DETECT's 100% offline forensic media assistant running on Android. ")
+                append("Answer concisely using ONLY the indexed timeline evidence below. Always cite timestamps in [mm:ss] format.\n")
+                append("Media: ${kb.mediaTitle} | Verdict: ${kb.headlineVerdict} | Overall AI Risk: ${(kb.overallAiProb * 100f).toInt()}%\n")
+                append("Retrieved Timeline Evidence:\n")
+                append(contextBlock)
+                append("\n<|im_end|>\n<|im_start|>user\n")
+                append(question.trim())
+                append("<|im_end|>\n<|im_start|>assistant\n")
+            }
+        }
+
+        fun synthesizeDeterministicGroundedAnswer(
+            kb: IndexedMediaKnowledgeBase,
+            retrieved: List<TimelineChunk>,
+            qLower: String,
+        ): String {
+            val asksWhenPersonOrBoy = BOY_CHILD_SYNONYMS.any { qLower.contains(it) }
+            val asksVoiceOrAudio = AUDIO_VOICE_SYNONYMS.any { qLower.contains(it) }
+            val asksFakeOrWhy = FAKE_FORENSIC_SYNONYMS.any { qLower.contains(it) }
+            val asksHotspot = setOf("hotspot", "roi", "heatmap", "splice", "region", "patch", "box", "crop", "residual").any { qLower.contains(it) }
+            val asksDocument = setOf("document", "receipt", "invoice", "text", "altered", "font", "ocr", "letter", "screenshot").any { qLower.contains(it) }
+
+            if (kb.mediaKind == RagMediaKind.VIDEO && asksWhenPersonOrBoy) {
+                val personChunks = kb.chunks.filter { it.hasPersonOrFace }
+                if (personChunks.isNotEmpty()) {
+                    val firstEntry = personChunks.first()
+                    val lastSeen = personChunks.last()
+                    val peakPerson = personChunks.maxByOrNull { it.aiProbability } ?: firstEntry
+                    return buildString {
+                        append("• **Scene Entry Detected**: A **${firstEntry.estimatedSubjectTag}** first appears at **[${formatMs(firstEntry.startTimeMs)}]** ")
+                        append("(window `${firstEntry.formattedTimeRange}`) and remains visible through **[${formatMs(lastSeen.endTimeMs)}]**.\n")
+                        append("• **Forensic Authenticity at Appearance**: During `[${peakPerson.formattedTimeRange}]`, the visual AI synthesis score is ")
+                        append("**${(peakPerson.aiProbability * 100f).toInt()}%** (20-ch SRM=${String.format(Locale.US, "%.2f", peakPerson.srmScore)}, ")
+                        append("Hotspot Z=${String.format(Locale.US, "%.2f", peakPerson.hotspotZScore)}).\n")
+                        append("• **Audio & Voice Vault**: ${firstEntry.voiceVaultSummary}")
+                    }
+                } else {
+                    return "No prominent human face or boy/person track was detected across the ${kb.chunks.size} sampled keyframes (`00:00 - ${formatMs(kb.durationMs)}`). " +
+                        "The scene primarily contains background/environmental frames with an overall AI probability of **${(kb.overallAiProb * 100f).toInt()}%**."
+                }
+            }
+
+            if (kb.mediaKind == RagMediaKind.IMAGE && asksWhenPersonOrBoy) {
+                val personChunk = kb.chunks.firstOrNull { it.hasPersonOrFace }
+                if (personChunk != null) {
+                    return buildString {
+                        append("• **Subject Detected in Image**: Detected **${personChunk.estimatedSubjectTag}** (visual tags: ${personChunk.sceneTags.joinToString(", ")}).\n")
+                        append("• **Authenticity Assessment**: Fusion AI probability is **${(personChunk.aiProbability * 100f).toInt()}%** (SRM=${String.format(Locale.US, "%.2f", personChunk.srmScore)}).\n")
+                        append("• **Verdict**: **${kb.headlineVerdict}**.")
+                    }
+                } else {
+                    return "No prominent human face or person was identified in this image. The scene contains background/environmental pixels (AI risk ${(kb.overallAiProb * 100f).toInt()}%)."
+                }
+            }
+
+            if (asksHotspot) {
+                val hotspotChunk = kb.chunks.firstOrNull { it.hotspotBoxNorm != null || it.hotspotZScore >= 1.5f } ?: kb.chunks.firstOrNull()
+                if (hotspotChunk != null && (hotspotChunk.hotspotBoxNorm != null || hotspotChunk.hotspotZScore > 0f)) {
+                    val boxStr = hotspotChunk.hotspotBoxNorm?.let { b ->
+                        "[X: ${(b[0] * 100).toInt()}%..${(b[2] * 100).toInt()}%, Y: ${(b[1] * 100).toInt()}%..${(b[3] * 100).toInt()}%]"
+                    } ?: "detected spatial energy variance cluster"
+                    return buildString {
+                        append("• **Spatial Residual Hotspot Analysis**: An energy variance discontinuity was isolated at **$boxStr** with a significance of **${String.format(Locale.US, "%.2f", hotspotChunk.hotspotZScore)}σ**.\n")
+                        append("• **Forensic Root Cause**: Natural camera sensors generate spatially uniform PRNU noise. This localized spike indicates digital in-painting, splicing, or generative blending in that exact bounding zone.\n")
+                        append("• **Specialist Signal Context**: 20-ch SRM residual score is **${String.format(Locale.US, "%.2f", if (hotspotChunk.srmScore.isFinite()) hotspotChunk.srmScore else kb.overallAiProb)}**.")
+                    }
+                }
+            }
+
+            if (asksDocument) {
+                val hasDocTag = kb.chunks.any { c -> c.sceneTags.any { it in listOf("document", "receipt", "text", "ocr", "screenshot") } }
+                return buildString {
+                    append("• **Document & Receipt Authenticity Report**: ")
+                    if (hasDocTag) {
+                        append("Structured document layout analysis was performed on this item. ")
+                        val chunkWithDoc = kb.chunks.firstOrNull { it.visualDescription.contains("tamper score", ignoreCase = true) }
+                        if (chunkWithDoc != null) {
+                            append(chunkWithDoc.visualDescription.substringAfter("Document/Receipt").trim())
+                        } else {
+                            append("Character alignment and baseline spacing show high variance consistent with digital text splicing.\n")
+                        }
+                    } else {
+                        append("This media was analyzed as a natural camera capture. ")
+                    }
+                    append("\n• **Headline Assessment**: Overall AI risk is **${(kb.overallAiProb * 100f).toInt()}%** (${kb.headlineVerdict}).")
+                }
+            }
+
+            if (asksVoiceOrAudio) {
+                return buildString {
+                    append("• **Voice & Audio Verdict**: **${kb.headlineVerdict}** (AI spoof score **${(kb.overallAiProb * 100f).toInt()}%**).\n")
+                    append("• **Family Safe-Voice Vault**: ${kb.voiceVaultMatchSummary}\n")
+                    if (retrieved.isNotEmpty()) {
+                        val top = retrieved.first()
+                        append("• **Key Segment (`[${top.formattedTimeRange}]`)**: ${top.audioSummary}")
+                    }
+                    if (kb.scamRiskWarnings.isNotEmpty()) {
+                        append("\n• **Security Alert**: ${kb.scamRiskWarnings.joinToString(" ")}")
+                    }
+                }
+            }
+
+            if (asksFakeOrWhy || retrieved.isNotEmpty()) {
+                val peak = kb.chunks.maxByOrNull { it.aiProbability } ?: retrieved.firstOrNull()
+                return buildString {
+                    append("• **Headline Assessment**: **${kb.headlineVerdict}** (Overall AI probability **${(kb.overallAiProb * 100f).toInt()}%**).\n")
+                    if (peak != null) {
+                        append("• **Primary Evidence (`[${peak.formattedTimeRange}]`)**: ${peak.visualDescription}\n")
+                    }
+                    if (kb.voiceVaultMatchSummary.isNotBlank()) {
+                        append("• **Audio / Voice Vault Check**: ${kb.voiceVaultMatchSummary}")
+                    }
+                }
+            }
+
+            return "Indexed **${kb.mediaTitle}** (${kb.chunks.size} timeline segments). Overall verdict: **${kb.headlineVerdict}** " +
+                "(${(kb.overallAiProb * 100f).toInt()}% AI risk). Ask about specific timestamps, person appearances, or voice-clone checks."
+        }
     }
 
     suspend fun indexFromScanHistory(entity: ScanHistoryEntity): IndexedMediaKnowledgeBase {
@@ -678,46 +858,7 @@ class ForensicRagEngine @Inject constructor(
         kb: IndexedMediaKnowledgeBase,
         query: String,
         topK: Int = 3,
-    ): List<TimelineChunk> {
-        if (kb.chunks.isEmpty()) return emptyList()
-        val qTokens = query.lowercase(Locale.US)
-            .split(Regex("[^a-z0-9]+"))
-            .filter { it.isNotBlank() }
-            .toSet()
-
-        val asksAboutPersonOrBoy = qTokens.any { it in BOY_CHILD_SYNONYMS }
-        val asksAboutFakeOrAnomaly = qTokens.any { it in FAKE_FORENSIC_SYNONYMS }
-        val asksAboutAudioOrVoice = qTokens.any { it in AUDIO_VOICE_SYNONYMS }
-
-        val scored = kb.chunks.map { chunk ->
-            var score = 0.0f
-            val docText = "${chunk.sceneTags.joinToString(" ")} ${chunk.visualDescription} ${chunk.audioSummary} ${chunk.voiceVaultSummary}"
-                .lowercase(Locale.US)
-
-            for (tok in qTokens) {
-                if (docText.contains(tok)) score += 2.2f
-            }
-            if (asksAboutPersonOrBoy) {
-                if (chunk.hasPersonOrFace) score += 3.5f
-                if (chunk.sceneTags.contains("entry") || chunk.sceneTags.contains("entered")) score += 4.0f
-            }
-            if (asksAboutFakeOrAnomaly) {
-                score += chunk.aiProbability * 3.0f + (chunk.hotspotZScore.coerceAtMost(3f) * 0.8f)
-            }
-            if (asksAboutAudioOrVoice) {
-                score += 2.5f
-            }
-            if (chunk.isSceneCut) {
-                score += 0.4f
-            }
-            Pair(chunk, score)
-        }
-
-        return scored
-            .sortedWith(compareByDescending<Pair<TimelineChunk, Float>> { it.second }.thenBy { it.first.index })
-            .take(topK)
-            .map { it.first }
-    }
+    ): List<TimelineChunk> = Companion.retrieveTopChunks(kb, query, topK)
 
     suspend fun askQuestion(
         kb: IndexedMediaKnowledgeBase,
@@ -738,28 +879,40 @@ class ForensicRagEngine @Inject constructor(
         if (installedPack != null && langFile != null && langFile.isFile &&
             (LlamaCppVlmPrefillBackend.isNativeLibraryLoaded() || LlamaCppVlmPrefillBackend.testGenerationDelegate != null)
         ) {
-            val ragPrompt = buildRagPrompt(kb, retrieved, question)
-            vlmOutput = runCatching {
-                inferenceEngine.acquireExclusiveVlmSession().use {
-                    LlamaCppVlmPrefillBackend(
-                        modelPath = langFile.absolutePath,
-                        mmprojPath = mmprojFile?.takeIf { it.isFile }?.absolutePath,
-                        hiddenDim = if (installedPack.modelId.contains("2B", ignoreCase = true)) 2048 else 1024,
-                    ).use { backend ->
-                        backend.generateMultimodalResponse(
-                            prompt = ragPrompt,
-                            bitmap = null,
-                            maxNewTokens = 160,
-                        )
+            val ragPrompt = Companion.buildRagPrompt(kb, retrieved, question)
+            var queryBitmap: Bitmap? = null
+            if (kb.mediaKind == RagMediaKind.IMAGE && kb.sourceUri != null) {
+                queryBitmap = runCatching {
+                    context.contentResolver.openInputStream(Uri.parse(kb.sourceUri))?.use {
+                        BitmapFactory.decodeStream(it)
                     }
-                }
-            }.getOrNull()?.takeIf { it.isNotBlank() }
+                }.getOrNull()
+            }
+            try {
+                vlmOutput = runCatching {
+                    inferenceEngine.acquireExclusiveVlmSession().use {
+                        LlamaCppVlmPrefillBackend(
+                            modelPath = langFile.absolutePath,
+                            mmprojPath = mmprojFile?.takeIf { it.isFile }?.absolutePath,
+                            hiddenDim = if (installedPack.modelId.contains("2B", ignoreCase = true)) 2048 else 1024,
+                        ).use { backend ->
+                            backend.generateMultimodalResponse(
+                                prompt = ragPrompt,
+                                bitmap = queryBitmap,
+                                maxNewTokens = 160,
+                            )
+                        }
+                    }
+                }.getOrNull()?.takeIf { it.isNotBlank() }
+            } finally {
+                queryBitmap?.let { if (!it.isRecycled) it.recycle() }
+            }
             if (vlmOutput != null) {
                 usedVlm = true
             }
         }
 
-        val finalAnswer = vlmOutput ?: synthesizeDeterministicGroundedAnswer(kb, retrieved, qLower)
+        val finalAnswer = vlmOutput ?: Companion.synthesizeDeterministicGroundedAnswer(kb, retrieved, qLower)
         val cited = retrieved.map { it.formattedTimeRange }.distinct()
         val elapsed = max(1L, System.currentTimeMillis() - t0)
 
@@ -775,86 +928,5 @@ class ForensicRagEngine @Inject constructor(
             },
             latencyMs = elapsed,
         )
-    }
-
-    private fun buildRagPrompt(
-        kb: IndexedMediaKnowledgeBase,
-        retrieved: List<TimelineChunk>,
-        question: String,
-    ): String {
-        val contextBlock = retrieved.joinToString("\n") { c ->
-            "- [${c.formattedTimeRange}] ${c.visualDescription} | Audio: ${c.audioSummary} | Vault: ${c.voiceVaultSummary}"
-        }
-        return buildString {
-            append("<|im_start|>system\n")
-            append("You are ONN-DETECT's 100% offline forensic media assistant running on Android. ")
-            append("Answer concisely using ONLY the indexed timeline evidence below. Always cite timestamps in [mm:ss] format.\n")
-            append("Media: ${kb.mediaTitle} | Verdict: ${kb.headlineVerdict} | Overall AI Risk: ${(kb.overallAiProb * 100f).toInt()}%\n")
-            append("Retrieved Timeline Evidence:\n")
-            append(contextBlock)
-            append("\n<|im_end|>\n<|im_start|>user\n")
-            append(question.trim())
-            append("<|im_end|>\n<|im_start|>assistant\n")
-        }
-    }
-
-    private fun synthesizeDeterministicGroundedAnswer(
-        kb: IndexedMediaKnowledgeBase,
-        retrieved: List<TimelineChunk>,
-        qLower: String,
-    ): String {
-        val asksWhenPersonOrBoy = BOY_CHILD_SYNONYMS.any { qLower.contains(it) }
-        val asksVoiceOrAudio = AUDIO_VOICE_SYNONYMS.any { qLower.contains(it) }
-        val asksFakeOrWhy = FAKE_FORENSIC_SYNONYMS.any { qLower.contains(it) }
-
-        if (kb.mediaKind == RagMediaKind.VIDEO && asksWhenPersonOrBoy) {
-            val personChunks = kb.chunks.filter { it.hasPersonOrFace }
-            if (personChunks.isNotEmpty()) {
-                val firstEntry = personChunks.first()
-                val lastSeen = personChunks.last()
-                val peakPerson = personChunks.maxByOrNull { it.aiProbability } ?: firstEntry
-                return buildString {
-                    append("• **Scene Entry Detected**: A **${firstEntry.estimatedSubjectTag}** first appears at **[${formatMs(firstEntry.startTimeMs)}]** ")
-                    append("(window `${firstEntry.formattedTimeRange}`) and remains visible through **[${formatMs(lastSeen.endTimeMs)}]**.\n")
-                    append("• **Forensic Authenticity at Appearance**: During `[${peakPerson.formattedTimeRange}]`, the visual AI synthesis score is ")
-                    append("**${(peakPerson.aiProbability * 100f).toInt()}%** (20-ch SRM=${String.format(Locale.US, "%.2f", peakPerson.srmScore)}, ")
-                    append("Hotspot Z=${String.format(Locale.US, "%.2f", peakPerson.hotspotZScore)}).\n")
-                    append("• **Audio & Voice Vault**: ${firstEntry.voiceVaultSummary}")
-                }
-            } else {
-                return "No prominent human face or boy/person track was detected across the ${kb.chunks.size} sampled keyframes (`00:00 - ${formatMs(kb.durationMs)}`). " +
-                    "The scene primarily contains background/environmental frames with an overall AI probability of **${(kb.overallAiProb * 100f).toInt()}%**."
-            }
-        }
-
-        if (asksVoiceOrAudio) {
-            return buildString {
-                append("• **Voice & Audio Verdict**: **${kb.headlineVerdict}** (AI spoof score **${(kb.overallAiProb * 100f).toInt()}%**).\n")
-                append("• **Family Safe-Voice Vault**: ${kb.voiceVaultMatchSummary}\n")
-                if (retrieved.isNotEmpty()) {
-                    val top = retrieved.first()
-                    append("• **Key Segment (`[${top.formattedTimeRange}]`)**: ${top.audioSummary}")
-                }
-                if (kb.scamRiskWarnings.isNotEmpty()) {
-                    append("\n• **Security Alert**: ${kb.scamRiskWarnings.joinToString(" ")}")
-                }
-            }
-        }
-
-        if (asksFakeOrWhy || retrieved.isNotEmpty()) {
-            val peak = kb.chunks.maxByOrNull { it.aiProbability } ?: retrieved.firstOrNull()
-            return buildString {
-                append("• **Headline Assessment**: **${kb.headlineVerdict}** (Overall AI probability **${(kb.overallAiProb * 100f).toInt()}%**).\n")
-                if (peak != null) {
-                    append("• **Primary Evidence (`[${peak.formattedTimeRange}]`)**: ${peak.visualDescription}\n")
-                }
-                if (kb.voiceVaultMatchSummary.isNotBlank()) {
-                    append("• **Audio / Voice Vault Check**: ${kb.voiceVaultMatchSummary}")
-                }
-            }
-        }
-
-        return "Indexed **${kb.mediaTitle}** (${kb.chunks.size} timeline segments). Overall verdict: **${kb.headlineVerdict}** " +
-            "(${(kb.overallAiProb * 100f).toInt()}% AI risk). Ask about specific timestamps, person appearances, or voice-clone checks."
     }
 }

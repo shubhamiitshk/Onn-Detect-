@@ -16,9 +16,12 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
-sys.path.insert(0, str(ROOT / "scripts"))
-
-from export.keras_vfm_probe import build_keras_vfm_probe  # noqa: E402
+try:
+    from export.keras_vfm_probe import build_keras_vfm_probe  # noqa: E402
+    _HAS_TF = True
+except (ImportError, ModuleNotFoundError):
+    _HAS_TF = False
+    build_keras_vfm_probe = None
 
 CACHE_DIR = Path(r"D:\onn_data\runs\vfm_probe_eval")
 
@@ -45,6 +48,7 @@ def _images(spec, count=2):
     return np.stack(out).astype(np.float32)
 
 
+@unittest.skipUnless(_HAS_TF, "tensorflow not installed in environment")
 class KerasMirrorParityTest(unittest.TestCase):
     """The mirror must reproduce the PyTorch tower to float32 noise."""
 

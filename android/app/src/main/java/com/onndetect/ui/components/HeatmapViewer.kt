@@ -46,6 +46,7 @@ fun HeatmapViewer(
     heatmap: FloatArray?,
     imageAspectRatio: Float = 1f,
     roiProbeScore: Float = -1f,
+    onInspectRoiClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     var mode by remember { mutableStateOf(XRayMode.RETICLE) }
@@ -262,6 +263,33 @@ fun HeatmapViewer(
                         color = if (localizedSpike) SyntheticRed else CyberCyan,
                         fontWeight = FontWeight.Bold
                     )
+                }
+            }
+
+            if (onInspectRoiClick != null && (hotspot != null || selectedCell != null)) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(NeonPurple.copy(alpha = 0.16f))
+                        .border(1.dp, NeonPurple.copy(alpha = 0.45f), RoundedCornerShape(10.dp))
+                        .clickable { onInspectRoiClick() }
+                        .padding(horizontal = 12.dp, vertical = 9.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text("💬", fontSize = 13.sp)
+                        Text(
+                            text = "Ask Forensic AI about this Region / Hotspot",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = NeonPurpleLight,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp
+                        )
+                    }
                 }
             }
 

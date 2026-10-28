@@ -239,6 +239,19 @@ class ChatRagViewModel @Inject constructor(
         _uiState.update { it.copy(selectedChunkIndex = index) }
     }
 
+    fun selectTimelineTimestamp(tsStr: String) {
+        val kb = _uiState.value.knowledgeBase ?: return
+        val clean = tsStr.trim().removePrefix("⏱").trim()
+        val idx = kb.chunks.indexOfFirst { chunk ->
+            chunk.formattedTimeRange.contains(clean) ||
+                clean.contains(ForensicRagEngine.formatMs(chunk.startTimeMs)) ||
+                ForensicRagEngine.formatMs(chunk.startTimeMs).contains(clean)
+        }
+        if (idx >= 0) {
+            _uiState.update { it.copy(selectedChunkIndex = idx) }
+        }
+    }
+
     fun clearError() {
         _uiState.update { it.copy(errorMessage = null) }
     }

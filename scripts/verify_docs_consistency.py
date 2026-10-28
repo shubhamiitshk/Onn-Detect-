@@ -23,7 +23,8 @@ def main() -> int:
         )
     except subprocess.CalledProcessError:
         out = ""
-    stale = [p for p in out.splitlines() if p and p != deleted]
+    this_script = Path(__file__).resolve().relative_to(root).as_posix()
+    stale = [p for p in out.splitlines() if p and p != deleted and Path(p).as_posix() != this_script]
     # Allow references that already point at the canonical path.
     for p in stale:
         text = (root / p).read_text(encoding="utf-8", errors="replace")

@@ -24,9 +24,16 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
+try:
+    import tensorflow as tf  # noqa: F401
+    _HAS_TF = True
+except (ImportError, ModuleNotFoundError):
+    _HAS_TF = False
+
 
 class SemanticProbeExportTest(unittest.TestCase):
 
+    @unittest.skipUnless(_HAS_TF, "tensorflow not installed")
     def test_keras_rebuild_matches_pytorch_on_real_inputs(self):
         from train_semantic_probe import SemanticProbeCNN
         from export.torch_to_tflite_keras import build_keras_semantic_probe, keras_parity_check
@@ -42,6 +49,7 @@ class SemanticProbeExportTest(unittest.TestCase):
         error = keras_parity_check(keras_model, model, inputs, "visual")
         self.assertLessEqual(error, 1e-4)
 
+    @unittest.skipUnless(_HAS_TF, "tensorflow not installed")
     def test_keras_rebuild_matches_pytorch_for_a_trained_checkpoint(self):
         """A trained checkpoint must survive the rebuild, not just a fresh init."""
         from train_semantic_probe import SemanticProbeCNN
@@ -87,6 +95,7 @@ class SemanticProbeExportTest(unittest.TestCase):
 class SrmStemCompatibilityTest(unittest.TestCase):
     """The 12/16/20-channel SRM stems must all survive the Keras rebuild."""
 
+    @unittest.skipUnless(_HAS_TF, "tensorflow not installed")
     def test_each_stem_width_rebuilds_with_matching_output_shape(self):
         from models.srm_forensic_cnn import SRMForensicCNN
         from export.torch_to_tflite_keras import build_keras_srm, keras_parity_check
