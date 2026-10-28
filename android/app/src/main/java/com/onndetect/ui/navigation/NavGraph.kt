@@ -1,13 +1,15 @@
 package com.onndetect.ui.navigation
 
+import android.net.Uri
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import android.net.Uri
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.onndetect.ui.screens.chat.ChatRagScreen
+import com.onndetect.ui.screens.enrollment.VoiceEnrollmentScreen
 import com.onndetect.ui.screens.history.HistoryScreen
 import com.onndetect.ui.screens.home.HomeScreen
 import com.onndetect.ui.screens.modelmanager.ModelManagerScreen
@@ -20,12 +22,18 @@ object Routes {
     const val SCANNER = "scanner?uri={uri}&mode={mode}"
     const val RESULT = "result/{scanId}"
     const val HISTORY = "history"
+    const val CHAT_RAG_BASE = "chat_rag"
+    const val CHAT_RAG = "chat_rag?scanId={scanId}"
     const val VOICE_VAULT = "voice_vault"
     const val MODEL_MANAGER = "model_manager"
 
     /** The scanner route for a URI, with the URI encoded for the route. */
     fun scanner(uri: String, mode: String): String =
         "scanner?uri=${Uri.encode(uri)}&mode=${Uri.encode(mode)}"
+
+    /** The Multimodal RAG Chat route, optionally pre-loaded with a completed scanId. */
+    fun chatRag(scanId: String? = null): String =
+        if (scanId.isNullOrBlank()) CHAT_RAG_BASE else "chat_rag?scanId=${Uri.encode(scanId)}"
 }
 
 @Composable
@@ -63,7 +71,7 @@ fun ONNNavGraph(navController: NavHostController, sharedMedia: SharedMedia? = nu
         composable(
             route = Routes.RESULT,
             arguments = listOf(navArgument("scanId") { type = NavType.StringType }),
-        ) { backStackEntry ->
+        ) {
             ResultScreen(
                 navController = navController,
             )
@@ -71,13 +79,24 @@ fun ONNNavGraph(navController: NavHostController, sharedMedia: SharedMedia? = nu
 
         composable(Routes.HISTORY) { HistoryScreen(navController) }
 
+        composable(
+            route = Routes.CHAT_RAG,
+            arguments = listOf(
+                navArgument("scanId") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                }
+            ),
+        ) {
+            ChatRagScreen(navController = navController)
+        }
+
         composable(Routes.VOICE_VAULT) {
-            com.onndetect.ui.screens.enrollment.VoiceEnrollmentScreen(navController)
+            VoiceEnrollmentScreen(navController)
         }
 
         composable(Routes.MODEL_MANAGER) {
             ModelManagerScreen(navController)
         }
-
     }
 }

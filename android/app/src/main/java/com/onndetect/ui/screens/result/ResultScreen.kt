@@ -29,6 +29,7 @@ import com.onndetect.data.local.ScanHistoryEntity
 import com.onndetect.data.local.SignalBreakdownJson
 import com.onndetect.domain.pipeline.CascadePolicy
 import com.onndetect.ui.components.*
+import com.onndetect.ui.navigation.Routes
 import com.onndetect.ui.theme.*
 import org.json.JSONObject
 import java.text.DateFormat
@@ -128,6 +129,7 @@ fun ResultScreen(navController: NavController, viewModel: ResultViewModel = hilt
                     e = current.entry,
                     onDoneClick = { navController.popBackStack() },
                     onHistoryClick = { navController.navigate("history") },
+                    onAskRagClick = { navController.navigate(Routes.chatRag(current.entry.id)) },
                     onExportReceipt = { viewModel.generateReceipt(current.entry) }
                 )
             }
@@ -140,6 +142,7 @@ fun AssessmentDetails(
     e: ScanHistoryEntity,
     onDoneClick: () -> Unit = {},
     onHistoryClick: () -> Unit = {},
+    onAskRagClick: () -> Unit = {},
     onExportReceipt: () -> com.onndetect.detection.provenance.ForensicReceipt = {
         com.onndetect.detection.provenance.ForensicReceipt("", "", "", "TEE")
     }
@@ -246,6 +249,24 @@ fun AssessmentDetails(
         verticalArrangement = Arrangement.spacedBy(10.dp),
         modifier = Modifier.padding(top = 8.dp)
     ) {
+        Button(
+            onClick = onAskRagClick,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = NeonPurple,
+                contentColor = Color.White
+            ),
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp)
+        ) {
+            Text(
+                text = "💬 Ask Forensic AI (RAG Chat)",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
         Button(
             onClick = onDoneClick,
             colors = ButtonDefaults.buttonColors(

@@ -16,14 +16,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavController
-import com.onndetect.R
 import com.onndetect.data.local.VoiceProfileEntity
+import com.onndetect.ui.components.GlassBottomTab
+import com.onndetect.ui.components.LiquidGlassCard
+import com.onndetect.ui.components.LiquidGlassScaffold
 import com.onndetect.ui.theme.*
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -43,7 +44,7 @@ fun VoiceEnrollmentScreen(
     var contactNameInput by remember { mutableStateOf("") }
     var relationshipInput by remember { mutableStateOf("Family") }
 
-    val audioPicker = rememberLauncherForActivityResult(
+    val enrollAudioPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         if (uri != null) {
@@ -54,63 +55,159 @@ fun VoiceEnrollmentScreen(
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text("🛡️", fontSize = 18.sp)
-                        Text(
-                            text = "Family Safe-Voice Vault",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = TextPrimary
-                        )
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Text("←", fontSize = 22.sp, color = TextPrimary)
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = BackgroundVoid)
-            )
-        },
-        containerColor = BackgroundVoid
-    ) { paddingValues ->
+    val verifyAudioPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            viewModel.verifySuspiciousAudio(uri)
+        }
+    }
+
+    LiquidGlassScaffold(
+        activeTab = GlassBottomTab.VOICE_VAULT,
+        onSelectTab = { tab ->
+            if (tab != GlassBottomTab.VOICE_VAULT) {
+                navController.navigate(tab.route) {
+                    launchSingleTop = true
+                }
+            }
+        }
+    ) { bottomBarPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
-                .padding(horizontal = 20.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .safeDrawingPadding()
+                .padding(bottomBarPadding)
+                .padding(horizontal = 20.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            // Explanatory Banner
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(SurfaceCard)
-                    .border(1.dp, BorderSubtle, RoundedCornerShape(14.dp))
-                    .padding(16.dp)
+            // Top Header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("🛡️", fontSize = 20.sp)
+                    Column {
+                        Text(
+                            text = "Family Safe-Voice Vault",
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        )
+                        Text(
+                            text = "AES-256-GCM Voiceprints • Instant Clone Guard",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextSecondary,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+            }
+
+            // Explanatory Liquid Glass Card
+            LiquidGlassCard(
+                accentColor = AuthenticGreen,
+                cornerRadius = 16.dp,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
                     Text(
                         text = "ZERO-NETWORK BIOMETRIC VAULT",
                         style = MaterialTheme.typography.labelSmall,
-                        color = CyberCyan,
+                        color = AuthenticGreen,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 1.sp
                     )
                     Text(
-                        text = "Enroll clean voice samples of family members. When an audio note or call recording is forwarded via Instant Forward Guard, ONN-DETECT verifies if the speaker matches their genuine voiceprint to prevent AI voice-cloning fraud.",
+                        text = "Enroll clean voice samples (8s+ voiced) of family members. Test any suspicious WhatsApp voice note or call recording below to check if it matches their genuine voiceprint or is an AI clone.",
                         style = MaterialTheme.typography.bodySmall,
                         color = TextSecondary,
-                        lineHeight = 18.sp
+                        lineHeight = 17.sp
                     )
+                }
+            }
+
+            // Dual Action Row: [Enroll Family Voice] + [Verify Voice Note]
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Button(
+                    onClick = { enrollAudioPicker.launch(arrayOf("audio/*")) },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = CyberCyan,
+                        contentColor = BackgroundVoid
+                    ),
+                    enabled = !uiState.isEnrolling && !uiState.isVerifying
+                ) {
+                    Text(
+                        text = if (uiState.isEnrolling) "Enrolling..." else "🎙️ Enroll Voice",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp
+                    )
+                }
+
+                Button(
+                    onClick = { verifyAudioPicker.launch(arrayOf("audio/*")) },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = AuthenticGreen,
+                        contentColor = BackgroundVoid
+                    ),
+                    enabled = !uiState.isEnrolling && !uiState.isVerifying
+                ) {
+                    Text(
+                        text = if (uiState.isVerifying) "Checking..." else "🔍 Verify Clip",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp
+                    )
+                }
+            }
+
+            // Quick Verification Result Card
+            uiState.verifyResult?.let { vr ->
+                val cardAccent = when {
+                    vr.isSyntheticClone -> SyntheticRed
+                    vr.matchReport.isMatch -> AuthenticGreen
+                    else -> WarningAmber
+                }
+                LiquidGlassCard(
+                    accentColor = cardAccent,
+                    cornerRadius = 14.dp,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = vr.headlineSummary,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextPrimary,
+                            fontWeight = FontWeight.SemiBold,
+                            lineHeight = 17.sp
+                        )
+                        Text(
+                            text = "LCNN Spoof Score: ${(vr.spoofScore * 100f).toInt()}% (thr ${(vr.spoofThreshold * 100f).toInt()}%) • Max Vault Match: ${(vr.matchReport.maxSimilarity * 100f).toInt()}%",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = cardAccent
+                        )
+                    }
                 }
             }
 
@@ -143,32 +240,6 @@ fun VoiceEnrollmentScreen(
                 }
             }
 
-            // Enroll Action Button
-            Button(
-                onClick = { audioPicker.launch(arrayOf("audio/*")) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(50.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = CyberCyan,
-                    contentColor = Color(0xFF070A10)
-                ),
-                enabled = !uiState.isEnrolling
-            ) {
-                if (uiState.isEnrolling) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        color = Color(0xFF070A10),
-                        strokeWidth = 2.dp
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text("Processing Voiceprint...", fontWeight = FontWeight.Bold)
-                } else {
-                    Text("🎙️  Enroll Family Voiceprint", fontWeight = FontWeight.Bold)
-                }
-            }
-
             // Profiles Section Title
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -195,7 +266,7 @@ fun VoiceEnrollmentScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text("🛡️", fontSize = 42.sp)
+                        Text("🛡️", fontSize = 38.sp)
                         Text(
                             text = "No Voiceprints Enrolled",
                             style = MaterialTheme.typography.titleSmall,
@@ -203,7 +274,7 @@ fun VoiceEnrollmentScreen(
                             fontWeight = FontWeight.SemiBold
                         )
                         Text(
-                            text = "Tap above to select a genuine voice note (10s+) to protect your family.",
+                            text = "Tap 'Enroll Voice' above with a genuine 8s+ voice note to protect your family.",
                             style = MaterialTheme.typography.bodySmall,
                             color = TextTertiary,
                             fontSize = 12.sp
@@ -292,16 +363,15 @@ private fun VoiceProfileCard(
         SimpleDateFormat("MMM d, yyyy", Locale.US).format(Date(profile.enrolledAtMs))
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(SurfaceCard)
-            .border(1.dp, BorderSubtle, RoundedCornerShape(14.dp))
-            .padding(14.dp)
+    LiquidGlassCard(
+        accentColor = CyberCyan,
+        cornerRadius = 14.dp,
+        modifier = Modifier.fillMaxWidth()
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {

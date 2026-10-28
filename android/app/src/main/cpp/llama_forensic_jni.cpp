@@ -17,7 +17,7 @@
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
 
 /**
- * Genuine on-device multimodal prefill bridge for llama.cpp using unified libmtmd.
+ * Genuine on-device multimodal prefill & RAG generation bridge for llama.cpp using unified libmtmd.
  *
  * Pinned upstream release: llama.cpp b8291 (commit c363256839fdffae184279ad8e5f0f3775c48b77, March 12, 2026).
  * Architecture support: Qwen3.5 (qwen35), SmolVLM2, SigLIP, LLaVA.
@@ -27,7 +27,8 @@
  * 1. Prompt format strictly reproduces HuggingFace chat template with add_generation_prompt=True.
  * 2. Visual encoding supports both full image and uncropped original-source ROI zoom.
  * 3. Extracted embedding corresponds strictly to the assistant prefix token (last token, index -1).
- * 4. Zero synthetic vector fallbacks: missing weights or parse failures throw explicit Java exceptions.
+ * 4. Supports bounded greedy autoregressive token generation for Multimodal Forensic RAG Q&A.
+ * 5. Zero synthetic vector fallbacks: missing weights or parse failures throw explicit Java exceptions.
  */
 
 namespace {
@@ -255,10 +256,7 @@ Java_com_onndetect_detection_visual_LlamaCppVlmPrefillBackend_nativeExtractFinal
 
     // 3. Multimodal prefill evaluation
     if (ctx->mtmd) {
-        // Construct prompt strictly matching HuggingFace chat template format:
-        // User message: visual media markers + prompt text
-        // Assistant generation prefix: <|im_start|>assistant\n
-        std::string marker = mtmd_default_marker(); // Default "<__media__>"
+        std::string marker = mtmd_default_marker();
         std::string prompt;
         if (has_roi) {
             prompt = "<|im_start|>user\n" + marker + "\n" + marker +
@@ -297,7 +295,6 @@ Java_com_onndetect_detection_visual_LlamaCppVlmPrefillBackend_nativeExtractFinal
             return nullptr;
         }
     } else {
-        // Text-only evaluation
         for (auto* b : bitmaps_vec) {
             mtmd_bitmap_free(b);
         }
@@ -358,6 +355,133 @@ Java_com_onndetect_detection_visual_LlamaCppVlmPrefillBackend_nativeExtractFinal
     }
     env->SetFloatArrayRegion(result, 0, ctx->hidden_dim, embd);
     return result;
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_onndetect_detection_visual_LlamaCppVlmPrefillBackend_nativeGenerateMultimodalResponse(
+    JNIEnv* env,
+    jobject /* thiz */,
+    jlong contextHandle,
+    jstring promptJstr,
+    jbyteArray imageRgb,
+    jint imageWidth,
+    jint imageHeight,
+    jint maxNewTokens
+) {
+    auto* ctx = reinterpret_cast<LlamaForensicContext*>(contextHandle);
+    if (!ctx || !ctx->active || !ctx->ctx || !ctx->model) {
+        throw_java_exception(env, "java/lang/IllegalStateException",
+                             "Native llama context handle is null, closed, or uninitialized");
+        return nullptr;
+    }
+
+    const char* p_chars = promptJstr ? env->GetStringUTFChars(promptJstr, nullptr) : "";
+    std::string prompt = p_chars ? p_chars : "";
+    if (promptJstr && p_chars) env->ReleaseStringUTFChars(promptJstr, p_chars);
+
+    std::lock_guard<std::recursive_mutex> lock(g_native_mutex);
+
+    llama_memory_t mem = llama_get_memory(ctx->ctx);
+    if (mem) {
+        llama_memory_clear(mem, true);
+    }
+
+    llama_pos n_past = 0;
+    const struct llama_vocab* vocab = llama_model_get_vocab(ctx->model);
+
+    if (imageRgb && imageWidth > 0 && imageHeight > 0 && ctx->mtmd) {
+        jbyte* img_bytes = env->GetByteArrayElements(imageRgb, nullptr);
+        mtmd_bitmap* bm = mtmd_bitmap_init(
+            static_cast<uint32_t>(imageWidth),
+            static_cast<uint32_t>(imageHeight),
+            reinterpret_cast<const unsigned char*>(img_bytes)
+        );
+        const mtmd_bitmap* bitmaps_ptrs[1] = { bm };
+
+        std::string marker = mtmd_default_marker();
+        std::string full_prompt = prompt.find(marker) != std::string::npos
+            ? prompt
+            : ("<|im_start|>user\n" + marker + "\n" + prompt + "<|im_end|>\n<|im_start|>assistant\n");
+
+        mtmd_input_chunks* chunks = mtmd_input_chunks_init();
+        mtmd_input_text input_text = { full_prompt.c_str(), true, true };
+        int tok_res = mtmd_tokenize(ctx->mtmd, chunks, &input_text, bitmaps_ptrs, 1);
+        mtmd_bitmap_free(bm);
+        env->ReleaseByteArrayElements(imageRgb, img_bytes, JNI_ABORT);
+
+        if (tok_res != 0) {
+            mtmd_input_chunks_free(chunks);
+            throw_java_exception(env, "java/lang/IllegalStateException", "mtmd_tokenize failed during RAG generation");
+            return nullptr;
+        }
+        int eval_res = mtmd_helper_eval_chunks(ctx->mtmd, ctx->ctx, chunks, 0, 0, 512, true, &n_past);
+        mtmd_input_chunks_free(chunks);
+        if (eval_res != 0) {
+            throw_java_exception(env, "java/lang/IllegalStateException", "mtmd_helper_eval_chunks failed during RAG generation");
+            return nullptr;
+        }
+    } else {
+        std::vector<llama_token> tokens(prompt.length() + 32);
+        int n_tokens = llama_tokenize(vocab, prompt.c_str(), prompt.length(),
+                                      tokens.data(), tokens.size(), true, true);
+        if (n_tokens <= 0) {
+            throw_java_exception(env, "java/lang/IllegalStateException", "Failed to tokenize RAG prompt");
+            return nullptr;
+        }
+        tokens.resize(n_tokens);
+        llama_batch batch = llama_batch_init(n_tokens, 0, 1);
+        for (int i = 0; i < n_tokens; ++i) {
+            batch.token[i] = tokens[i];
+            batch.pos[i] = i;
+            batch.n_seq_id[i] = 1;
+            batch.seq_id[i][0] = 0;
+            batch.logits[i] = (i == n_tokens - 1);
+        }
+        batch.n_tokens = n_tokens;
+        if (llama_decode(ctx->ctx, batch) != 0) {
+            llama_batch_free(batch);
+            throw_java_exception(env, "java/lang/IllegalStateException", "llama_decode failed on RAG prompt");
+            return nullptr;
+        }
+        llama_batch_free(batch);
+        n_past = n_tokens;
+    }
+
+    // Bounded greedy decoding loop for RAG answer synthesis
+    struct llama_sampler* smpl = llama_sampler_init_greedy();
+    std::string generated;
+    int max_steps = std::max(8, std::min(static_cast<int>(maxNewTokens), 512));
+
+    for (int step = 0; step < max_steps; ++step) {
+        llama_token next_tok = llama_sampler_sample(smpl, ctx->ctx, -1);
+        if (llama_vocab_is_eog(vocab, next_tok)) {
+            break;
+        }
+        char piece_buf[128];
+        int n_chars = llama_token_to_piece(vocab, next_tok, piece_buf, sizeof(piece_buf), 0, true);
+        if (n_chars > 0) {
+            generated.append(piece_buf, n_chars);
+            if (generated.find("<|im_end|>") != std::string::npos) {
+                generated.erase(generated.find("<|im_end|>"));
+                break;
+            }
+        }
+        llama_batch step_batch = llama_batch_init(1, 0, 1);
+        step_batch.token[0] = next_tok;
+        step_batch.pos[0] = n_past++;
+        step_batch.n_seq_id[0] = 1;
+        step_batch.seq_id[0][0] = 0;
+        step_batch.logits[0] = true;
+        step_batch.n_tokens = 1;
+        int dec_rc = llama_decode(ctx->ctx, step_batch);
+        llama_batch_free(step_batch);
+        if (dec_rc != 0) {
+            break;
+        }
+    }
+    llama_sampler_free(smpl);
+
+    return env->NewStringUTF(generated.c_str());
 }
 
 JNIEXPORT void JNICALL

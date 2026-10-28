@@ -4,8 +4,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 
 // ==============================================================================
-// ONN-DETECT CYBER-FORENSIC PALETTE
-// Built on aerospace obsidian surfaces, precision laser cyan, and semantic tri-color
+// ONN-DETECT CYBER-FORENSIC & LIQUID GLASS PALETTE
+// Built on aerospace obsidian surfaces, translucent frosted glass, precision laser cyan,
+// and semantic tri-color indicators
 // ==============================================================================
 
 // Primary Accents - Precision & Optics
@@ -45,6 +46,14 @@ val SurfaceElevated = Color(0xFF151D30)
 val SurfaceHighlight = Color(0xFF1D273F)
 val SurfaceInteractive = Color(0xFF253350)
 
+// Liquid Glass Surfaces & Specular Highlights
+val GlassSurfaceBase = Color(0x99121B2E)
+val GlassSurfaceElevated = Color(0xB319253E)
+val GlassDockSurface = Color(0xCC0D1424)
+val GlassSpecularTop = Color(0x55FFFFFF)
+val GlassSpecularEdge = Color(0x2200E5FF)
+val GlassInnerShadow = Color(0x6603060C)
+
 // Borders & Dividers
 val BorderSubtle = Color(0xFF1F2B45)
 val BorderLight = Color(0xFF2C3E63)
@@ -68,6 +77,21 @@ val ScanGlowGradient = Brush.verticalGradient(
 
 val CardBorderGradient = Brush.linearGradient(
     colors = listOf(CyberCyan.copy(alpha = 0.4f), DeepIndigo.copy(alpha = 0.1f), NeonPurple.copy(alpha = 0.3f))
+)
+
+val LiquidGlassBorderBrush = Brush.verticalGradient(
+    colors = listOf(
+        Color.White.copy(alpha = 0.32f),
+        CyberCyan.copy(alpha = 0.22f),
+        NeonPurple.copy(alpha = 0.18f),
+    )
+)
+
+val LiquidGlassSurfaceBrush = Brush.verticalGradient(
+    colors = listOf(
+        Color(0xCC1A2640),
+        Color(0x990E1525),
+    )
 )
 
 val HeroCardGradient = Brush.verticalGradient(

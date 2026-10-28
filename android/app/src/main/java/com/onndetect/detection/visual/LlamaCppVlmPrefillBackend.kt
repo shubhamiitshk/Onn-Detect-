@@ -5,13 +5,15 @@ import androidx.annotation.VisibleForTesting
 import java.io.File
 
 /**
- * Concrete on-device VLM prefill backend powered by `llama.cpp`'s native multimodal (`mtmd`)
- * JNI bindings (`libllama.so` / `libllama_forensic_jni.so`).
+ * Concrete on-device VLM prefill & RAG generation backend powered by `llama.cpp`'s native
+ * multimodal (`mtmd`) JNI bindings (`libllama.so` / `libllama_forensic_jni.so`).
  *
  * Implements [OnDemandForensicVlmAnalyzer.VlmPrefillBackend] by:
  * 1. Preprocessing input [Bitmap]s into raw RGB pixel buffers bounded to resolution caps.
  * 2. Invoking native prefill through JNI to compute multimodal visual + text token context.
  * 3. Extracting the final token representation `h_last = llama_get_embeddings_ith(ctx, -1)`.
+ * 4. Supporting bounded autoregressive multimodal RAG text generation (`generateMultimodalResponse`)
+ *    for `Qwen/Qwen3.5-0.8B` and `SmolVLM2-500M-Video-Instruct`.
  *
  * Includes safe test delegate hooks and fallback handling for JVM unit test execution
  * where native shared libraries are not loaded.
@@ -51,18 +53,29 @@ class LlamaCppVlmPrefillBackend(
             cropSpec: OnDemandForensicVlmAnalyzer.OriginalSourceCropSpec?,
             activeDomain: String
         ) -> FloatArray)? = null
+
+        /**
+         * Test-only delegate hook permitting JVM unit tests to verify multimodal RAG
+         * generation without compiled native ARM64 `.so` libraries.
+         */
+        @VisibleForTesting
+        var testGenerationDelegate: ((
+            prompt: String,
+            bitmap: Bitmap?,
+            maxNewTokens: Int
+        ) -> String)? = null
     }
 
     private var nativeContextHandle: Long = 0L
 
     init {
         val modelFile = File(modelPath)
-        require(modelFile.exists() || testMockDelegate != null) {
+        require(modelFile.exists() || testMockDelegate != null || testGenerationDelegate != null) {
             "Model file does not exist at path: $modelPath"
         }
         if (mmprojPath != null) {
             val mmprojFile = File(mmprojPath)
-            require(mmprojFile.exists() || testMockDelegate != null) {
+            require(mmprojFile.exists() || testMockDelegate != null || testGenerationDelegate != null) {
                 "Vision mmproj file does not exist at path: $mmprojPath"
             }
         }
@@ -71,14 +84,14 @@ class LlamaCppVlmPrefillBackend(
     }
 
     val isContextInitialized: Boolean
-        get() = nativeContextHandle != 0L || testMockDelegate != null
+        get() = nativeContextHandle != 0L || testMockDelegate != null || testGenerationDelegate != null
 
     /**
      * Explicitly loads the native model context inside an active exclusive memory lease.
      */
     @Synchronized
     fun loadNativeContext(): Long {
-        if (testMockDelegate != null) return 1L
+        if (testMockDelegate != null || testGenerationDelegate != null) return 1L
         check(libraryLoaded) {
             "Native shared library '$JNI_LIB_NAME' is not available. Ensure 'lib$JNI_LIB_NAME.so' is packaged in APK."
         }
@@ -162,6 +175,48 @@ class LlamaCppVlmPrefillBackend(
         return hLast
     }
 
+    /**
+     * Generates a bounded multimodal or text RAG response using the loaded GGUF model
+     * (`Qwen/Qwen3.5-0.8B` or `SmolVLM2-500M-Video-Instruct`).
+     */
+    fun generateMultimodalResponse(
+        prompt: String,
+        bitmap: Bitmap? = null,
+        maxNewTokens: Int = 160,
+    ): String {
+        require(prompt.isNotBlank()) { "RAG prompt cannot be blank" }
+        val boundedTokens = maxNewTokens.coerceIn(8, 512)
+
+        testGenerationDelegate?.let { mock ->
+            return mock(prompt, bitmap, boundedTokens)
+        }
+
+        check(libraryLoaded) {
+            "Native shared library '$JNI_LIB_NAME' is not available."
+        }
+        if (nativeContextHandle == 0L) {
+            loadNativeContext()
+        }
+        check(nativeContextHandle != 0L) {
+            "Native llama context handle is null/closed."
+        }
+
+        val (imgBytes, imgW, imgH) = if (bitmap != null) {
+            bitmapToRgbBytes(bitmap, imageResolutionCapPx)
+        } else {
+            Triple(null, 0, 0)
+        }
+
+        return nativeGenerateMultimodalResponse(
+            contextHandle = nativeContextHandle,
+            prompt = prompt,
+            imageRgb = imgBytes,
+            imageWidth = imgW,
+            imageHeight = imgH,
+            maxNewTokens = boundedTokens,
+        )
+    }
+
     override fun close() {
         if (nativeContextHandle != 0L) {
             nativeFreeContext(nativeContextHandle)
@@ -183,6 +238,14 @@ class LlamaCppVlmPrefillBackend(
         roiHeight: Int,
         domain: String,
     ): FloatArray
+    private external fun nativeGenerateMultimodalResponse(
+        contextHandle: Long,
+        prompt: String,
+        imageRgb: ByteArray?,
+        imageWidth: Int,
+        imageHeight: Int,
+        maxNewTokens: Int,
+    ): String
     private external fun nativeFreeContext(contextHandle: Long)
 
     // =========================================================================

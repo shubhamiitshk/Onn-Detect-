@@ -9,6 +9,7 @@ import com.onndetect.data.repository.VoiceVaultRepository
 import com.onndetect.detection.audio.AudioClassifier
 import com.onndetect.detection.audio.AudioDecoder
 import com.onndetect.detection.audio.SpeakerVerifier
+import com.onndetect.detection.audio.VoiceMatchReport
 import com.onndetect.detection.audio.VoicedDurationGate
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -22,34 +23,39 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.security.MessageDigest
+import java.util.Locale
 import javax.inject.Inject
+
+data class QuickVoiceVerifyResult(
+    val isSyntheticClone: Boolean,
+    val spoofScore: Float,
+    val spoofThreshold: Float,
+    val matchReport: VoiceMatchReport,
+    val headlineSummary: String,
+)
 
 data class VoiceEnrollmentUiState(
     val isEnrolling: Boolean = false,
+    val isVerifying: Boolean = false,
     val statusMessage: String? = null,
     val errorMessage: String? = null,
+    val verifyResult: QuickVoiceVerifyResult? = null,
 )
 
 /**
- * Family Safe-Voice Vault enrollment — F4 rewrite.
+ * Family Safe-Voice Vault enrollment & 1-Tap Voice Note Verification (`Window 3`).
  *
- * The pre-audit flow decoded exactly 4 s of audio, accepted any non-zero
- * voiceprint, and had NO idea whether the sample was synthetic. It enrolled
- * whatever it was given, including a clone of the very voice it should
- * distrust. The gate order below is fixed on purpose: authenticity is
- * checked BEFORE the voiceprint is written, and every requirement is a
- * hard rejection with a human-readable reason:
- *
+ * Enforces strict 4-gate enrollment:
  *  1. Speech content gate: >= 8 s of VOICED audio ([VoicedDurationGate]).
  *  2. Anti-spoofing gate: the LCNN-MFM countermeasure must score the clip
- *     BELOW its calibrated 0.375 operating point (and reach a SUCCESS
- *     verdict, i.e. actually classify as speech). A sample that looks
- *     synthetic is refused — a voice clone is never allowed to become the
- *     trusted reference for a family member.
+ *     BELOW its calibrated operating point. A sample that looks synthetic
+ *     is refused so a voice clone can never become a trusted reference.
  *  3. Voiceprint extraction: 3 s windows, 1.5 s hop, L2-normalized
- *     per-window embeddings averaged and re-normalized
- *     ([SpeakerVerifier.extractWindowedVoiceprint]).
+ *     per-window embeddings averaged and re-normalized.
  *  4. Persistence: AES-256-GCM sealed via [VoiceVaultRepository] (F3).
+ *
+ * Also supports `verifySuspiciousAudio(uri)` so users can test a forwarded
+ * WhatsApp/Telegram voice note against all enrolled family members in 1 tap.
  */
 @HiltViewModel
 class VoiceEnrollmentViewModel @Inject constructor(
@@ -66,7 +72,6 @@ class VoiceEnrollmentViewModel @Inject constructor(
     val uiState: StateFlow<VoiceEnrollmentUiState> = _uiState.asStateFlow()
 
     init {
-        // F3: upgrade any pre-v2 plaintext rows to sealed form at open time.
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repository.ensureLegacyRowsSealed() }
         }
@@ -89,9 +94,6 @@ class VoiceEnrollmentViewModel @Inject constructor(
             try {
                 val entity = withContext(Dispatchers.IO) {
                     val decoder = AudioDecoder(context)
-
-                    // Full-clip decode (the 4 s cap is gone): bounded by the
-                    // decoder's own budget so a 10-minute file cannot hang the UI.
                     val pcm = decoder.decodeMono16k(uri, targetRate = 16_000, targetSamples = 960_000)
                     require(pcm.size >= 16_000) { "Clip too short: at least one second of audio is required" }
 
@@ -110,7 +112,7 @@ class VoiceEnrollmentViewModel @Inject constructor(
                     require(verdict.score < threshold) {
                         "Sample looks SYNTHETIC to the speech countermeasure " +
                             "(score %.3f >= threshold %.3f); a synthetic sample cannot become a trusted voiceprint".format(
-                                verdict.score, threshold
+                                Locale.US, verdict.score, threshold
                             )
                     }
 
@@ -159,6 +161,76 @@ class VoiceEnrollmentViewModel @Inject constructor(
         }
     }
 
+    /**
+     * 1-Tap Family Voice Note Verification: checks both LCNN-MFM anti-spoofing AND
+     * acoustic similarity against all AES-256-GCM sealed family voiceprints.
+     */
+    fun verifySuspiciousAudio(uri: Uri) {
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isVerifying = true,
+                    statusMessage = "Running LCNN-MFM clone check & Voice Vault matching...",
+                    errorMessage = null,
+                    verifyResult = null,
+                )
+            }
+            try {
+                val res = withContext(Dispatchers.IO) {
+                    val pcm = AudioDecoder(context).decodeMono16k(uri, targetRate = 16_000, targetSamples = 480_000)
+                    require(pcm.size >= 3_200) { "Audio clip too short to verify" }
+
+                    val verdict = audioClassifier.analyze(uri)
+                    val spoofScore = verdict.score.takeIf { it.isFinite() } ?: 0.2f
+                    val threshold = verdict.threshold ?: AudioClassifier.DEFAULT_THRESHOLD
+                    val isClone = spoofScore >= threshold
+
+                    val allProfiles = repository.getAllProfilesList()
+                    val matchReport = speakerVerifier.matchAgainstVault(
+                        pcm = pcm,
+                        profiles = allProfiles,
+                        decoder = { repository.unsealedEmbedding(it) },
+                    )
+
+                    val summary = when {
+                        isClone && matchReport.maxSimilarity >= 0.65f ->
+                            "⚠️ AI VOICE CLONE ALERT: Clip mimics '${matchReport.matchedContactName ?: "family member"}' " +
+                                "(${(matchReport.maxSimilarity * 100f).toInt()}% acoustic match) but LCNN-MFM detected synthetic vocoder artifacts (${(spoofScore * 100f).toInt()}%)!"
+                        isClone ->
+                            "⚠️ SYNTHETIC AUDIO DETECTED: LCNN-MFM flagged AI synthesis (${(spoofScore * 100f).toInt()}% >= ${(threshold * 100f).toInt()}%). No genuine family match."
+                        matchReport.isMatch ->
+                            "✓ VERIFIED FAMILY VOICE: Authentic speech matching '${matchReport.matchedContactName}' (${matchReport.matchedRelationship}, ${(matchReport.maxSimilarity * 100f).toInt()}% similarity)."
+                        else ->
+                            "ℹ️ AUTHENTIC SPEECH (UNENROLLED SPEAKER): Speech appears human (${(spoofScore * 100f).toInt()}% spoof risk), but does not match any enrolled family member (max ${(matchReport.maxSimilarity * 100f).toInt()}%)."
+                    }
+
+                    QuickVoiceVerifyResult(
+                        isSyntheticClone = isClone,
+                        spoofScore = spoofScore,
+                        spoofThreshold = threshold,
+                        matchReport = matchReport,
+                        headlineSummary = summary,
+                    )
+                }
+                _uiState.update {
+                    it.copy(
+                        isVerifying = false,
+                        statusMessage = null,
+                        verifyResult = res,
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        isVerifying = false,
+                        statusMessage = null,
+                        errorMessage = e.message ?: "Failed to verify voice clip",
+                    )
+                }
+            }
+        }
+    }
+
     fun deleteProfile(id: String) {
         viewModelScope.launch {
             repository.deleteProfile(id)
@@ -166,6 +238,6 @@ class VoiceEnrollmentViewModel @Inject constructor(
     }
 
     fun clearMessages() {
-        _uiState.update { it.copy(statusMessage = null, errorMessage = null) }
+        _uiState.update { it.copy(statusMessage = null, errorMessage = null, verifyResult = null) }
     }
 }

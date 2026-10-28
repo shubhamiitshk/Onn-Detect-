@@ -21,7 +21,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import com.onndetect.inference.ModelIntegrityGate
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -30,6 +29,11 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.onndetect.R
+import com.onndetect.inference.ModelIntegrityGate
+import com.onndetect.ui.components.GlassBottomTab
+import com.onndetect.ui.components.LiquidGlassCard
+import com.onndetect.ui.components.LiquidGlassScaffold
+import com.onndetect.ui.navigation.Routes
 import com.onndetect.ui.theme.*
 
 @Composable
@@ -46,173 +50,140 @@ fun HomeScreen(navController: NavController, viewModel: HomeViewModel = hiltView
     val audioPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { open(it, "AUDIO_ONLY") }
     val videoPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { open(it, "VIDEO_ONLY") }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(BackgroundVoid)
-            .safeDrawingPadding()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp)
-    ) {
-        // Top App Bar / Hero Header
-        HomeTopBar(
-            onHistoryClick = { navController.navigate("history") }
-        )
-
-        // Engine Status & Integrity Banner
-        EngineStatusBanner(context, modelsVerified = modelsVerified)
-
-        // Category Cards Section Title
-        Text(
-            text = "FORENSIC SCREENING SUITE",
-            style = MaterialTheme.typography.labelSmall,
-            color = TextTertiary,
-            letterSpacing = 1.2.sp,
-            modifier = Modifier.padding(start = 4.dp, top = 4.dp)
-        )
-
-        // Image Screening Hero Card
-        MediaScannerCard(
-            title = stringResource(R.string.image_title),
-            subtitle = stringResource(R.string.image_subtitle),
-            accentGradient = Brush.horizontalGradient(listOf(CyberCyan, DeepIndigo)),
-            iconSymbol = "📷",
-            badges = listOf("Dual-Engine v6", "20-ch Hybrid", "SigLIP Probe", "FFT & KL"),
-            enabled = readiness.image == true,
-            onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
-        )
-
-        // Speech Screening Hero Card
-        MediaScannerCard(
-            title = stringResource(R.string.audio_title),
-            subtitle = stringResource(R.string.audio_subtitle),
-            accentGradient = Brush.horizontalGradient(listOf(NeonPurple, DeepIndigo)),
-            iconSymbol = "🎙️",
-            badges = listOf("16kHz LFCC", "MFM-LCNN", "Voiceprints"),
-            enabled = readiness.audio == true,
-            onClick = { audioPicker.launch(arrayOf("audio/*")) }
-        )
-
-        // Video Screening Hero Card
-        MediaScannerCard(
-            title = stringResource(R.string.video_title),
-            subtitle = stringResource(R.string.video_subtitle),
-            accentGradient = Brush.horizontalGradient(listOf(DeepIndigo, CyberCyanLight)),
-            iconSymbol = "🎬",
-            badges = listOf("Frame Cosine", "Speech Sample", "Temporal"),
-            enabled = readiness.image == true,
-            onClick = { videoPicker.launch(arrayOf("video/*")) }
-        )
-
-        // History Quick Action Button
-        OutlinedButton(
-            onClick = { navController.navigate("history") },
-            shape = RoundedCornerShape(14.dp),
-            colors = ButtonDefaults.outlinedButtonColors(
-                containerColor = SurfaceCard,
-                contentColor = TextPrimary
-            ),
-            border = androidx.compose.foundation.BorderStroke(
-                1.dp,
-                Brush.horizontalGradient(listOf(BorderSubtle, BorderLight))
-            ),
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text("⏱️", fontSize = 16.sp)
-                Text(
-                    text = stringResource(R.string.history_title),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold
-                )
+    LiquidGlassScaffold(
+        activeTab = GlassBottomTab.DETECT,
+        onSelectTab = { tab ->
+            if (tab != GlassBottomTab.DETECT) {
+                navController.navigate(tab.route) {
+                    launchSingleTop = true
+                }
             }
         }
-
-        // Family Safe-Voice Vault Button
-        OutlinedButton(
-            onClick = { navController.navigate("voice_vault") },
-            shape = RoundedCornerShape(14.dp),
-            colors = ButtonDefaults.outlinedButtonColors(
-                containerColor = SurfaceCard,
-                contentColor = TextPrimary
-            ),
-            border = androidx.compose.foundation.BorderStroke(
-                1.dp,
-                Brush.horizontalGradient(listOf(BorderSubtle, BorderLight))
-            ),
+    ) { bottomBarPadding ->
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp)
+                .fillMaxSize()
+                .safeDrawingPadding()
+                .verticalScroll(rememberScrollState())
+                .padding(bottomBarPadding)
+                .padding(horizontal = 20.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text("🛡️", fontSize = 16.sp)
-                Text(
-                    text = "Family Safe-Voice Vault",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-        }
+            // Top App Bar / Hero Header
+            HomeTopBar(
+                onHistoryClick = { navController.navigate(Routes.HISTORY) }
+            )
 
-        // VLM Model Pack Manager Button
-        OutlinedButton(
-            onClick = { navController.navigate("model_manager") },
-            shape = RoundedCornerShape(14.dp),
-            colors = ButtonDefaults.outlinedButtonColors(
-                containerColor = SurfaceCard,
-                contentColor = TextPrimary
-            ),
-            border = androidx.compose.foundation.BorderStroke(
-                1.dp,
-                Brush.horizontalGradient(listOf(BorderSubtle, BorderLight))
-            ),
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp)
-        ) {
+            // Engine Status & Integrity Banner
+            EngineStatusBanner(context, modelsVerified = modelsVerified)
+
+            // Category Cards Section Title
+            Text(
+                text = "ON-DEVICE FORENSIC DETECTION SUITE",
+                style = MaterialTheme.typography.labelSmall,
+                color = TextTertiary,
+                letterSpacing = 1.2.sp,
+                modifier = Modifier.padding(start = 4.dp, top = 2.dp)
+            )
+
+            // 1. Image Screening Liquid Glass Card
+            MediaScannerCard(
+                title = stringResource(R.string.image_title),
+                subtitle = stringResource(R.string.image_subtitle),
+                accentGradient = Brush.horizontalGradient(listOf(CyberCyan, DeepIndigo)),
+                accentColor = CyberCyan,
+                iconSymbol = "📷",
+                badges = listOf("20-ch SRM", "SigLIP-TAP", "XGBoost v10", "ROI Heatmap"),
+                enabled = readiness.image == true,
+                onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
+            )
+
+            // 2. Audio Screening Liquid Glass Card
+            MediaScannerCard(
+                title = stringResource(R.string.audio_title),
+                subtitle = stringResource(R.string.audio_subtitle),
+                accentGradient = Brush.horizontalGradient(listOf(NeonPurple, DeepIndigo)),
+                accentColor = NeonPurple,
+                iconSymbol = "🎙️",
+                badges = listOf("16kHz LFCC v3", "LCNN-MFM", "Voice Vault"),
+                enabled = readiness.audio == true,
+                onClick = { audioPicker.launch(arrayOf("audio/*")) }
+            )
+
+            // 3. Video Screening Liquid Glass Card
+            MediaScannerCard(
+                title = stringResource(R.string.video_title),
+                subtitle = stringResource(R.string.video_subtitle),
+                accentGradient = Brush.horizontalGradient(listOf(DeepIndigo, CyberCyanLight)),
+                accentColor = CyberCyanLight,
+                iconSymbol = "🎬",
+                badges = listOf("Keyframe Reuse", "BioLip rPPG", "AV Sync"),
+                enabled = readiness.image == true,
+                onClick = { videoPicker.launch(arrayOf("video/*")) }
+            )
+
+            // Compact Pill Row Beneath Video (Matches Hand-Drawn UI Layout: [History] + [VLM Packs])
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text("🧠", fontSize = 16.sp)
-                    Text(
-                        text = "VLM Model Pack Manager",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-                Box(
+                LiquidGlassCard(
+                    accentColor = CyberCyan,
+                    cornerRadius = 16.dp,
                     modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(CyberCyan.copy(alpha = 0.15f))
-                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                        .weight(1f)
+                        .height(50.dp),
+                    onClick = { navController.navigate(Routes.HISTORY) }
                 ) {
-                    Text(
-                        text = "Drive & Packs",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = CyberCyan,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Text("⏱️", fontSize = 15.sp)
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = stringResource(R.string.history_title),
+                            style = MaterialTheme.typography.titleSmall,
+                            color = TextPrimary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                LiquidGlassCard(
+                    accentColor = NeonPurple,
+                    cornerRadius = 16.dp,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(50.dp),
+                    onClick = { navController.navigate(Routes.MODEL_MANAGER) }
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Text("🧠", fontSize = 15.sp)
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = "Qwen / VLM Packs",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = NeonPurpleLight,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
-        }
 
-        // Privacy Guarantee Card
-        PrivacyGuaranteeCard()
+            // Privacy Guarantee Card
+            PrivacyGuaranteeCard()
+        }
     }
 }
 
@@ -242,7 +213,7 @@ private fun HomeTopBar(onHistoryClick: () -> Unit) {
                 )
             }
             Text(
-                text = "Autonomous On-Device Deepfake Detection",
+                text = "Autonomous On-Device Deepfake & RAG Suite",
                 style = MaterialTheme.typography.bodySmall,
                 color = TextSecondary
             )
@@ -252,8 +223,9 @@ private fun HomeTopBar(onHistoryClick: () -> Unit) {
         Box(
             modifier = Modifier
                 .clip(RoundedCornerShape(20.dp))
-                .background(SurfaceElevated)
+                .background(SurfaceElevated.copy(alpha = 0.8f))
                 .border(1.dp, BorderSubtle, RoundedCornerShape(20.dp))
+                .clickable { onHistoryClick() }
                 .padding(horizontal = 12.dp, vertical = 6.dp)
         ) {
             Row(
@@ -285,7 +257,7 @@ private fun EngineStatusBanner(context: Context, modelsVerified: Boolean?) {
             AuthenticGreen,
             AuthenticGreenContainer.copy(alpha = 0.35f),
             "Dual-Engine Active (${ModelIntegrityGate.releaseId(context)})",
-            "Engine A 20-ch Hybrid • Engine C SigLIP Probe • Cascade Fusion"
+            "Fast Specialist Cascade (<180ms) • Optional Qwen 0.8B RAG"
         )
         false -> Quadruple(
             SyntheticRed,
@@ -342,18 +314,18 @@ fun MediaScannerCard(
     title: String,
     subtitle: String,
     accentGradient: Brush,
+    accentColor: Color = CyberCyan,
     iconSymbol: String,
     badges: List<String>,
     enabled: Boolean = true,
     onClick: () -> Unit
 ) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(SurfaceCard)
-            .border(1.dp, BorderSubtle, RoundedCornerShape(20.dp))
-            .clickable(enabled = enabled, onClick = onClick)
+    LiquidGlassCard(
+        modifier = Modifier.fillMaxWidth(),
+        cornerRadius = 22.dp,
+        accentColor = accentColor,
+        enabled = enabled,
+        onClick = onClick
     ) {
         // Gradient left accent strip
         Box(
@@ -388,9 +360,9 @@ fun MediaScannerCard(
                 }
 
                 Text(
-                    text = "SELECT →",
+                    text = "SCAN →",
                     style = MaterialTheme.typography.labelSmall,
-                    color = if (enabled) CyberCyan else TextDisabled,
+                    color = if (enabled) accentColor else TextDisabled,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 1.sp
                 )
@@ -412,13 +384,14 @@ fun MediaScannerCard(
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(6.dp))
-                            .background(SurfaceElevated)
+                            .background(SurfaceElevated.copy(alpha = 0.85f))
+                            .border(0.5.dp, accentColor.copy(alpha = 0.3f), RoundedCornerShape(6.dp))
                             .padding(horizontal = 8.dp, vertical = 4.dp)
                     ) {
                         Text(
                             text = badge,
                             style = MaterialTheme.typography.labelSmall,
-                            color = TextTertiary,
+                            color = TextSecondary,
                             fontSize = 10.sp
                         )
                     }
@@ -430,22 +403,20 @@ fun MediaScannerCard(
 
 @Composable
 private fun PrivacyGuaranteeCard() {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(SurfaceElevated.copy(alpha = 0.5f))
-            .border(1.dp, BorderLight.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
-            .padding(14.dp)
+    LiquidGlassCard(
+        modifier = Modifier.fillMaxWidth(),
+        cornerRadius = 16.dp,
+        accentColor = AuthenticGreen
     ) {
         Row(
+            modifier = Modifier.padding(14.dp),
             verticalAlignment = Alignment.Top,
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text("🛡️", fontSize = 16.sp)
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
-                    text = "Zero Cloud Dependencies",
+                    text = "Zero Cloud Dependencies • 3-Window Liquid Glass",
                     style = MaterialTheme.typography.titleSmall,
                     color = TextPrimary,
                     fontWeight = FontWeight.SemiBold
