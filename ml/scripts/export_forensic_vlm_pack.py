@@ -550,12 +550,18 @@ def main() -> None:
     parser.add_argument("--self-test", action="store_true", help="Run self-tests and exit.")
     parser.add_argument("--adapter-dir", type=Path, help="Directory containing fine-tuned LoRA adapter.")
     parser.add_argument("--base-model-id", type=str, default="HuggingFaceTB/SmolVLM2-500M-Video-Instruct")
-    parser.add_argument("--output-dir", type=Path, default=Path("outputs/vlm_export_pack"))
+    parser.add_argument("--output-dir", "--out-dir", type=Path, default=Path("outputs/vlm_export_pack"), help="Output directory for packaged pack.")
     parser.add_argument("--pack-id", type=str, default="smolvlm2_500m_video_instruct_q8_0")
-    parser.add_argument("--policy-file", type=Path, help="Path to forensic_vlm_policy.json")
+    parser.add_argument(
+        "--policy-file",
+        type=Path,
+        default=Path("android/app/src/test/resources/forensic_vlm_policy_parity_fixture.json") if Path("android/app/src/test/resources/forensic_vlm_policy_parity_fixture.json").is_file() else None,
+        help="Path to forensic_vlm_policy.json (defaults to standard fixture if omitted)",
+    )
     parser.add_argument("--language-file", type=Path, help="Path to compiled language GGUF file.")
     parser.add_argument("--vision-file", type=Path, help="Path to compiled vision mmproj GGUF file.")
     parser.add_argument("--signing-key", type=Path, help="Path to private Ed25519 signing key.")
+    parser.add_argument("--test-key", action="store_true", help="Generate an ephemeral Ed25519 test keypair for local development/testing.")
     parser.add_argument("--skip-merge", action="store_true", help="Skip LoRA merge if base weights already prepared.")
 
     args = parser.parse_args()
@@ -612,11 +618,15 @@ def main() -> None:
             print(f"[Export] Copying vision mmproj to {target_vis}...")
             shutil.copy2(args.vision_file, target_vis)
 
-        signing_key = (
-            load_external_signing_key(str(args.signing_key))
-            if args.signing_key
-            else load_external_signing_key()
-        )
+        if args.test_key:
+            signing_key, _ = generate_test_signing_key()
+            print("[Export] Generated ephemeral Ed25519 test key for local pack experimentation.")
+        else:
+            signing_key = (
+                load_external_signing_key(str(args.signing_key))
+                if args.signing_key
+                else load_external_signing_key()
+            )
 
         manifest = generate_signed_manifest(
             pack_id=args.pack_id,
