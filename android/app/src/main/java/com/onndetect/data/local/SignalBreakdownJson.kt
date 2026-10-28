@@ -25,6 +25,9 @@ object SignalBreakdownJson {
         put("prnuScore", safe(signals.prnuScore))
         put("fusionScore", safe(signals.fusionScore))
         put("landmarkJitter", safe(signals.landmarkJitter))
+        put("richPoorContrast", safe(signals.richPoorContrast))
+        put("roiHotspotScore", safe(signals.roiHotspotScore))
+        put("vfmSpatialVariance", safe(signals.vfmSpatialVariance))
     }.toString()
 
     /** @return null when json is null/corrupt; missing or null fields default to Float.NaN. */
@@ -58,6 +61,9 @@ object SignalBreakdownJson {
                 // persisted -> Float.NaN (unavailable), never 0f.
                 fusionScore = f("fusionScore"),
                 landmarkJitter = f("landmarkJitter"),
+                richPoorContrast = f("richPoorContrast"),
+                roiHotspotScore = f("roiHotspotScore"),
+                vfmSpatialVariance = f("vfmSpatialVariance"),
             )
         } catch (_: Exception) {
             null

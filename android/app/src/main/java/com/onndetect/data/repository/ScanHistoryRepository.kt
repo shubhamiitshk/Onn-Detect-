@@ -3,6 +3,7 @@ package com.onndetect.data.repository
 import com.onndetect.data.local.ScanHistoryDao
 import com.onndetect.data.local.ScanHistoryEntity
 import com.onndetect.data.local.SignalBreakdownJson
+import com.onndetect.detection.provenance.ProvenanceEvidence
 import com.onndetect.domain.models.ScanResult
 import kotlinx.coroutines.flow.Flow
 import org.json.JSONArray
@@ -13,6 +14,7 @@ import javax.inject.Singleton
 @Singleton
 class ScanHistoryRepository @Inject constructor(private val dao: ScanHistoryDao) {
     fun observeAll(): Flow<List<ScanHistoryEntity>> = dao.observeAll()
+    fun observePage(limit: Int, offset: Int): Flow<List<ScanHistoryEntity>> = dao.observePage(limit, offset)
     suspend fun findById(id: String): ScanHistoryEntity? = dao.findById(id)
     suspend fun record(result: ScanResult) = dao.insert(toEntry(result))
     suspend fun delete(id: String) = dao.deleteById(id)
@@ -44,8 +46,15 @@ class ScanHistoryRepository @Inject constructor(private val dao: ScanHistoryDao)
                 put("compressed", result.qualityInfo.isCompressed)
                 put("blurry", result.qualityInfo.isBlurry)
                 put("dark", result.qualityInfo.isDark)
-                // A detected marker is unverified. Never persist source EXIF/GPS by default.
-                put("provenance", if (result.provenance?.hasC2PA == true) "unverified marker" else "not verified")
+                // Persist the verified status honestly: a cryptographically
+                // verified C2PA claim is "c2pa-verified"; a mere manifest
+                // presence or watermark is still an "unverified marker".
+                val provenanceMarker = when (val ev = result.provenanceEvidence) {
+                    is ProvenanceEvidence.C2PAClaim -> if (ev.confirmsAiInvolvement) "c2pa-verified" else "unverified marker"
+                    is ProvenanceEvidence.WatermarkMark -> "unverified marker"
+                    ProvenanceEvidence.Absent -> "not verified"
+                }
+                put("provenance", provenanceMarker)
                 // The SHA-256 of the analysed media bytes. A forensic receipt
                 // binds itself to the content through this digest, so it has
                 // to be persisted with the assessment.

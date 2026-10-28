@@ -93,3 +93,21 @@ cd android && .\gradlew.bat testDebugUnitTest
 - `c:\Users\PLEXTEK\Desktop\Onn-Detect-\tests\e2e\run_e2e_tests.py` — Standalone test runner with structured scorecard.
 - `c:\Users\PLEXTEK\Desktop\Onn-Detect-\android\app\src\test\java\com\onndetect\detection\provenance\AudioSealDetectorTest.kt` — 5 Kotlin unit tests.
 - `c:\Users\PLEXTEK\Desktop\Onn-Detect-\android\app\src\test\java\com\onndetect\detection\video\VideoScorePolicyTest.kt` — 7 Kotlin unit tests.
+
+
+---
+
+## 10. Test Scope Clarification (counts by runner)
+
+| Suite | Count | Runner | CI job |
+|---|---|---|---|
+| Kotlin JVM unit tests | 326 | cd android && gradlew testDebugUnitTest | build-android.yml |
+| Kotlin instrumentation | 12 | gradlew connectedAndroidTest | build-android.yml |
+| Python ML tests | 176 | pytest ml/tests | evaluate-models.yml |
+| Scripts/tooling tests | 63 | unittest discover -s scripts/tests | evaluate-models.yml |
+| E2E tiers 1-4 | 145 | 	ests/e2e/run_e2e_tests.py | evaluate-models.yml |
+| Tier-5 adversarial stress | 9 | unittest discover -s tests -p tier5_adversarial_stress_test.py | evaluate-models.yml |
+| v11 algorithm self-test | 10 | ml/src/models/prism_v11_algorithms.py --self-test | evaluate-models.yml |
+
+Counts are by runner; suites overlap in scope (e.g. E2E re-invokes scripts). Historical/aspirational benchmark AUCs in README are NOT current detector performance: shipped neural assets are unvalidated and statistical verdicts return INCONCLUSIVE.
+

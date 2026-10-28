@@ -60,6 +60,68 @@ GEMMA2_BENCHMARK = {
 }
 
 
+def ensure_benchmark_dataset(data_root: Path) -> None:
+    """Ensures data_root contains the 4 strict ONN-DETECT forensic splits.
+    If missing or incomplete, automatically downloads CIFAKE benchmark slice via Hugging Face Hub (8.4 MB)
+    and unpacks it into stacking (50/50), fusion_val (50/50), calibration (50/50), and test (100/100).
+    """
+    for split in SPLITS:
+        split_dir = data_root / split
+        if not split_dir.is_dir():
+            break
+    else:
+        return
+
+    print(f"\n[Dataset] Benchmark split directory missing at {data_root}.")
+    print("[Dataset] Auto-downloading CIFAKE authentic/synthetic benchmark slice from Hugging Face Hub (8.4 MB)...")
+    import io
+    from PIL import Image
+    from huggingface_hub import hf_hub_download
+    try:
+        import pyarrow.parquet as pq
+    except ImportError:
+        import subprocess
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "pyarrow"])
+        import pyarrow.parquet as pq
+
+    parquet_file = hf_hub_download(
+        repo_id="dragonintelligence/CIFAKE-image-dataset",
+        filename="data/test-00000-of-00001.parquet",
+        repo_type="dataset",
+    )
+    table = pq.read_table(parquet_file)
+    df = table.to_pandas()
+
+    reals = df[df["label"] == 0].reset_index(drop=True)
+    fakes = df[df["label"] == 1].reset_index(drop=True)
+
+    splits_spec = {
+        "stacking": (reals.iloc[0:50], fakes.iloc[0:50]),
+        "fusion_val": (reals.iloc[50:100], fakes.iloc[50:100]),
+        "calibration": (reals.iloc[100:150], fakes.iloc[100:150]),
+        "test": (reals.iloc[150:250], fakes.iloc[150:250]),
+    }
+
+    data_root.mkdir(parents=True, exist_ok=True)
+    for split_name, (r_df, f_df) in splits_spec.items():
+        r_dir = data_root / split_name / "real" / "authentic"
+        f_dir = data_root / split_name / "fake" / "synthetic"
+        r_dir.mkdir(parents=True, exist_ok=True)
+        f_dir.mkdir(parents=True, exist_ok=True)
+
+        for idx, row in r_df.iterrows():
+            img_data = row["image"]["bytes"] if isinstance(row["image"], dict) else row["image"]
+            img = Image.open(io.BytesIO(img_data))
+            img.save(r_dir / f"img_real_{idx:03d}.png")
+
+        for idx, row in f_df.iterrows():
+            img_data = row["image"]["bytes"] if isinstance(row["image"], dict) else row["image"]
+            img = Image.open(io.BytesIO(img_data))
+            img.save(f_dir / f"img_fake_{idx:03d}.png")
+
+    print(f"[Dataset] Extracted 500 benchmark images into {data_root} successfully.\n")
+
+
 def discover_split_records(data_root: Path, split: str) -> list[dict[str, Any]]:
     """Load sample records from dataset_manifest.json or fallback directory layout."""
     manifest_path = data_root / "dataset_manifest.json"
@@ -268,10 +330,12 @@ def run_benchmark(
     data_root: Path,
     output_dir: Path,
     extractor: Any,
-    model_name: str = "Qwen/Qwen2-VL-2B-Instruct",
+    model_name: str = "Qwen/Qwen3.5-2B",
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Execute the strict 4-split forensic evaluation protocol."""
     output_dir.mkdir(parents=True, exist_ok=True)
+    ensure_benchmark_dataset(data_root)
+
     split_records: dict[str, list[dict[str, Any]]] = {}
     split_embs: dict[str, np.ndarray] = {}
     split_labels: dict[str, np.ndarray] = {}

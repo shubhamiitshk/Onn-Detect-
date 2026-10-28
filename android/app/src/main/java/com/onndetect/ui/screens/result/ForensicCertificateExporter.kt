@@ -266,7 +266,11 @@ object ForensicCertificateExporter {
                     putExtra(Intent.EXTRA_TEXT, formatShareText(entry))
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
-                context.startActivity(Intent.createChooser(shareIntent, "Share Forensic Certificate"))
+                try {
+                    context.startActivity(Intent.createChooser(shareIntent, "Share Forensic Certificate"))
+                } catch (e: android.content.ActivityNotFoundException) {
+                    android.util.Log.w("ForensicCertificateExporter", "No activity to handle share intent", e)
+                }
             }
         } finally {
             bmp.recycle()

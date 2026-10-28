@@ -154,7 +154,7 @@ class SRMForensicAnalyzer(private val context: Context, private val engine: Lite
 /**
  * Track 1 v11 upgrade: Log-Odds Rich-Poor Contrast + Saliency-Guided ROI Injection.
  *
- * Kotlin port of `ContrastivePatchCraftROI.evaluate()` from `onn_prism_v11_algorithms.py`.
+ * Kotlin port of `ContrastivePatchCraftROI.evaluate()` from `ml/src/models/prism_v11_algorithms.py` (experimental).
  * Fixes the dead `roiScore` telemetry field: the localized 8x8 hotspot ROI score is now
  * exported into `roiHotspotScore` (fusion slot 2) and the rich-poor texture contrast into
  * `richPoorContrast` (fusion slot 1), replacing the chance/inverted `fft_score` and `kl_score`.

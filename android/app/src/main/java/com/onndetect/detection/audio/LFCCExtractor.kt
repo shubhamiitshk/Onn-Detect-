@@ -252,7 +252,7 @@ class LFCCExtractor(
      * voiced/non-vocal energy contrast is preserved.
      *
      * Port of `MNPSubBandAudioDetector.extract_mnp_residual_features()`
-     * from `onn_prism_v11_algorithms.py` (Xu et al., arXiv:2609.33375).
+     * from `ml/src/models/prism_v11_algorithms.py` (experimental; Xu et al., arXiv:2609.33375).
      * Neural audio codecs leak quantization artifacts in non-vocal intervals
      * (pauses, breaths, unvoiced transitions); real in-the-wild background
      * noise maintains a consistent cross-view spectral ratio between voiced

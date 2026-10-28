@@ -101,7 +101,7 @@ class DetectionPipeline @Inject constructor(
         // VERIFIED claim or a significant watermark detection is a
         // different KIND of answer, not a higher probability.
         var provenanceEvidence: ProvenanceEvidence = ProvenanceEvidence.Absent
-        fun result(status: AnalysisStatus, reason: String?, score: Float = -1f,
+        fun result(status: AnalysisStatus, reason: String?, score: Float = Float.NaN,
             report: ModelIntegrityChecker.Report? = null,
             decisionThreshold: Float? = report?.threshold,
             mediaSha256: String? = null): ScanResult {

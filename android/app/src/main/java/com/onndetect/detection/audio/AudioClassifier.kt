@@ -45,7 +45,8 @@ class AudioClassifier(private val context: Context, private val engine: LiteRTIn
     }
     data class Verdict(val score: Float, val isAiGenerated: Boolean, val threshold: Float?,
         val status: AnalysisStatus = AnalysisStatus.INCONCLUSIVE, val reason: String? = null,
-        val modelValidated: Boolean = false, val analyzedDurationMs: Long = 0, val totalDurationMs: Long = 0,
+        val modelValidated: Boolean = false, val analyzedDurationMs: Long = 0, val usableAnalyzedMs: Long = 0,
+        val totalDurationMs: Long = 0,
         val analyzedTimestampsMs: List<Long> = emptyList(), val modelVersion: String = "unknown",
         val preprocessingVersion: String = LFCCExtractor.FRONTEND_ID, val calibrationVersion: String = "unvalidated",
         /** Per-window scores in timestamp order; empty when a single window was scored. */
@@ -63,7 +64,7 @@ class AudioClassifier(private val context: Context, private val engine: LiteRTIn
             checkStop()
         }
         val report = ModelIntegrityGate.report(context, setOf(ModelIntegrityChecker.AUDIO_MODEL))
-        if (!report.allOk) return Verdict(-1f, false, null, AnalysisStatus.MODEL_FAILURE, report.failures.joinToString())
+        if (!report.allOk) return Verdict(Float.NaN, false, null, AnalysisStatus.MODEL_FAILURE, report.failures.joinToString())
         try {
             require(windows >= 1) { "Window count must be positive" }
             check(); onStage("Decoding an audio sample...")
@@ -80,6 +81,7 @@ class AudioClassifier(private val context: Context, private val engine: LiteRTIn
             val scores = ArrayList<Float>(offsets.size)
             val timestamps = ArrayList<Long>(offsets.size)
             var analyzedMs = 0L
+            var usableMs = 0L
             var durationMs = first.totalDurationMs
             var clippedWindows = 0
             var speechLikeWindows = 0
@@ -108,10 +110,11 @@ class AudioClassifier(private val context: Context, private val engine: LiteRTIn
                 val features = lfcc.extractBuffer(decoded.pcm, ::check)
                 check(); onStage("Audio model diagnostics...")
                 scores += engine.predict(MODEL_FILE, features, ::check)
+                usableMs += decoded.analyzedDurationMs
                 if (SpeechContentGate.isSpeechLike(decoded.pcm, decoded.validSamples, TARGET_RATE)) speechLikeWindows++
             }
 
-            val score = if (scores.isEmpty()) -1f
+            val score = if (scores.isEmpty()) Float.NaN
                 else if (scores.size == 1) scores[0]
                 else WindowPooling.poolProbabilities(scores.toFloatArray())
             fun outcome(status: AnalysisStatus, reason: String?): Verdict {
@@ -123,7 +126,7 @@ class AudioClassifier(private val context: Context, private val engine: LiteRTIn
                 val finalReason = if (isConfirmed) "Meta AudioSeal neural watermark confirmed AI involvement" else reason
                 return Verdict(score,
                     finalIsAi, report.threshold,
-                    status, finalReason, report.validated, analyzedMs, durationMs,
+                    status, finalReason, report.validated, analyzedMs, usableMs, durationMs,
                     timestamps, report.releaseId, LFCCExtractor.FRONTEND_ID,
                     if (report.validated) report.releaseId else "unvalidated",
                     scores.toList(),
@@ -147,7 +150,7 @@ class AudioClassifier(private val context: Context, private val engine: LiteRTIn
             }
             return outcome(AnalysisStatus.SUCCESS, null)
         } catch (e: CancellationException) { throw e }
-        catch (e: Exception) { return Verdict(-1f, false, null, AnalysisFailurePolicy.status(e), e.message ?: "Audio analysis failed") }
+        catch (e: Exception) { return Verdict(Float.NaN, false, null, AnalysisFailurePolicy.status(e), e.message ?: "Audio analysis failed") }
     }
 }
 

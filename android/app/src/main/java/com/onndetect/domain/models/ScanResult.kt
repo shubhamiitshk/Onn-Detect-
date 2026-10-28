@@ -83,7 +83,7 @@ data class ScanResult(
     val forensicVlmOutcome: com.onndetect.detection.visual.OnDemandForensicVlmAnalyzer.DialecticalVlmOutcome? = null,
 ) {
     init {
-        require(overallScore.isNaN() || overallScore == -1f || overallScore in 0f..1f)
+        require(overallScore.isNaN() || overallScore in 0f..1f)
         require(confidence.isFinite() && confidence in 0f..1f)
         if (verdict != DetectionVerdict.INCONCLUSIVE) {
             require(status == AnalysisStatus.SUCCESS && modelValidated && decisionThreshold != null)

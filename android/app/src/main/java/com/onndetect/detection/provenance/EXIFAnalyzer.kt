@@ -8,6 +8,12 @@ import javax.inject.Inject
 class EXIFAnalyzer @Inject constructor() {
 
     fun analyze(context: Context, imageUri: Uri): Float {
+        // Non-image inputs (audio/video/documents) have no EXIF block; do not
+        // invent a suspiciousness penalty for them.
+        val mimeType = context.contentResolver.getType(imageUri)
+        if (mimeType != null && !mimeType.startsWith("image/")) {
+            return 0.0f
+        }
         var anomalyScore = 0.0f
 
         try {

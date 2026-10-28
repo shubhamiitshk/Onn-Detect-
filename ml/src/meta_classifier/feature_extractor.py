@@ -310,7 +310,13 @@ def extract_visual_features(
     with torch.no_grad():
         srm = float(srm_model(tensor).item())
 
-    fscore, flatness = fft_features(img)
+    try:
+        fscore, flatness = fft_features(img)
+    except ValueError:
+        # Missing spectral evidence is unavailable, not zero: keep the
+        # batch running instead of aborting, and mark both slots NaN so the
+        # fusion tree takes its learned missing branch.
+        fscore, flatness = float("nan"), float("nan")
     kscore, _ = kl_score(to_gray_u8(img), baseline)
     res_norm, comp = quality_features(img, img_path, decoded.source_size)
 
