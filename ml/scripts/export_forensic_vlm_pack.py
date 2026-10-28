@@ -19,6 +19,25 @@ import zipfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+# Gracefully bypass broken torchvision / torchaudio C++ extension mismatches in Colab
+for mod in ("torchvision", "torchaudio"):
+    try:
+        __import__(mod)
+    except Exception:
+        sys.modules[mod] = None
+
+# Guard against incompatible pre-installed torchao in Colab environments
+try:
+    import peft.import_utils
+    peft.import_utils.is_torchao_available = lambda: False
+except Exception:
+    pass
+try:
+    import peft.tuners.lora.torchao
+    peft.tuners.lora.torchao.is_torchao_available = lambda: False
+except Exception:
+    pass
+
 try:
     from cryptography.hazmat.primitives.asymmetric import ed25519
     from cryptography.hazmat.primitives import serialization
