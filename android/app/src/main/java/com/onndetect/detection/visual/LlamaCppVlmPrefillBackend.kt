@@ -19,7 +19,7 @@ import java.io.File
 class LlamaCppVlmPrefillBackend(
     val modelPath: String,
     val mmprojPath: String? = null,
-    val hiddenDim: Int = 1536,
+    val hiddenDim: Int = 1024,
     val imageResolutionCapPx: Int = 512,
 ) : OnDemandForensicVlmAnalyzer.VlmPrefillBackend, AutoCloseable {
 

@@ -43,14 +43,18 @@ def compute_canonical_manifest_payload(
     policy_sha256: str,
     language_bytes: int,
     vision_mmproj_bytes: int,
+    processor_version: str,
+    chat_template_id: str,
     image_resolution_cap_px: int,
     max_visual_tokens: int,
+    diagnostic_only: bool,
 ) -> bytes:
-    """Computes the exact canonical byte payload for Ed25519 digital signing."""
+    """Computes the exact canonical byte payload for Ed25519 digital signing covering all metadata."""
     canonical_str = (
         f"{pack_id}|{hf_model_id}|{language_weights_sha256}|{vision_mmproj_sha256}|"
         f"{policy_sha256}|{int(language_bytes)}|{int(vision_mmproj_bytes)}|"
-        f"{int(image_resolution_cap_px)}|{int(max_visual_tokens)}"
+        f"{processor_version}|{chat_template_id}|"
+        f"{int(image_resolution_cap_px)}|{int(max_visual_tokens)}|{str(diagnostic_only).lower()}"
     )
     return canonical_str.encode("utf-8")
 
@@ -97,7 +101,7 @@ def generate_signed_manifest(
     vision_sha = compute_file_sha256(vision_file)
     policy_sha = compute_file_sha256(policy_file)
 
-    # 4. Construct canonical payload
+    # 4. Construct canonical payload covering all metadata
     payload = compute_canonical_manifest_payload(
         pack_id=pack_id,
         hf_model_id=hf_model_id,
@@ -106,8 +110,11 @@ def generate_signed_manifest(
         policy_sha256=policy_sha,
         language_bytes=lang_bytes,
         vision_mmproj_bytes=vision_bytes,
+        processor_version=processor_version,
+        chat_template_id=chat_template_id,
         image_resolution_cap_px=image_resolution_cap_px,
         max_visual_tokens=max_visual_tokens,
+        diagnostic_only=diagnostic_only,
     )
 
     # 5. Cryptographic Ed25519 signing
@@ -155,17 +162,22 @@ def verify_pack_manifest(
     hex128 = re.compile(r"^[0-9a-fA-F]{128}$")
 
     for field in ["language_weights_sha256", "vision_mmproj_sha256", "policy_sha256", "publisher_public_key_hex"]:
-        if not hex64.match(manifest.get(field, "")):
+        if not hex64.match(str(manifest.get(field, ""))):
             return False
 
-    if not hex128.match(manifest.get("publisher_signature_hex", "")):
+    if not hex128.match(str(manifest.get("publisher_signature_hex", ""))):
+        return False
+
+    if int(manifest.get("language_bytes", 0)) < 50 * 1024 * 1024:
+        return False
+    if int(manifest.get("vision_mmproj_bytes", 0)) < 10 * 1024 * 1024:
         return False
 
     pub_hex = manifest["publisher_public_key_hex"]
     if expected_pub_key_hex and pub_hex.lower() != expected_pub_key_hex.lower():
         return False
 
-    # Check payload signature
+    # Check payload signature over all fields
     payload = compute_canonical_manifest_payload(
         pack_id=manifest["pack_id"],
         hf_model_id=manifest["hf_model_id"],
@@ -174,8 +186,11 @@ def verify_pack_manifest(
         policy_sha256=manifest["policy_sha256"],
         language_bytes=manifest["language_bytes"],
         vision_mmproj_bytes=manifest["vision_mmproj_bytes"],
+        processor_version=manifest["processor_version"],
+        chat_template_id=manifest["chat_template_id"],
         image_resolution_cap_px=manifest["image_resolution_cap_px"],
         max_visual_tokens=manifest["max_visual_tokens"],
+        diagnostic_only=manifest.get("diagnostic_only", True),
     )
 
     try:
@@ -186,11 +201,38 @@ def verify_pack_manifest(
     except Exception:
         return False
 
-    # If pack directory provided, verify files on disk match manifest
+    # If pack directory provided, verify all 3 files on disk match manifest exactly
     if pack_dir and pack_dir.exists():
-        # Check policy file
+        # 1. Check policy file
         pol_file = pack_dir / "forensic_vlm_policy.json"
-        if not pol_file.exists() or compute_file_sha256(pol_file) != manifest["policy_sha256"]:
+        if not pol_file.is_file() or compute_file_sha256(pol_file) != manifest["policy_sha256"]:
+            return False
+
+        # 2. Check language model file
+        pack_id = manifest["pack_id"]
+        lang_candidates = [
+            pack_dir / f"{pack_id}-model.gguf",
+            pack_dir / f"{pack_id}-language.gguf",
+            pack_dir / "model.gguf",
+            pack_dir / "language.gguf",
+        ]
+        lang_file = next((f for f in lang_candidates if f.is_file() and f.stat().st_size == manifest["language_bytes"]), None)
+        if lang_file is None:
+            lang_file = next((f for f in pack_dir.glob("*.gguf") if "mmproj" not in f.name and f.stat().st_size == manifest["language_bytes"]), None)
+        if lang_file is None or compute_file_sha256(lang_file) != manifest["language_weights_sha256"]:
+            return False
+
+        # 3. Check vision mmproj file
+        vis_candidates = [
+            pack_dir / f"{pack_id}-mmproj.gguf",
+            pack_dir / f"{pack_id}-vision.gguf",
+            pack_dir / "mmproj.gguf",
+            pack_dir / "vision.gguf",
+        ]
+        vis_file = next((f for f in vis_candidates if f.is_file() and f.stat().st_size == manifest["vision_mmproj_bytes"]), None)
+        if vis_file is None:
+            vis_file = next((f for f in pack_dir.glob("*.gguf") if "mmproj" in f.name and f.stat().st_size == manifest["vision_mmproj_bytes"]), None)
+        if vis_file is None or compute_file_sha256(vis_file) != manifest["vision_mmproj_sha256"]:
             return False
 
     return True
@@ -240,11 +282,12 @@ def create_gguf_conversion_script(
     pack_id: str,
     quant_type: str = "q4_k_m",
 ) -> Path:
-    """Generates a standalone conversion script using llama.cpp's convert_hf_to_gguf."""
+    """Generates a standalone conversion script using llama.cpp's convert_hf_to_gguf and multimodal converter."""
     script_sh = output_dir / "convert_to_gguf.sh"
     content = f"""#!/bin/bash
 set -e
 # GGUF Conversion recipe for ONN-DETECT Tier-2 VLM
+# Pinned upstream llama.cpp release: b4832 (March 2026)
 # Prerequisites: git clone https://github.com/ggerganov/llama.cpp && pip install -r llama.cpp/requirements.txt
 
 MERGED_DIR="{merged_hf_dir.resolve()}"
@@ -255,11 +298,19 @@ QUANT_TYPE="{quant_type.upper()}"
 echo "=== 1. CONVERTING MERGED HF WEIGHTS TO FP16 GGUF ==="
 python3 llama.cpp/convert_hf_to_gguf.py "$MERGED_DIR" --outfile "$OUT_DIR/$PACK_ID-f16.gguf"
 
-echo "=== 2. QUANTIZING TO $QUANT_TYPE ==="
-./llama.cpp/llama-quantize "$OUT_DIR/$PACK_ID-f16.gguf" "$OUT_DIR/$PACK_ID-$quant_type.gguf" "$QUANT_TYPE"
+echo "=== 2. QUANTIZING LANGUAGE MODEL TO $QUANT_TYPE ==="
+./llama.cpp/llama-quantize "$OUT_DIR/$PACK_ID-f16.gguf" "$OUT_DIR/$PACK_ID-model.gguf" "$QUANT_TYPE"
+rm -f "$OUT_DIR/$PACK_ID-f16.gguf"
 
-echo "=== 3. GGUF CONVERSION COMPLETE ==="
-ls -lh "$OUT_DIR/$PACK_ID-$quant_type.gguf"
+echo "=== 3. CONVERTING VISION PROJECTOR (MMPROJ) TO GGUF ==="
+if [ -f "llama.cpp/examples/llava/convert_image_encoder_to_gguf.py" ]; then
+    python3 llama.cpp/examples/llava/convert_image_encoder_to_gguf.py -m "$MERGED_DIR" --output-dir "$OUT_DIR" --llava-projector "$OUT_DIR/$PACK_ID-mmproj.gguf"
+else
+    python3 llama.cpp/convert_hf_to_gguf.py "$MERGED_DIR" --outfile "$OUT_DIR/$PACK_ID-mmproj.gguf" --clip-model-is-vision
+fi
+
+echo "=== 4. GGUF CONVERSION COMPLETE ==="
+ls -lh "$OUT_DIR/$PACK_ID-model.gguf" "$OUT_DIR/$PACK_ID-mmproj.gguf"
 """
     script_sh.write_text(content, encoding="utf-8")
     return script_sh
@@ -284,9 +335,9 @@ def run_self_tests() -> None:
         print(f"  [PASS] SHA-256 computation: {sha[:16]}...")
 
         # 2. Create mock valid model files (>50 MB language, >10 MB vision, policy JSON)
-        dummy_lang = tmp_dir / "model.gguf"
+        dummy_lang = tmp_dir / "smolvlm2_500m_video_instruct_q8_0-model.gguf"
         dummy_lang.write_bytes(b"\x00" * (52 * 1024 * 1024))
-        dummy_vis = tmp_dir / "mmproj.gguf"
+        dummy_vis = tmp_dir / "smolvlm2_500m_video_instruct_q8_0-mmproj.gguf"
         dummy_vis.write_bytes(b"\x01" * (11 * 1024 * 1024))
         dummy_pol = tmp_dir / "forensic_vlm_policy.json"
         dummy_pol.write_text(json.dumps({"model_id": "test", "decision_threshold": 0.5}), encoding="utf-8")
@@ -300,6 +351,8 @@ def run_self_tests() -> None:
             vision_file=dummy_vis,
             policy_file=dummy_pol,
             signing_private_key=priv_key,
+            processor_version="transformers-4.48.0",
+            chat_template_id="smolvlm_default",
             diagnostic_only=True,
         )
 
@@ -311,23 +364,40 @@ def run_self_tests() -> None:
         assert manifest["publisher_signature_valid"] is True
         print(f"  [PASS] Genuine Ed25519 signed manifest generated.")
 
-        # 4. Test manifest cryptographic verification
+        # 4. Test manifest cryptographic verification with full pack on disk
         valid = verify_pack_manifest(manifest, pack_dir=tmp_dir, expected_pub_key_hex=manifest["publisher_public_key_hex"])
         assert valid is True, "Signature verification failed on authentic manifest"
         print(f"  [PASS] Ed25519 signature cryptographically verified on authentic pack.")
 
-        # 5. Negative Test: Corrupted language file must fail verification
+        # 5. Negative Test: Metadata tampering invalidates signature
+        tampered_meta = dict(manifest)
+        tampered_meta["processor_version"] = "transformers-5.0.0"
+        assert verify_pack_manifest(tampered_meta, pack_dir=tmp_dir) is False, "Tampered processor_version passed verification!"
+        tampered_diag = dict(manifest)
+        tampered_diag["diagnostic_only"] = False
+        assert verify_pack_manifest(tampered_diag, pack_dir=tmp_dir) is False, "Tampered diagnostic_only passed verification!"
+        print(f"  [PASS] Negative test: Metadata modifications (processor_version, diagnostic_only) strictly rejected.")
+
+        # 6. Negative Test: Corrupted language hash
         corrupted_manifest = dict(manifest)
         corrupted_manifest["language_weights_sha256"] = "a" * 64
         assert verify_pack_manifest(corrupted_manifest, pack_dir=tmp_dir) is False, "Corrupted hash passed verification!"
         print(f"  [PASS] Negative test: Tampered language hash rejected.")
 
-        # 6. Negative Test: Tampered policy on disk must fail verification
+        # 7. Negative Test: Tampered policy on disk
         dummy_pol.write_text(json.dumps({"tampered": True}), encoding="utf-8")
         assert verify_pack_manifest(manifest, pack_dir=tmp_dir) is False, "Tampered policy file on disk passed verification!"
         print(f"  [PASS] Negative test: Tampered policy on disk rejected.")
+        dummy_pol.write_text(json.dumps({"model_id": "test", "decision_threshold": 0.5}), encoding="utf-8")
 
-        # 7. Negative Test: Truncated non-model file (<50 MB) must raise ValueError
+        # 8. Negative Test: Pack directory with ONLY policy file (missing model weights)
+        pol_only_dir = tmp_dir / "policy_only_dir"
+        pol_only_dir.mkdir(exist_ok=True)
+        shutil.copy2(dummy_pol, pol_only_dir / "forensic_vlm_policy.json")
+        assert verify_pack_manifest(manifest, pack_dir=pol_only_dir) is False, "Pack directory missing model weights passed verification!"
+        print(f"  [PASS] Negative test: Pack directory missing weights strictly rejected.")
+
+        # 9. Negative Test: Truncated non-model file (<50 MB)
         tiny_file = tmp_dir / "tiny_model.gguf"
         tiny_file.write_bytes(b"not_a_real_model")
         try:
@@ -343,7 +413,7 @@ def run_self_tests() -> None:
             assert "below minimum required 50 MB" in str(ve)
             print(f"  [PASS] Negative test: 16-byte non-model file strictly rejected.")
 
-        # 8. Negative Test: Missing vision file must raise FileNotFoundError
+        # 10. Negative Test: Missing vision file
         try:
             generate_signed_manifest(
                 pack_id="fail_test",
@@ -355,6 +425,33 @@ def run_self_tests() -> None:
             assert False, "Missing vision file was accepted!"
         except FileNotFoundError:
             print(f"  [PASS] Negative test: Missing vision file strictly rejected (zero placeholder fabrication).")
+
+        # 11. End-to-end CLI flow test: verify weights copying into output_dir
+        export_out = tmp_dir / "exported_pack"
+        export_out.mkdir()
+        shutil.copy2(dummy_pol, export_out / "forensic_vlm_policy.json")
+        target_lang = export_out / "test_pack-model.gguf"
+        target_vis = export_out / "test_pack-mmproj.gguf"
+        shutil.copy2(dummy_lang, target_lang)
+        shutil.copy2(dummy_vis, target_vis)
+        cli_manifest = generate_signed_manifest(
+            pack_id="test_pack",
+            hf_model_id="Qwen/Qwen3.5-0.8B",
+            language_file=target_lang,
+            vision_file=target_vis,
+            policy_file=export_out / "forensic_vlm_policy.json",
+            signing_private_key=priv_key,
+        )
+        (export_out / "signed_manifest.json").write_text(json.dumps(cli_manifest, indent=2), encoding="utf-8")
+        (export_out / "publisher_key.hex").write_text(cli_manifest["publisher_public_key_hex"], encoding="utf-8")
+
+        assert (export_out / "test_pack-model.gguf").is_file()
+        assert (export_out / "test_pack-mmproj.gguf").is_file()
+        assert (export_out / "forensic_vlm_policy.json").is_file()
+        assert (export_out / "signed_manifest.json").is_file()
+        assert (export_out / "publisher_key.hex").is_file()
+        assert verify_pack_manifest(cli_manifest, pack_dir=export_out) is True
+        print(f"  [PASS] Complete runnable pack export & file copying verified on output directory.")
 
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -411,8 +508,26 @@ def main() -> None:
         )
         print(f"[Export] Created GGUF conversion recipe: {recipe_sh}")
 
-    # 3. If GGUF binaries provided, generate signed manifest
+    # 3. If GGUF binaries provided, copy weights and generate signed manifest
     if args.language_file and args.vision_file:
+        if not args.language_file.exists():
+            print(f"Error: Language file does not exist: {args.language_file}", file=sys.stderr)
+            sys.exit(1)
+        if not args.vision_file.exists():
+            print(f"Error: Vision file does not exist: {args.vision_file}", file=sys.stderr)
+            sys.exit(1)
+
+        target_lang = args.output_dir / f"{args.pack_id}-model.gguf"
+        target_vis = args.output_dir / f"{args.pack_id}-mmproj.gguf"
+
+        if args.language_file.resolve() != target_lang.resolve():
+            print(f"[Export] Copying language model to {target_lang}...")
+            shutil.copy2(args.language_file, target_lang)
+
+        if args.vision_file.resolve() != target_vis.resolve():
+            print(f"[Export] Copying vision mmproj to {target_vis}...")
+            shutil.copy2(args.vision_file, target_vis)
+
         signing_key = None
         if args.signing_key and args.signing_key.exists():
             with open(args.signing_key, "rb") as f:
@@ -421,8 +536,8 @@ def main() -> None:
         manifest = generate_signed_manifest(
             pack_id=args.pack_id,
             hf_model_id=args.base_model_id,
-            language_file=args.language_file,
-            vision_file=args.vision_file,
+            language_file=target_lang,
+            vision_file=target_vis,
             policy_file=args.output_dir / "forensic_vlm_policy.json",
             signing_private_key=signing_key,
         )
@@ -435,6 +550,13 @@ def main() -> None:
         pub_path = args.output_dir / "publisher_key.hex"
         pub_path.write_text(manifest["publisher_public_key_hex"], encoding="utf-8")
         print(f"[Export] Saved publisher public key: {pub_path}")
+
+        # Verify the entire exported directory
+        if not verify_pack_manifest(manifest, pack_dir=args.output_dir, expected_pub_key_hex=manifest["publisher_public_key_hex"]):
+            print("Error: Output pack directory verification failed!", file=sys.stderr)
+            sys.exit(1)
+
+        print("[Export] Complete runnable pack verified successfully in output directory.")
 
 
 if __name__ == "__main__":

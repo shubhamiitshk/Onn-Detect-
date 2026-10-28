@@ -465,10 +465,42 @@ object OnDemandForensicVlmAnalyzer {
         }
     }
 
+    const val MIN_VLM_SUPPORTED_SDK_INT = 33 // Android 13+ (Tiramisu) required for platform Ed25519 & multimodal leases
+
+    fun isVlmRuntimeSupportedOnDevice(): Boolean {
+        val sdkInt = runCatching { android.os.Build.VERSION.SDK_INT }.getOrDefault(0)
+        if (sdkInt in 1 until MIN_VLM_SUPPORTED_SDK_INT) {
+            return false
+        }
+        return isPlatformEd25519Supported()
+    }
+
+    fun isPlatformEd25519Supported(): Boolean {
+        return try {
+            java.security.Signature.getInstance("Ed25519")
+            true
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    fun computeFileSha256(file: File): String {
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { stream ->
+            val buf = ByteArray(1024 * 1024)
+            var bytesRead: Int
+            while (stream.read(buf).also { bytesRead = it } != -1) {
+                digest.update(buf, 0, bytesRead)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
     fun computeCanonicalManifestPayload(manifest: SignedVlmPackManifest): ByteArray {
         val canonicalStr = "${manifest.packId}|${manifest.hfModelId}|${manifest.languageWeightsSha256}|" +
             "${manifest.visionMmprojSha256}|${manifest.policySha256}|${manifest.languageBytes}|" +
-            "${manifest.visionMmprojBytes}|${manifest.imageResolutionCapPx}|${manifest.maxVisualTokens}"
+            "${manifest.visionMmprojBytes}|${manifest.processorVersion}|${manifest.chatTemplateId}|" +
+            "${manifest.imageResolutionCapPx}|${manifest.maxVisualTokens}|${manifest.diagnosticOnly}"
         return canonicalStr.toByteArray(Charsets.UTF_8)
     }
 
@@ -508,34 +540,29 @@ object OnDemandForensicVlmAnalyzer {
         manifest: SignedVlmPackManifest,
         expectedPublisherPublicKeyHex: String? = null,
     ): Boolean {
+        if (!isVlmRuntimeSupportedOnDevice()) return false
+
         val hex64 = Regex("^[0-9a-fA-F]{64}$")
         val hex128 = Regex("^[0-9a-fA-F]{128}$")
 
         if (!hex64.matches(manifest.languageWeightsSha256)) return false
         if (!hex64.matches(manifest.visionMmprojSha256)) return false
-        if (manifest.policySha256.isNotEmpty() && !hex64.matches(manifest.policySha256)) return false
+        if (!hex64.matches(manifest.policySha256)) return false
         if (manifest.languageBytes < 50L * 1024 * 1024 || manifest.visionMmprojBytes < 10L * 1024 * 1024) return false
         if (manifest.imageResolutionCapPx !in 224..1024) return false
         if (manifest.maxVisualTokens !in 64..2048) return false
         if (manifest.processorVersion.isBlank() || manifest.chatTemplateId.isBlank()) return false
 
-        // Cryptographic Ed25519 verification if signature fields are populated
-        if (manifest.publisherPublicKeyHex.isNotEmpty() || manifest.publisherSignatureHex.isNotEmpty()) {
-            if (!hex64.matches(manifest.publisherPublicKeyHex)) return false
-            if (!hex128.matches(manifest.publisherSignatureHex)) return false
-            if (expectedPublisherPublicKeyHex != null &&
-                !manifest.publisherPublicKeyHex.equals(expectedPublisherPublicKeyHex, ignoreCase = true)) {
-                return false
-            }
-            val payload = computeCanonicalManifestPayload(manifest)
-            if (!verifyEd25519Signature(manifest.publisherPublicKeyHex, manifest.publisherSignatureHex, payload)) {
-                return false
-            }
-        } else {
-            // Unsigned legacy manifests must explicitly match publisherSignatureValid
-            if (!manifest.publisherSignatureValid) return false
+        // Strict digital signature verification: zero unsigned legacy bypass
+        if (!hex64.matches(manifest.publisherPublicKeyHex)) return false
+        if (!hex128.matches(manifest.publisherSignatureHex)) return false
+
+        if (expectedPublisherPublicKeyHex != null &&
+            !manifest.publisherPublicKeyHex.equals(expectedPublisherPublicKeyHex, ignoreCase = true)) {
+            return false
         }
-        return true
+        val payload = computeCanonicalManifestPayload(manifest)
+        return verifyEd25519Signature(manifest.publisherPublicKeyHex, manifest.publisherSignatureHex, payload)
     }
 
     fun selectOptimalTier2ModelPack(
@@ -989,13 +1016,26 @@ object OnDemandForensicVlmAnalyzer {
 
     /**
      * Loads an optional user-imported local policy bundle from `forensic_vlm_policy.json`
-     * inside [packDir] when present.
+     * inside [packDir] when present and hash-verified.
      */
     fun loadInstalledPolicyBundleOrNull(packDir: File): PolicyBundle? {
         overridePolicyBundle?.let { return it }
         return runCatching {
             val policyFile = File(packDir, "forensic_vlm_policy.json")
             if (!policyFile.isFile) return null
+
+            val manifestFile = File(packDir, "signed_manifest.json").takeIf { it.isFile }
+                ?: File(packDir, "manifest.json").takeIf { it.isFile }
+            if (manifestFile != null) {
+                val manifest = SignedVlmPackManifest.fromJson(manifestFile.readText(Charsets.UTF_8))
+                if (manifest.policySha256.isNotEmpty()) {
+                    val actualSha = computeFileSha256(policyFile)
+                    if (!actualSha.equals(manifest.policySha256, ignoreCase = true)) {
+                        return null
+                    }
+                }
+            }
+
             PolicyBundle.fromJson(policyFile.readText(Charsets.UTF_8))
         }.getOrNull()
     }
@@ -1009,13 +1049,15 @@ object OnDemandForensicVlmAnalyzer {
 
     /**
      * Discovers, cryptographically verifies, and initializes the native prefill backend
-     * from [packDir] when a valid signed pack is resident.
+     * from [packDir] when a valid signed pack with complete verified weights is resident.
      */
     fun initializeActiveBackendIfAvailable(
         packDir: File,
         expectedPublisherPublicKeyHex: String? = pinnedPublisherPublicKeyHex,
     ): VlmPrefillBackend? {
         activePrefillBackend?.let { return it }
+        if (!isVlmRuntimeSupportedOnDevice()) return null
+
         return runCatching {
             if (!packDir.isDirectory) return null
 
@@ -1028,6 +1070,20 @@ object OnDemandForensicVlmAnalyzer {
                 return null
             }
 
+            // 1. Verify policy file exists and matches signed hash
+            val policyFile = File(packDir, "forensic_vlm_policy.json")
+            if (!policyFile.isFile) return null
+            val actualPolicySha = computeFileSha256(policyFile)
+            if (!actualPolicySha.equals(manifest.policySha256, ignoreCase = true)) {
+                return null
+            }
+
+            val policyBundle = PolicyBundle.fromJson(policyFile.readText(Charsets.UTF_8))
+            val head = policyBundle.headContract ?: return null
+            val expectedHiddenDim = head.hiddenDim
+            if (expectedHiddenDim <= 0) return null
+
+            // 2. Discover and hash-verify language model file
             val modelFile = listOf(
                 File(packDir, "${manifest.packId}-model.gguf"),
                 File(packDir, "${manifest.packId}-language.gguf"),
@@ -1039,18 +1095,32 @@ object OnDemandForensicVlmAnalyzer {
                 }
                 ?: return null
 
+            val actualLangSha = computeFileSha256(modelFile)
+            if (!actualLangSha.equals(manifest.languageWeightsSha256, ignoreCase = true)) {
+                return null
+            }
+
+            // 3. Discover and hash-verify vision mmproj file
             val mmprojFile = listOf(
                 File(packDir, "${manifest.packId}-mmproj.gguf"),
+                File(packDir, "${manifest.packId}-vision.gguf"),
                 File(packDir, "mmproj.gguf"),
+                File(packDir, "vision.gguf"),
             ).firstOrNull { it.isFile && it.length() == manifest.visionMmprojBytes }
                 ?: packDir.listFiles()?.firstOrNull {
                     it.isFile && it.extension == "gguf" && it.name.contains("mmproj") && it.length() == manifest.visionMmprojBytes
                 }
                 ?: return null
 
+            val actualVisSha = computeFileSha256(mmprojFile)
+            if (!actualVisSha.equals(manifest.visionMmprojSha256, ignoreCase = true)) {
+                return null
+            }
+
             val backend = LlamaCppVlmPrefillBackend(
                 modelPath = modelFile.absolutePath,
                 mmprojPath = mmprojFile.absolutePath,
+                hiddenDim = expectedHiddenDim,
                 imageResolutionCapPx = manifest.imageResolutionCapPx,
             )
             activePrefillBackend = backend

@@ -9,6 +9,7 @@ import com.onndetect.detection.visual.OnDemandForensicVlmAnalyzer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
@@ -16,6 +17,9 @@ import java.io.File
 /**
  * On-device instrumentation test for [LlamaCppVlmPrefillBackend] verifying real
  * ART JNI execution through `libllama_forensic_jni.so` packaged in the APK.
+ *
+ * Verifies that the native loader strictly rejects dummy/invalid GGUFs with explicit
+ * exceptions and never falls back to synthetic or fabricated vectors.
  */
 @RunWith(AndroidJUnit4::class)
 class LlamaCppNativeInstrumentationTest {
@@ -23,105 +27,69 @@ class LlamaCppNativeInstrumentationTest {
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
 
     @Test
-    fun nativeSharedLibraryIsLoadedAndExecutesJniHiddenStateExtraction() {
-        // Ensure testMockDelegate is null so execution routes strictly through native C++ JNI
-        LlamaCppVlmPrefillBackend.testMockDelegate = null
+    fun nativeSharedLibraryIsLoadedInApk() {
         assertTrue(
-            "libllama_forensic_jni.so must be loaded in Android runtime",
+            "libllama_forensic_jni.so must be packaged and loaded in Android runtime",
             LlamaCppVlmPrefillBackend.isNativeLibraryLoaded()
         )
+    }
 
-        val modelFile = File(context.cacheDir, "test_instrumentation_model.gguf").apply {
-            writeBytes(ByteArray(1024))
+    @Test
+    fun dummyGgufModelStrictlyFailsAndNeverEmitsSyntheticVectors() {
+        // Ensure testMockDelegate is null: execution must route strictly to native C++ JNI
+        LlamaCppVlmPrefillBackend.testMockDelegate = null
+
+        val dummyModel = File(context.cacheDir, "corrupted_dummy_test.gguf").apply {
+            writeBytes(ByteArray(1024) { 0x42 })
             deleteOnExit()
         }
 
         val backend = LlamaCppVlmPrefillBackend(
-            modelPath = modelFile.absolutePath,
-            hiddenDim = 1536,
+            modelPath = dummyModel.absolutePath,
+            hiddenDim = 1024,
             imageResolutionCapPx = 256,
         )
 
-        val bitmap = Bitmap.createBitmap(128, 128, Bitmap.Config.ARGB_8888)
         try {
-            for (y in 0 until 128) {
-                for (x in 0 until 128) {
-                    bitmap.setPixel(x, y, Color.rgb(x * 2, y * 2, (x + y) % 256))
-                }
-            }
-
-            // Execute through JNI within leased context
-            val hLast = backend.withLeasedContext {
-                backend.extractFinalHiddenState(
-                    fullBitmap = bitmap,
-                    roiCropBitmap = null,
-                    cropSpec = null,
-                    activeDomain = "human_face",
-                )
-            }
-
-            assertNotNull("hLast vector must not be null", hLast)
-            assertEquals("hLast dimensionality must match hiddenDim", 1536, hLast.size)
-
-            var nonZeroCount = 0
-            for (v in hLast) {
-                assertTrue("hLast vector element must be finite: $v", v.isFinite() && !v.isNaN())
-                if (kotlin.math.abs(v) > 1e-6f) {
-                    nonZeroCount++
-                }
-            }
-            assertTrue("hLast vector must have non-zero signal content", nonZeroCount > 100)
+            // A 1 KB dummy model must fail parsing in native llama_load_model_from_file
+            backend.loadNativeContext()
+            fail("Expected native llama loader to throw IllegalStateException for 1KB dummy model")
+        } catch (e: IllegalStateException) {
+            assertTrue(
+                "Error message must indicate native load or runtime failure: ${e.message}",
+                e.message!!.contains("GGUF") || e.message!!.contains("libllama") || e.message!!.contains("context")
+            )
         } finally {
-            bitmap.recycle()
             backend.close()
-            modelFile.delete()
+            dummyModel.delete()
         }
     }
 
     @Test
-    fun nativeJniProcessesRoiCropBitmapWhenSupplied() {
-        LlamaCppVlmPrefillBackend.testMockDelegate = null
-        assertTrue(LlamaCppVlmPrefillBackend.isNativeLibraryLoaded())
-
-        val modelFile = File(context.cacheDir, "test_roi_model.gguf").apply {
-            writeBytes(ByteArray(1024))
-            deleteOnExit()
-        }
-
+    fun pixelPreprocessingValidatesDimensionsOnDeviceBitmap() {
         val backend = LlamaCppVlmPrefillBackend(
-            modelPath = modelFile.absolutePath,
-            hiddenDim = 1536,
-            imageResolutionCapPx = 128,
+            modelPath = File(context.cacheDir, "unused.gguf").apply {
+                writeBytes(ByteArray(64))
+                deleteOnExit()
+            }.absolutePath,
+            hiddenDim = 1024,
         )
 
-        val fullBmp = Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888)
-        val roiBmp = Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888)
+        val bitmap = Bitmap.createBitmap(128, 64, Bitmap.Config.ARGB_8888)
         try {
-            val cropSpec = OnDemandForensicVlmAnalyzer.OriginalSourceCropSpec(
-                left = 16,
-                top = 16,
-                width = 32,
-                height = 32,
-                targetEncodedEdgePx = 32,
-                downscaleRatio = 1.0f,
-            )
-
-            val hLast = backend.withLeasedContext {
-                backend.extractFinalHiddenState(
-                    fullBitmap = fullBmp,
-                    roiCropBitmap = roiBmp,
-                    cropSpec = cropSpec,
-                    activeDomain = "document_text",
-                )
+            for (y in 0 until 64) {
+                for (x in 0 until 128) {
+                    bitmap.setPixel(x, y, Color.rgb(x * 2, y * 4, 128))
+                }
             }
 
-            assertEquals(1536, hLast.size)
-            assertTrue(hLast.all { it.isFinite() && !it.isNaN() })
+            val (rgb, targetW, targetH) = backend.bitmapToRgbBytes(bitmap, capPx = 64)
+            assertEquals("Width must be capped proportionally", 64, targetW)
+            assertEquals("Height must be capped proportionally", 32, targetH)
+            assertEquals("Packed RGB size must match 64 * 32 * 3", 64 * 32 * 3, rgb.size)
         } finally {
-            fullBmp.recycle()
-            roiBmp.recycle()
+            bitmap.recycle()
             backend.close()
-            modelFile.delete()
         }
     }
 }

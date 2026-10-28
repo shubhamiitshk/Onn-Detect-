@@ -320,6 +320,24 @@ class OnDemandForensicVlmAnalyzerContractTest {
             OnDemandForensicVlmAnalyzer.verifySignedPackContract(tamperedManifest)
         )
 
+        val tamperedProc = validManifest.copy(processorVersion = "transformers-9.9.9")
+        assertFalse(
+            "Tampered processorVersion must fail verification",
+            OnDemandForensicVlmAnalyzer.verifySignedPackContract(tamperedProc)
+        )
+
+        val tamperedDiag = validManifest.copy(diagnosticOnly = false)
+        assertFalse(
+            "Tampered diagnosticOnly must fail verification",
+            OnDemandForensicVlmAnalyzer.verifySignedPackContract(tamperedDiag)
+        )
+
+        val unsignedManifest = validManifest.copy(publisherSignatureHex = "")
+        assertFalse(
+            "Unsigned manifest must be strictly rejected (no legacy bypass)",
+            OnDemandForensicVlmAnalyzer.verifySignedPackContract(unsignedManifest)
+        )
+
         val tinyManifest = validManifest.copy(languageBytes = 1000L)
         assertFalse(
             "Manifest with < 50MB language file must be rejected",
@@ -363,29 +381,54 @@ class OnDemandForensicVlmAnalyzerContractTest {
     @Test
     fun initializeActiveBackendIfAvailableEnforcesIntegrityAndDiscoversPacks() {
         OnDemandForensicVlmAnalyzer.resetForTesting()
-        LlamaCppVlmPrefillBackend.testMockDelegate = { _, _, _, _ -> FloatArray(1536) }
+        LlamaCppVlmPrefillBackend.testMockDelegate = { _, _, _, _ -> FloatArray(1024) }
 
         val testDir = java.nio.file.Files.createTempDirectory("test_vlm_pack").toFile()
         try {
             // 1. Empty dir returns null
             assertNull(OnDemandForensicVlmAnalyzer.initializeActiveBackendIfAvailable(testDir))
 
-            // 2. Setup genuine signed manifest
+            // 2. Setup mock files: policy JSON with 1024 hiddenDim, 52MB model, 11MB mmproj
+            val policyFile = File(testDir, "forensic_vlm_policy.json")
+            val policyJson = fixtureJson()
+            policyFile.writeText(policyJson, Charsets.UTF_8)
+            val parsedPolicy = OnDemandForensicVlmAnalyzer.PolicyBundle.fromJson(policyJson)
+            val expectedHiddenDim = parsedPolicy.headContract!!.hiddenDim
+
+            val langBytes = 52L * 1024 * 1024
+            val visBytes = 11L * 1024 * 1024
+
+            val langFile = File(testDir, "pack_alpha-model.gguf")
+            val visFile = File(testDir, "pack_alpha-mmproj.gguf")
+            RandomAccessFile(langFile, "rw").use { raf ->
+                raf.setLength(langBytes)
+                raf.seek(0)
+                raf.write(byteArrayOf(0x47, 0x47, 0x55, 0x46)) // GGUF magic
+            }
+            RandomAccessFile(visFile, "rw").use { raf ->
+                raf.setLength(visBytes)
+                raf.seek(0)
+                raf.write(byteArrayOf(0x47, 0x47, 0x55, 0x46))
+            }
+
+            // Compute real SHA-256 digests
+            val policySha = OnDemandForensicVlmAnalyzer.computeFileSha256(policyFile)
+            val langSha = OnDemandForensicVlmAnalyzer.computeFileSha256(langFile)
+            val visSha = OnDemandForensicVlmAnalyzer.computeFileSha256(visFile)
+
+            // Setup genuine cryptographic Ed25519 signing
             val kpg = java.security.KeyPairGenerator.getInstance("Ed25519")
             val keyPair = kpg.generateKeyPair()
             val encPub = keyPair.public.encoded
             val rawPub = encPub.copyOfRange(encPub.size - 32, encPub.size)
             val pubHex = rawPub.joinToString("") { "%02x".format(it) }
 
-            val langBytes = 52L * 1024 * 1024
-            val visBytes = 11L * 1024 * 1024
-
             val baseManifest = OnDemandForensicVlmAnalyzer.SignedVlmPackManifest(
                 packId = "pack_alpha",
                 hfModelId = "Qwen/Qwen3.5-0.8B",
-                languageWeightsSha256 = "1".repeat(64),
-                visionMmprojSha256 = "2".repeat(64),
-                policySha256 = "3".repeat(64),
+                languageWeightsSha256 = langSha,
+                visionMmprojSha256 = visSha,
+                policySha256 = policySha,
                 languageBytes = langBytes,
                 visionMmprojBytes = visBytes,
                 processorVersion = "transformers-4.48.0",
@@ -394,6 +437,7 @@ class OnDemandForensicVlmAnalyzerContractTest {
                 maxVisualTokens = 512,
                 publisherPublicKeyHex = pubHex,
                 publisherSignatureHex = "",
+                diagnosticOnly = true,
             )
             val payload = OnDemandForensicVlmAnalyzer.computeCanonicalManifestPayload(baseManifest)
             val signer = java.security.Signature.getInstance("Ed25519")
@@ -401,13 +445,14 @@ class OnDemandForensicVlmAnalyzerContractTest {
             signer.update(payload)
             val sigHex = signer.sign().joinToString("") { "%02x".format(it) }
 
+            val manifestFile = File(testDir, "signed_manifest.json")
             val manifestJson = """
                 {
                     "pack_id": "pack_alpha",
                     "hf_model_id": "Qwen/Qwen3.5-0.8B",
-                    "language_weights_sha256": "${"1".repeat(64)}",
-                    "vision_mmproj_sha256": "${"2".repeat(64)}",
-                    "policy_sha256": "${"3".repeat(64)}",
+                    "language_weights_sha256": "$langSha",
+                    "vision_mmproj_sha256": "$visSha",
+                    "policy_sha256": "$policySha",
                     "language_bytes": $langBytes,
                     "vision_mmproj_bytes": $visBytes,
                     "processor_version": "transformers-4.48.0",
@@ -415,26 +460,42 @@ class OnDemandForensicVlmAnalyzerContractTest {
                     "image_resolution_cap_px": 512,
                     "max_visual_tokens": 512,
                     "publisher_public_key_hex": "$pubHex",
-                    "publisher_signature_hex": "$sigHex"
+                    "publisher_signature_hex": "$sigHex",
+                    "diagnostic_only": true
                 }
             """.trimIndent()
-
-            val manifestFile = File(testDir, "signed_manifest.json")
             manifestFile.writeText(manifestJson, Charsets.UTF_8)
 
-            // Missing weight files returns null
-            assertNull(OnDemandForensicVlmAnalyzer.initializeActiveBackendIfAvailable(testDir))
-
-            // Create model files with exact matching lengths
-            val langFile = File(testDir, "pack_alpha-model.gguf")
-            val visFile = File(testDir, "pack_alpha-mmproj.gguf")
-            RandomAccessFile(langFile, "rw").use { it.setLength(langBytes) }
-            RandomAccessFile(visFile, "rw").use { it.setLength(visBytes) }
-
-            // With files present and signed manifest valid, initialization succeeds
+            // 3. With genuine files and signed manifest, initialization succeeds and derives hiddenDim
             val backend = OnDemandForensicVlmAnalyzer.initializeActiveBackendIfAvailable(testDir)
-            assertNotNull(backend)
+            assertNotNull("Backend should initialize with valid signed pack", backend)
             assertEquals(backend, OnDemandForensicVlmAnalyzer.activePrefillBackend)
+            assertEquals(expectedHiddenDim, (backend as LlamaCppVlmPrefillBackend).hiddenDim)
+
+            // 4. Negative Test: Tampering model file byte must reject pack
+            OnDemandForensicVlmAnalyzer.resetForTesting()
+            RandomAccessFile(langFile, "rw").use { raf ->
+                raf.seek(100)
+                raf.write(0xFF)
+            }
+            assertNull(
+                "Tampered model file bytes must cause SHA-256 failure and reject initialization",
+                OnDemandForensicVlmAnalyzer.initializeActiveBackendIfAvailable(testDir)
+            )
+
+            // 5. Negative Test: Pack directory containing only policy must reject initialization
+            OnDemandForensicVlmAnalyzer.resetForTesting()
+            val polOnlyDir = java.nio.file.Files.createTempDirectory("test_pol_only").toFile()
+            try {
+                policyFile.copyTo(File(polOnlyDir, "forensic_vlm_policy.json"))
+                manifestFile.copyTo(File(polOnlyDir, "signed_manifest.json"))
+                assertNull(
+                    "Pack directory missing model weights must be rejected",
+                    OnDemandForensicVlmAnalyzer.initializeActiveBackendIfAvailable(polOnlyDir)
+                )
+            } finally {
+                polOnlyDir.deleteRecursively()
+            }
         } finally {
             testDir.deleteRecursively()
             OnDemandForensicVlmAnalyzer.resetForTesting()
