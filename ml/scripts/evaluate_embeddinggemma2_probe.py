@@ -363,12 +363,13 @@ def main() -> None:
     if not args.data_root or not args.output_dir:
         parser.error("--data-root and --output-dir are required unless --self-test is specified.")
 
-    # Gracefully bypass broken torchvision C++ extension mismatches in Colab
-    try:
-        import torchvision
-    except Exception:
-        import sys
-        sys.modules["torchvision"] = None
+    # Gracefully bypass broken torchvision / torchaudio C++ extension mismatches in Colab
+    import sys
+    for mod in ("torchvision", "torchaudio"):
+        try:
+            __import__(mod)
+        except Exception:
+            sys.modules[mod] = None
 
     import torch
     from sentence_transformers import SentenceTransformer
