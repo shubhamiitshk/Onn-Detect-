@@ -512,6 +512,16 @@ def main() -> None:
         if not args.adapter_dir.exists():
             raise FileNotFoundError(f"Adapter directory not found: {args.adapter_dir}")
         print(f"[LoRA] Attaching fine-tuned LoRA adapter from: {args.adapter_dir}")
+        try:
+            import peft.import_utils
+            peft.import_utils.is_torchao_available = lambda: False
+        except Exception:
+            pass
+        try:
+            import peft.tuners.lora.torchao
+            peft.tuners.lora.torchao.is_torchao_available = lambda: False
+        except Exception:
+            pass
         from peft import PeftModel
         model = PeftModel.from_pretrained(model, str(args.adapter_dir))
         model_display_name = f"{args.model_name} (LoRA Fine-Tuned)"
