@@ -44,9 +44,14 @@ ANALYSIS_SIZE = 256
 
 
 def _grey01(img: Image.Image) -> np.ndarray:
-    """Square, mean-removed greyscale in [0, 1]."""
+    """Square, mean-removed greyscale in [0, 1].
+
+    Uses the same ITU-R BT.601 luma as ``feature_extractor.to_gray_u8``
+    so phase candidates are directly comparable to the power-spectrum features.
+    """
     resized = img.convert("RGB").resize((ANALYSIS_SIZE, ANALYSIS_SIZE), Image.Resampling.BILINEAR)
-    arr = np.asarray(resized.convert("L"), dtype=np.float64) / 255.0
+    rgb = np.asarray(resized, dtype=np.float64)
+    arr = (rgb[..., 0] * 299.0 + rgb[..., 1] * 587.0 + rgb[..., 2] * 114.0) / 1000.0 / 255.0
     return arr - arr.mean()
 
 

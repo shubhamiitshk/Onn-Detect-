@@ -51,26 +51,26 @@
         1
       ],
       "dtype": "FLOAT32",
-      "frontend_id": "vfm-siglip224-siglip-base-patch16-224-bicubic-clamp-meanstd-float32",
+      "frontend_id": "vfm-siglip224-siglip-base-patch16-224-boxpredecimate1024-bicubic-clamp-meanstd-float32",
       "quantization": "dynamic-range-int8"
     }
   },
   "artifacts": {
-    "evaluation_report.json": "2e87fa4b42066b26aedb102533916b429b21a8409c395d3d2ca576b3e61950e6",
-    "source_snapshot.json": "7c93e267a8f00a5a14f52441f6120e140bf452328eb2da1b57b6c016e40ddb23",
     "constants/cascade_policy.json": "ebc1b125769624ba8572eccc06680b88e0d4c5b4c11a512a61acc80cd4f33fd7",
     "constants/lcnn_audio_threshold.json": "a794c69ec718fea1db6da8d23b3bceb2db44ab548a987f1f8b7f53346029c7f6",
     "constants/meta_classifier.json": "c8ca4222ce769fa9f21d55d1cfc0ed9945e1a1795b2d4e4ec79231d880ff6cdd",
     "constants/model_hashes.json": "5e25ce03a828fcdbc858393c6dd5323648c7ff9e664e2dc2a48b95f09d75b646",
     "constants/natural_diff_histogram.json": "7c08dec0149f41c26d570a9a44b55b072cf24255035f3b648e6bd01f68828280",
-    "constants/semantic_probe_threshold.json": "4f7f0564c4497de447d6605e48bac0ab3f7b9f602fd9d57332bc65f9602436fd",
+    "constants/semantic_probe_threshold.json": "1e0db355831f58c23e9bc77f34f3ac1fc998dcb02655709e87e085f605276abe",
     "fusion/meta_results.json": "e274ea4cb41b112543df81db9f4b645167bf6a2ca17c60039577bc965e2aac85",
     "fusion/XGBoostMetaClassifier.kt": "dd56fd6ba15398ee213c73a8a2374dec4b3a654d2533ebcec2a30a0677f91a00",
     "fusion/xgboost_meta.json": "dc23602a5f39f7a047d90edd10164a2d55f9b7ab456c2bf59f233a1127740a13",
     "models/face_landmarker.task": "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff",
     "models/lcnn_audio_int8.tflite": "6963363f0e51f6338ceac34575e4c9fdeeb8ecbebe33605695721232377af508",
     "models/siglip_probe_int8.tflite": "1b8c4f3de7822196c3c0ebf59f683d86f24d5fa2476fb1d9312a1e14b1519c7b",
-    "models/srm_forensic_cnn_int8.tflite": "08397e56b53e506ef89b290f114f167babb2ca530a52320ec770b519bf307ca1"
+    "models/srm_forensic_cnn_int8.tflite": "08397e56b53e506ef89b290f114f167babb2ca530a52320ec770b519bf307ca1",
+    "evaluation_report.json": "9aac71a01f1682d07173c3993b21052ffbca19fc5937df59129c908cc509fe80",
+    "source_snapshot.json": "301f8faf4cdfde9adf8cc87f73c90e67e4e7724bd212ac7baa37b34b26c221f8"
   },
   "calibration": {
     "srm_forensic_cnn_int8.tflite": {
@@ -91,7 +91,7 @@
     },
     "siglip_probe_int8.tflite": {
       "model_hash": "1b8c4f3de7822196c3c0ebf59f683d86f24d5fa2476fb1d9312a1e14b1519c7b",
-      "frontend_id": "vfm-siglip224-siglip-base-patch16-224-bicubic-clamp-meanstd-float32",
+      "frontend_id": "vfm-siglip224-siglip-base-patch16-224-boxpredecimate1024-bicubic-clamp-meanstd-float32",
       "threshold": 0.7673405408859253,
       "auc": 0.9796499999999999,
       "n_calibration": 400,
@@ -115,8 +115,8 @@
   },
   "source_commit": "47671f4d03f32726f124627a7964d224ea9450ff",
   "source_dirty": true,
-  "source_snapshot_sha256": "7c93e267a8f00a5a14f52441f6120e140bf452328eb2da1b57b6c016e40ddb23",
-  "evaluation_report_hash": "2e87fa4b42066b26aedb102533916b429b21a8409c395d3d2ca576b3e61950e6",
+  "source_snapshot_sha256": "301f8faf4cdfde9adf8cc87f73c90e67e4e7724bd212ac7baa37b34b26c221f8",
+  "evaluation_report_hash": "9aac71a01f1682d07173c3993b21052ffbca19fc5937df59129c908cc509fe80",
   "fusion_revision": "onn-prod-v10",
   "acceptance": {
     "srm_forensic_cnn_int8.tflite": {

@@ -119,7 +119,7 @@ eval_rep["models"]["siglip_probe_int8.tflite"] = {
     },
     "calibration": {
         "model_hash": "76454452bae9af17e315e78440d283ac2ea7a8551a9e05e16b9350fb40f97ea0",
-        "frontend_id": "vfm-siglip224-siglip-base-patch16-224-bicubic-clamp-meanstd-float32",
+        "frontend_id": "vfm-siglip224-siglip-base-patch16-224-boxpredecimate1024-bicubic-clamp-meanstd-float32",
         "threshold": 0.49412423372268677,
         "auc": 0.8982,
         "n_calibration": 400,

@@ -17,7 +17,7 @@ Protocol:
 
 Usage (Google Colab T4 or local GPU):
     python ml/scripts/evaluate_qwen_probe.py \
-        --model-name Qwen/Qwen2-VL-2B-Instruct \
+        --model-name Qwen/Qwen3.5-2B \
         --data-root /content/datasets/openfake_visual \
         --output-dir /content/drive/MyDrive/onn_qwen_probe_eval
 
@@ -406,7 +406,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-root", type=Path, help="Path to openfake_visual dataset root")
     parser.add_argument("--output-dir", type=Path, help="Directory for cache, head weights, and report")
-    parser.add_argument("--model-name", default="Qwen/Qwen2-VL-2B-Instruct", help="HF Qwen model id")
+    parser.add_argument("--model-name", default="Qwen/Qwen3.5-2B", help="HF Qwen model id (default: Qwen/Qwen3.5-2B)")
     parser.add_argument("--device", default="cuda", help="Torch device (cuda or cpu)")
     parser.add_argument("--self-test", action="store_true", help="Run offline synthetic self-test")
     args = parser.parse_args()

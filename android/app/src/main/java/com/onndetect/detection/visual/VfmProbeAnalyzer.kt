@@ -73,7 +73,7 @@ class VfmProbeAnalyzer @Inject constructor(
          * `ml/src/export/vfm_frontend.py::vfm_frontend_id` and
          * `ml/scripts/evaluate_vfm_probes.py::Tower.frontend_id`.
          */
-        const val FRONTEND_ID = "vfm-siglip224-siglip-base-patch16-224-bicubic-clamp-meanstd-float32"
+        const val FRONTEND_ID = "vfm-siglip224-siglip-base-patch16-224-boxpredecimate1024-bicubic-clamp-meanstd-float32"
 
         /** Input resolution. */
         const val INPUT_SIZE = 224

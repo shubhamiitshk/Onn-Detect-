@@ -39,6 +39,9 @@ jobs:
           python scripts/check_android_consistency.py
           python -m unittest discover -s scripts/tests -v
           python -m unittest discover -s ml/tests -p 'test_*.py' -v
+          python -m unittest discover -s tests -p 'tier5_adversarial_stress_test.py' -v
+          python tests/e2e/run_e2e_tests.py
+          python ml/src/models/prism_v11_algorithms.py --self-test
           python ml/scripts/train_srm_dcpt_patchcraft.py --self-test
           python ml/scripts/train_bfree_tap_and_ssl_distill.py --self-test
           python ml/scripts/train_forensic_vlm_colab_t4.py --self-test

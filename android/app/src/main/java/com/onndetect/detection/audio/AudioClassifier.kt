@@ -149,45 +149,6 @@ class AudioClassifier(private val context: Context, private val engine: LiteRTIn
         } catch (e: CancellationException) { throw e }
         catch (e: Exception) { return Verdict(-1f, false, null, AnalysisFailurePolicy.status(e), e.message ?: "Audio analysis failed") }
     }
-
-    // ════════════════════════════════════════════════════════════════════════════════
-    // v11 PRISM: MN-P non-vocal residual scoring + CrossViewGate fusion
-    // ════════════════════════════════════════════════════════════════════════════════
-
-    private val MN_P_LCNN_WEIGHT = 0.75f
-    private val MN_P_MNP_WEIGHT = 0.60f
-
-    /**
-     * Scores the 16-D MN-P non-vocal residual vector using a heuristic that flags
-     * neural-codec / TTS artifacts: high non-vocal frame ratio, large voiced-silence
-     * dB gap, high cross-view HF ratio, and high temporal kurtosis all indicate
-     * synthetic audio. Real in-the-wild noise keeps V/NV spectral ratios consistent.
-     */
-    private fun scoreMnpResidual(mnp: FloatArray): Float {
-        if (mnp.size < 16) return 0.5f
-        val nvRatio = mnp[0].coerceIn(0f, 1f)
-        val dbGap = mnp[1].coerceIn(-1f, 1f)
-        val crossViewHf = mnp[13].coerceIn(0f, 1f)
-        val kurt = mnp[14].coerceIn(-1f, 1f)
-        val synthSignal = 0.30f * nvRatio + 0.25f * (dbGap + 1f) / 2f +
-            0.25f * crossViewHf + 0.20f * (kurt + 1f) / 2f
-        return synthSignal.coerceIn(0f, 1f)
-    }
-
-    /**
-     * CrossViewGate log-odds fusion of LCNN-MFM score and MN-P non-vocal residual score.
-     * Mirrors `MNPSubBandAudioDetector.score_window()` with calibrated default weights.
-     */
-    private fun fuseLcnnMnp(lcnnProb: Float, mnpProb: Float): Float {
-        val eps = 1e-6f
-        val lcnnClipped = lcnnProb.coerceIn(eps, 1f - eps)
-        val mnpClipped = mnpProb.coerceIn(eps, 1f - eps)
-        val zLcnn = kotlin.math.ln((lcnnClipped / (1f - lcnnClipped)).toDouble()).toFloat()
-        val zMnp = kotlin.math.ln((mnpClipped / (1f - mnpClipped)).toDouble()).toFloat()
-        val fusedLogit = MN_P_LCNN_WEIGHT * zLcnn + MN_P_MNP_WEIGHT * zMnp
-        val fused = 1f / (1f + kotlin.math.exp(-fusedLogit.toDouble())).toFloat()
-        return fused.coerceIn(0f, 1f)
-    }
 }
 
 /** Rejects stationary tones and unmodulated noise before speech classification. */

@@ -4,7 +4,7 @@
   "n_calibration": 400,
   "split_manifest_hash": "940bedf7412f383be7ed6f2f425b6208b02cf7de29f66bc3a37386ce9aa17505",
   "model_hash": "1b8c4f3de7822196c3c0ebf59f683d86f24d5fa2476fb1d9312a1e14b1519c7b",
-  "frontend_id": "vfm-siglip224-siglip-base-patch16-224-bicubic-clamp-meanstd-float32",
+  "frontend_id": "vfm-siglip224-siglip-base-patch16-224-boxpredecimate1024-bicubic-clamp-meanstd-float32",
   "score_semantics": {
     "model_output": "P(synthetic) in [0,1]",
     "real_label": 0,

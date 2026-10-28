@@ -1,3 +1,5 @@
+# EXPERIMENTAL / NOT SHIPPED: v11 PRISM research configs. Not wired into ml/src/training/entrypoint.py production path.
+# Do not treat as current detector performance.
 model:
   name: SRMForensicCNN
   input_size: 128

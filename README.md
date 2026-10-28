@@ -27,7 +27,9 @@ All media decoding, neural inference, cryptographic verification, and tamper ana
 
 ---
 
-## Empirical Benchmark Summary
+## Empirical Benchmark Summary (Historical / Aspirational)
+
+> NOTE: The figures below are historical/aspirational benchmarks from the v10 sealed splits. Neural assets in this tree are explicitly UNVALIDATED; the app returns `INCONCLUSIVE` for statistical verdicts. These numbers are NOT a claim of current detector performance and must not be read as such.
 
 Evaluated on sealed high-resolution multi-generator benchmark splits (Midjourney, Stable Diffusion v1.4/v1.5, ADM, GLIDE, Wukong, VQDM, BigGAN + authentic camera photographs) and in-the-wild audio datasets (release `onn-prod-v10`):
 

@@ -1,6 +1,6 @@
 {
   "release_id": "onn-prod-v10",
-  "source_snapshot_sha256": "7c93e267a8f00a5a14f52441f6120e140bf452328eb2da1b57b6c016e40ddb23",
+  "source_snapshot_sha256": "301f8faf4cdfde9adf8cc87f73c90e67e4e7724bd212ac7baa37b34b26c221f8",
   "models": {
     "srm_forensic_cnn_int8.tflite": {
       "fp32_max_error": 0.036999,
@@ -58,7 +58,7 @@
       },
       "calibration": {
         "model_hash": "1b8c4f3de7822196c3c0ebf59f683d86f24d5fa2476fb1d9312a1e14b1519c7b",
-        "frontend_id": "vfm-siglip224-siglip-base-patch16-224-bicubic-clamp-meanstd-float32",
+        "frontend_id": "vfm-siglip224-siglip-base-patch16-224-boxpredecimate1024-bicubic-clamp-meanstd-float32",
         "threshold": 0.7673405408859253,
         "auc": 0.9796499999999999,
         "n_calibration": 400,

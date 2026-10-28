@@ -43,7 +43,7 @@ def vfm_frontend_id(size=VFM_SIZE, repo="siglip-base-patch16-224", pooling="sigl
     in the Android app: a divergence between the three means the fusion was
     trained on a different preprocessing than the app runs.
     """
-    return f"vfm-{pooling}{size}-{repo}-bicubic-clamp-meanstd-float32"
+    return f"vfm-{pooling}{size}-{repo}-boxpredecimate1024-bicubic-clamp-meanstd-float32"
 
 
 def vfm_image_tensor(image, size=VFM_SIZE, mean=VFM_MEAN, std=VFM_STD):
@@ -55,11 +55,16 @@ def vfm_image_tensor(image, size=VFM_SIZE, mean=VFM_MEAN, std=VFM_STD):
     The resampling filter is bicubic because that is the contract the
     tower's embeddings were measured under.
 
-    KNOWN SKEW: the Android path decodes with a box pre-decimation to a
-    1024 px maximum side BEFORE the bicubic resize, while this helper
-    resizes the original. For any image larger than 1024 px the two
-    therefore differ. The frontend id does not yet encode that step.
+    The Android path decodes with a box pre-decimation to a 1024 px
+    maximum side BEFORE the bicubic resize; this helper now mirrors that
+    step. The frontend id encodes the pre-decimation step.
     """
+    w, h = image.size
+    sample = 1
+    while max(w, h) // sample > 1024:
+        sample *= 2
+    if sample > 1:
+        image = image.resize((max(1, w // sample), max(1, h // sample)), Image.Resampling.BOX)
     resized = image.convert("RGB").resize((size, size), Image.Resampling.BICUBIC)
     arr = np.asarray(resized, dtype=np.float32) / 255.0
     mean = np.asarray(mean, dtype=np.float32)

@@ -89,7 +89,7 @@ where:
 
 ```bash
 # 1. Run all 11 algorithmic self-tests + v10 vs. v11.3 comparative benchmarks
-python3 onn_prism_v11_algorithms.py --self-test --benchmark
+python3 ml/src/models/prism_v11_algorithms.py --self-test --benchmark
 
 # 2. Apply the 16-file unified patch to the repository
 git apply onn_detect_v11_prism_upgrade.patch

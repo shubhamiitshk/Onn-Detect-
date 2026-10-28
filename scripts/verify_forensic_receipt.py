@@ -130,16 +130,25 @@ def _verify_cert_chain_and_leaf_key(
     cert_chain_b64: List[str],
     public_key_pem: str,
 ) -> bool:
-    """Checks that the leaf X.509 certificate's public key matches `public_key_pem`."""
+    """Verify the leaf public key AND issuer signatures / chain order.
+
+    The chain is ordered leaf-first: each certificate must be directly
+    issued (signed) by the following certificate in the list. The leaf's
+    public key must also match ``public_key_pem``.
+    """
     if not cert_chain_b64:
         return False
     from cryptography import x509
     from cryptography.hazmat.primitives import serialization
 
     try:
-        leaf_der = base64.b64decode(cert_chain_b64[0])
-        leaf_cert = x509.load_der_x509_certificate(leaf_der)
-        leaf_pub_der = leaf_cert.public_key().public_bytes(
+        certs = [x509.load_der_x509_certificate(base64.b64decode(b)) for b in cert_chain_b64]
+    except Exception:
+        return False
+    if not certs:
+        return False
+    try:
+        leaf_pub_der = certs[0].public_key().public_bytes(
             encoding=serialization.Encoding.DER,
             format=serialization.PublicFormat.SubjectPublicKeyInfo,
         )
@@ -148,9 +157,18 @@ def _verify_cert_chain_and_leaf_key(
             encoding=serialization.Encoding.DER,
             format=serialization.PublicFormat.SubjectPublicKeyInfo,
         )
-        return leaf_pub_der == claimed_pub_der
     except Exception:
         return False
+    if leaf_pub_der != claimed_pub_der:
+        return False
+    # Chain order + issuer signatures: cert[i] must be issued by cert[i+1].
+    for i in range(len(certs) - 1):
+        try:
+            if not certs[i].verify_directly_issued_by(certs[i + 1]):
+                return False
+        except Exception:
+            return False
+    return True
 
 
 def verify_receipt_bundle(

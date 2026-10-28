@@ -243,7 +243,7 @@ object ModelIntegrityChecker {
                 // not interchangeable, so the declared contract is checked
                 // against the model that is actually packaged.
                 val expectedCascadeFrontend = when (CASCADE_MODEL) {
-                    "siglip_probe_int8.tflite" -> "vfm-siglip${cascadeShape.getInt(1)}-siglip-base-patch16-224-bicubic-clamp-meanstd-float32"
+                    "siglip_probe_int8.tflite" -> "vfm-siglip${cascadeShape.getInt(1)}-siglip-base-patch16-224-boxpredecimate1024-bicubic-clamp-meanstd-float32"
                     else -> "clip-appearance-bicubic${cascadeShape.getInt(1)}-clipnorm-meanstd-float32"
                 }
                 require(cascade.getString("frontend_id") == expectedCascadeFrontend) { "Cascade frontend contract mismatch" }
