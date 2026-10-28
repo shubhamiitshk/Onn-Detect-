@@ -25,13 +25,60 @@ try:
 except ImportError:
     HAS_CRYPTOGRAPHY = False
 
-OFFICIAL_PUBLISHER_PUBLIC_KEY_HEX = "c0776fc7a2844b40915c13550a1dc428a36ced6cd5b27f4d5cdbe8d19cca8a3c"
-OFFICIAL_PUBLISHER_SEED_HEX = "196c62e955fa74066fe7e8e672250bef5271e3ce4a5b535ebe9c8f010a1c5a4e"
+OFFICIAL_PUBLISHER_PUBLIC_KEY_HEX = "50de4c4a6ebf5c72f73cacf2c11a58dafa40f139e400694c0b5187f307a6a8e3"
 
 
-def get_official_publisher_key() -> ed25519.Ed25519PrivateKey:
-    """Returns the official deterministic developer signing private key."""
-    return ed25519.Ed25519PrivateKey.from_private_bytes(bytes.fromhex(OFFICIAL_PUBLISHER_SEED_HEX))
+def load_external_signing_key(
+    key_path_or_hex: Optional[str] = None
+) -> ed25519.Ed25519PrivateKey:
+    """Loads external production signing private key from file, hex string, or environment variable.
+
+    Security rule: Production private signing keys MUST NOT be embedded in source code.
+    """
+    if not HAS_CRYPTOGRAPHY:
+        raise RuntimeError("Python 'cryptography' library is required for Ed25519 signing.")
+
+    raw_key = (
+        key_path_or_hex
+        or os.environ.get("ONN_DETECT_VLM_SIGNING_KEY_HEX")
+        or os.environ.get("ONN_DETECT_VLM_SIGNING_KEY_PATH")
+    )
+    if not raw_key:
+        raise RuntimeError(
+            "Production signing requires an externally supplied Ed25519 private key. "
+            "Provide via --signing-key <file>, --signing-key-hex <hex>, or set the "
+            "ONN_DETECT_VLM_SIGNING_KEY_HEX environment variable. "
+            "Private keys must never be committed to source control."
+        )
+
+    if os.path.exists(raw_key):
+        with open(raw_key, "rb") as f:
+            content = f.read()
+        try:
+            return serialization.load_pem_private_key(content, password=None)
+        except Exception:
+            content_str = content.decode("utf-8", errors="ignore").strip()
+            if len(content_str) == 64:
+                return ed25519.Ed25519PrivateKey.from_private_bytes(bytes.fromhex(content_str))
+            if len(content) == 32:
+                return ed25519.Ed25519PrivateKey.from_private_bytes(content)
+            raise ValueError(f"Could not parse private key from file: {raw_key}")
+
+    cleaned = raw_key.strip()
+    if len(cleaned) == 64:
+        return ed25519.Ed25519PrivateKey.from_private_bytes(bytes.fromhex(cleaned))
+
+    raise ValueError("Invalid signing key specification: must be an existing file path or 64-character hex seed.")
+
+
+def generate_test_signing_key() -> Tuple[ed25519.Ed25519PrivateKey, str]:
+    """Generates an ephemeral, test-only Ed25519 keypair for hermetic unit and self-tests."""
+    if not HAS_CRYPTOGRAPHY:
+        raise RuntimeError("Python 'cryptography' library is required for Ed25519 signing.")
+    priv = ed25519.Ed25519PrivateKey.generate()
+    pub = priv.public_key()
+    pub_hex = pub.public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()
+    return priv, pub_hex
 
 
 def compute_file_sha256(path: Path) -> str:
@@ -127,7 +174,7 @@ def generate_signed_manifest(
 
     # 5. Cryptographic Ed25519 signing
     if signing_private_key is None:
-        signing_private_key = get_official_publisher_key()
+        signing_private_key = load_external_signing_key()
 
     pub_key = signing_private_key.public_key()
     pub_hex = pub_key.public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()
@@ -300,8 +347,8 @@ def create_gguf_conversion_script(
     content = f"""#!/bin/bash
 set -e
 # GGUF Conversion recipe for ONN-DETECT Tier-2 VLM
-# Pinned upstream llama.cpp release: b4832 (March 2026)
-# Prerequisites: git clone https://github.com/ggerganov/llama.cpp && pip install -r llama.cpp/requirements.txt
+# Pinned upstream llama.cpp release: b8291 (March 12, 2026, commit c363256839fdffae184279ad8e5f0f3775c48b77)
+# Prerequisites: git clone --branch b8291 https://github.com/ggml-org/llama.cpp && pip install -r llama.cpp/requirements.txt
 
 MERGED_DIR="{merged_hf_dir.resolve()}"
 OUT_DIR="{output_dir.resolve()}"
@@ -317,18 +364,8 @@ rm -f "$OUT_DIR/$PACK_ID-f16.gguf"
 
 echo "=== 3. CONVERTING VISION PROJECTOR (MMPROJ) TO GGUF ==="
 # Upstream llama.cpp multimodal conversion:
-# For architectures with separate vision encoders/projectors (LLaVA, CLIP, SigLIP):
-# convert_image_encoder_to_gguf outputs to --output-dir without passing output file to --llava-projector.
-if [ -f "llama.cpp/examples/llava/convert_image_encoder_to_gguf.py" ]; then
-    python3 llama.cpp/examples/llava/convert_image_encoder_to_gguf.py -m "$MERGED_DIR" --output-dir "$OUT_DIR"
-    if [ -f "$OUT_DIR/mmproj-model-f16.gguf" ]; then
-        mv "$OUT_DIR/mmproj-model-f16.gguf" "$OUT_DIR/$PACK_ID-mmproj.gguf"
-    elif [ -f "$OUT_DIR/mmproj-f16.gguf" ]; then
-        mv "$OUT_DIR/mmproj-f16.gguf" "$OUT_DIR/$PACK_ID-mmproj.gguf"
-    fi
-else
-    python3 llama.cpp/convert_hf_to_gguf.py "$MERGED_DIR" --outfile "$OUT_DIR/$PACK_ID-mmproj.gguf" --clip-model-is-vision
-fi
+# convert_hf_to_gguf.py natively supports --mmproj for multimodal architectures (Qwen3.5, SmolVLM, LLaVA, SigLIP)
+python3 llama.cpp/convert_hf_to_gguf.py "$MERGED_DIR" --mmproj --outfile "$OUT_DIR/$PACK_ID-mmproj.gguf"
 
 echo "=== 4. GGUF CONVERSION COMPLETE ==="
 ls -lh "$OUT_DIR/$PACK_ID-model.gguf" "$OUT_DIR/$PACK_ID-mmproj.gguf"
@@ -363,63 +400,77 @@ def run_self_tests() -> None:
         dummy_pol = tmp_dir / "forensic_vlm_policy.json"
         dummy_pol.write_text(json.dumps({"model_id": "test", "decision_threshold": 0.5}), encoding="utf-8")
 
-        # 3. Test genuine cryptographic signing with default official publisher key
-        official_manifest = generate_signed_manifest(
+        # 2b. Test that calling without external private key strictly raises RuntimeError (no embedded private keys)
+        old_env_hex = os.environ.pop("ONN_DETECT_VLM_SIGNING_KEY_HEX", None)
+        old_env_path = os.environ.pop("ONN_DETECT_VLM_SIGNING_KEY_PATH", None)
+        try:
+            generate_signed_manifest(
+                pack_id="smolvlm2_500m_video_instruct_q8_0",
+                hf_model_id="HuggingFaceTB/SmolVLM2-500M-Video-Instruct",
+                language_file=dummy_lang,
+                vision_file=dummy_vis,
+                policy_file=dummy_pol,
+            )
+            assert False, "Signing without external key must raise RuntimeError"
+        except RuntimeError as re_err:
+            assert "externally supplied Ed25519 private key" in str(re_err)
+            print("  [PASS] Negative test: Attempt to sign without external key strictly rejected.")
+        finally:
+            if old_env_hex:
+                os.environ["ONN_DETECT_VLM_SIGNING_KEY_HEX"] = old_env_hex
+            if old_env_path:
+                os.environ["ONN_DETECT_VLM_SIGNING_KEY_PATH"] = old_env_path
+
+        # 3. Test genuine cryptographic signing with ephemeral test key
+        test_priv, test_pub_hex = generate_test_signing_key()
+        test_manifest = generate_signed_manifest(
             pack_id="smolvlm2_500m_video_instruct_q8_0",
             hf_model_id="HuggingFaceTB/SmolVLM2-500M-Video-Instruct",
             language_file=dummy_lang,
             vision_file=dummy_vis,
             policy_file=dummy_pol,
+            signing_private_key=test_priv,
             processor_version="transformers-4.48.0",
             chat_template_id="smolvlm_default",
             diagnostic_only=True,
         )
 
-        assert official_manifest["pack_id"] == "smolvlm2_500m_video_instruct_q8_0"
-        assert official_manifest["language_bytes"] == 52 * 1024 * 1024
-        assert official_manifest["vision_mmproj_bytes"] == 11 * 1024 * 1024
-        assert official_manifest["publisher_public_key_hex"] == OFFICIAL_PUBLISHER_PUBLIC_KEY_HEX
-        assert len(official_manifest["publisher_signature_hex"]) == 128
-        assert official_manifest["publisher_signature_valid"] is True
-        print(f"  [PASS] Genuine Ed25519 signed manifest generated with official publisher key.")
+        assert test_manifest["pack_id"] == "smolvlm2_500m_video_instruct_q8_0"
+        assert test_manifest["language_bytes"] == 52 * 1024 * 1024
+        assert test_manifest["vision_mmproj_bytes"] == 11 * 1024 * 1024
+        assert test_manifest["publisher_public_key_hex"] == test_pub_hex
+        assert len(test_manifest["publisher_signature_hex"]) == 128
+        assert test_manifest["publisher_signature_valid"] is True
+        print(f"  [PASS] Genuine Ed25519 signed manifest generated with externally supplied key.")
 
-        # 4. Test manifest cryptographic verification with full pack on disk against official trusted key
-        valid = verify_pack_manifest(official_manifest, pack_dir=tmp_dir)
+        # 4. Test manifest cryptographic verification with full pack on disk against matching test key
+        valid = verify_pack_manifest(test_manifest, pack_dir=tmp_dir, expected_pub_key_hex=test_pub_hex)
         assert valid is True, "Signature verification failed on authentic manifest"
-        print(f"  [PASS] Ed25519 signature verified against trusted official publisher key.")
+        print(f"  [PASS] Ed25519 signature verified against matching expected publisher key.")
 
-        # 4b. Negative Test: Self-signed pack with untrusted key is strictly rejected by default
-        untrusted_priv = ed25519.Ed25519PrivateKey.generate()
-        untrusted_manifest = generate_signed_manifest(
-            pack_id="smolvlm2_500m_video_instruct_q8_0",
-            hf_model_id="HuggingFaceTB/SmolVLM2-500M-Video-Instruct",
-            language_file=dummy_lang,
-            vision_file=dummy_vis,
-            policy_file=dummy_pol,
-            signing_private_key=untrusted_priv,
-        )
-        assert verify_pack_manifest(untrusted_manifest, pack_dir=tmp_dir) is False, "Untrusted self-signed key passed verification!"
-        assert verify_pack_manifest(untrusted_manifest, pack_dir=tmp_dir, allow_untrusted_for_testing=True) is True
-        print(f"  [PASS] Negative test: Untrusted self-signed publisher key strictly rejected in production mode.")
+        # 4b. Negative Test: Test key is strictly rejected by production verification against OFFICIAL_PUBLISHER_PUBLIC_KEY_HEX
+        assert verify_pack_manifest(test_manifest, pack_dir=tmp_dir) is False, "Test key passed production verification!"
+        assert verify_pack_manifest(test_manifest, pack_dir=tmp_dir, allow_untrusted_for_testing=True) is True
+        print(f"  [PASS] Negative test: Non-official publisher key strictly rejected by production verification.")
 
         # 5. Negative Test: Metadata tampering invalidates signature
-        tampered_meta = dict(official_manifest)
+        tampered_meta = dict(test_manifest)
         tampered_meta["processor_version"] = "transformers-5.0.0"
-        assert verify_pack_manifest(tampered_meta, pack_dir=tmp_dir) is False, "Tampered processor_version passed verification!"
-        tampered_diag = dict(official_manifest)
+        assert verify_pack_manifest(tampered_meta, pack_dir=tmp_dir, expected_pub_key_hex=test_pub_hex) is False, "Tampered processor_version passed verification!"
+        tampered_diag = dict(test_manifest)
         tampered_diag["diagnostic_only"] = False
-        assert verify_pack_manifest(tampered_diag, pack_dir=tmp_dir) is False, "Tampered diagnostic_only passed verification!"
+        assert verify_pack_manifest(tampered_diag, pack_dir=tmp_dir, expected_pub_key_hex=test_pub_hex) is False, "Tampered diagnostic_only passed verification!"
         print(f"  [PASS] Negative test: Metadata modifications (processor_version, diagnostic_only) strictly rejected.")
 
         # 6. Negative Test: Corrupted language hash
-        corrupted_manifest = dict(official_manifest)
+        corrupted_manifest = dict(test_manifest)
         corrupted_manifest["language_weights_sha256"] = "a" * 64
-        assert verify_pack_manifest(corrupted_manifest, pack_dir=tmp_dir) is False, "Corrupted hash passed verification!"
+        assert verify_pack_manifest(corrupted_manifest, pack_dir=tmp_dir, expected_pub_key_hex=test_pub_hex) is False, "Corrupted hash passed verification!"
         print(f"  [PASS] Negative test: Tampered language hash rejected.")
 
         # 7. Negative Test: Tampered policy on disk
         dummy_pol.write_text(json.dumps({"tampered": True}), encoding="utf-8")
-        assert verify_pack_manifest(official_manifest, pack_dir=tmp_dir) is False, "Tampered policy file on disk passed verification!"
+        assert verify_pack_manifest(test_manifest, pack_dir=tmp_dir, expected_pub_key_hex=test_pub_hex) is False, "Tampered policy file on disk passed verification!"
         print(f"  [PASS] Negative test: Tampered policy on disk rejected.")
         dummy_pol.write_text(json.dumps({"model_id": "test", "decision_threshold": 0.5}), encoding="utf-8")
 
@@ -427,7 +478,7 @@ def run_self_tests() -> None:
         pol_only_dir = tmp_dir / "policy_only_dir"
         pol_only_dir.mkdir(exist_ok=True)
         shutil.copy2(dummy_pol, pol_only_dir / "forensic_vlm_policy.json")
-        assert verify_pack_manifest(official_manifest, pack_dir=pol_only_dir) is False, "Pack directory missing model weights passed verification!"
+        assert verify_pack_manifest(test_manifest, pack_dir=pol_only_dir, expected_pub_key_hex=test_pub_hex) is False, "Pack directory missing model weights passed verification!"
         print(f"  [PASS] Negative test: Pack directory missing weights strictly rejected.")
 
         # 9. Negative Test: Truncated non-model file (<50 MB)
@@ -473,6 +524,7 @@ def run_self_tests() -> None:
             language_file=target_lang,
             vision_file=target_vis,
             policy_file=export_out / "forensic_vlm_policy.json",
+            signing_private_key=test_priv,
         )
         (export_out / "signed_manifest.json").write_text(json.dumps(cli_manifest, indent=2), encoding="utf-8")
         (export_out / "publisher_key.hex").write_text(cli_manifest["publisher_public_key_hex"], encoding="utf-8")
@@ -482,7 +534,7 @@ def run_self_tests() -> None:
         assert (export_out / "forensic_vlm_policy.json").is_file()
         assert (export_out / "signed_manifest.json").is_file()
         assert (export_out / "publisher_key.hex").is_file()
-        assert verify_pack_manifest(cli_manifest, pack_dir=export_out) is True
+        assert verify_pack_manifest(cli_manifest, pack_dir=export_out, expected_pub_key_hex=cli_manifest["publisher_public_key_hex"]) is True
         print(f"  [PASS] Complete runnable pack export & file copying verified on output directory.")
 
     finally:
@@ -560,10 +612,11 @@ def main() -> None:
             print(f"[Export] Copying vision mmproj to {target_vis}...")
             shutil.copy2(args.vision_file, target_vis)
 
-        signing_key = None
-        if args.signing_key and args.signing_key.exists():
-            with open(args.signing_key, "rb") as f:
-                signing_key = serialization.load_pem_private_key(f.read(), password=None)
+        signing_key = (
+            load_external_signing_key(str(args.signing_key))
+            if args.signing_key
+            else load_external_signing_key()
+        )
 
         manifest = generate_signed_manifest(
             pack_id=args.pack_id,

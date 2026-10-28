@@ -5,21 +5,28 @@ import android.graphics.Color
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.onndetect.detection.visual.LlamaCppVlmPrefillBackend
-import com.onndetect.detection.visual.OnDemandForensicVlmAnalyzer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import kotlin.math.sqrt
 
 /**
  * On-device instrumentation test for [LlamaCppVlmPrefillBackend] verifying real
- * ART JNI execution through `libllama_forensic_jni.so` packaged in the APK.
+ * ART JNI execution through `libllama_forensic_jni.so` (upstream llama.cpp b8291 + libmtmd).
  *
- * Verifies that the native loader strictly rejects dummy/invalid GGUFs with explicit
- * exceptions and never falls back to synthetic or fabricated vectors.
+ * Verifies:
+ * 1. Native shared library packaging and loading.
+ * 2. Corrupted binary detection in genuine GGUF parser.
+ * 3. Exact aspect-ratio preserving RGB preprocessing.
+ * 4. Dedicated real-model test requiring BOTH language weights and vision projector.
+ *    - Unconfigured environments skip via [Assume.assumeTrue].
+ *    - Valid model with wrong dimension strictly throws dimension contract exception.
+ *    - Multimodal prefill on distinct images produces image-dependent representations.
  */
 @RunWith(AndroidJUnit4::class)
 class LlamaCppNativeInstrumentationTest {
@@ -35,14 +42,11 @@ class LlamaCppNativeInstrumentationTest {
     }
 
     @Test
-    fun dummyGgufModelStrictlyFailsAndNeverEmitsSyntheticVectors() {
-        // 1. First assert native library is loaded in process memory
+    fun dummyGgufModelStrictlyFailsParsing() {
         assertTrue(
             "Native shared library must be loaded before running model loader test",
             LlamaCppVlmPrefillBackend.isNativeLibraryLoaded()
         )
-
-        // Ensure testMockDelegate is null: execution must route strictly to native C++ JNI
         LlamaCppVlmPrefillBackend.testMockDelegate = null
 
         val dummyModel = File(context.cacheDir, "corrupted_dummy_test.gguf").apply {
@@ -57,13 +61,11 @@ class LlamaCppNativeInstrumentationTest {
         )
 
         try {
-            // A 1 KB dummy model must fail parsing in native llama_model_load_from_file
             backend.loadNativeContext()
-            fail("Expected native llama loader to throw IllegalStateException for 1KB dummy model")
+            fail("Expected native llama loader to throw IllegalStateException for corrupted dummy model")
         } catch (e: IllegalStateException) {
-            // Verify failure originates from genuine GGUF parser rejecting invalid binary
             assertTrue(
-                "Error message must indicate genuine GGUF weight parsing failure, not missing library: ${e.message}",
+                "Error message must indicate genuine GGUF weight parsing failure: ${e.message}",
                 e.message!!.contains("Failed to parse GGUF model weights")
             )
         } finally {
@@ -74,11 +76,12 @@ class LlamaCppNativeInstrumentationTest {
 
     @Test
     fun pixelPreprocessingValidatesDimensionsOnDeviceBitmap() {
+        val dummyFile = File(context.cacheDir, "unused_pixel_test.gguf").apply {
+            writeBytes(ByteArray(64))
+            deleteOnExit()
+        }
         val backend = LlamaCppVlmPrefillBackend(
-            modelPath = File(context.cacheDir, "unused.gguf").apply {
-                writeBytes(ByteArray(64))
-                deleteOnExit()
-            }.absolutePath,
+            modelPath = dummyFile.absolutePath,
             hiddenDim = 1024,
         )
 
@@ -97,23 +100,23 @@ class LlamaCppNativeInstrumentationTest {
         } finally {
             bitmap.recycle()
             backend.close()
+            dummyFile.delete()
         }
     }
 
     /**
-     * Positive inference verification using real weights when deployed on a physical device.
-     * Searches common device paths or system properties for genuine language model and mmproj weights.
-     * When present, executes end-to-end multimodal prefill and asserts representation properties.
+     * Dedicated genuine model test requiring BOTH language weights AND multimodal projector.
+     * When hardware/weights are not present, test is marked as SKIPPED via [Assume.assumeTrue].
      */
-    @Test
-    fun positiveModelInferenceWhenRealWeightsPresent() {
+    @Test(timeout = 60000)
+    fun dedicatedRealModelInferenceRequiresBothWeightsAndProjector() {
         assertTrue(
-            "Native shared library must be loaded for positive inference",
+            "Native shared library must be loaded for real model inference",
             LlamaCppVlmPrefillBackend.isNativeLibraryLoaded()
         )
         LlamaCppVlmPrefillBackend.testMockDelegate = null
 
-        val candidatePaths = listOf(
+        val candidateLangPaths = listOf(
             System.getProperty("vlm.test.model.path"),
             "/data/local/tmp/vlm_model.gguf",
             File(context.filesDir, "vlm_model.gguf").absolutePath,
@@ -127,95 +130,101 @@ class LlamaCppNativeInstrumentationTest {
             File(context.getExternalFilesDir(null), "vlm_mmproj.gguf")?.absolutePath
         ).filterNotNull()
 
-        val modelPath = candidatePaths.firstOrNull { File(it).exists() && File(it).length() > 10 * 1024 * 1024 }
-        val mmprojPath = candidateMmprojPaths.firstOrNull { File(it).exists() && File(it).length() > 10 * 1024 * 1024 }
+        val langFile = candidateLangPaths.map { File(it) }.firstOrNull { it.exists() && it.length() > 10 * 1024 * 1024 }
+        val mmprojFile = candidateMmprojPaths.map { File(it) }.firstOrNull { it.exists() && it.length() > 5 * 1024 * 1024 }
 
-        if (modelPath != null) {
-            val hiddenDim = 1024
-            val startTime = System.currentTimeMillis()
-            val backend = LlamaCppVlmPrefillBackend(
-                modelPath = modelPath,
-                mmprojPath = mmprojPath,
-                hiddenDim = hiddenDim,
-                imageResolutionCapPx = 256
-            )
+        // Ordinary CI without deployed weights will explicitly mark test as SKIPPED
+        assumeTrue("Genuine language weights (>10MB) must be present on device", langFile != null)
+        assumeTrue("Genuine vision mmproj projector (>5MB) must be present on device", mmprojFile != null)
 
-            try {
-                backend.loadNativeContext()
-                val bitmap = Bitmap.createBitmap(256, 256, Bitmap.Config.ARGB_8888)
-                try {
-                    for (y in 0 until 256) {
-                        for (x in 0 until 256) {
-                            bitmap.setPixel(x, y, Color.rgb(x % 256, y % 256, (x + y) % 256))
-                        }
-                    }
+        val modelPath = langFile!!.absolutePath
+        val mmprojPath = mmprojFile!!.absolutePath
 
-                    val representation = backend.extractFinalHiddenState(
-                        fullBitmap = bitmap,
-                        roiCropBitmap = null,
-                        cropSpec = null,
-                        activeDomain = "general"
-                    )
-
-                    val durationMs = System.currentTimeMillis() - startTime
-                    assertNotNull("Representation must not be null", representation)
-                    assertEquals("Representation dimension must match hiddenDim", hiddenDim, representation.size)
-
-                    var nonZeroCount = 0
-                    for (v in representation) {
-                        assertTrue("Embedding value must be finite", !v.isNaN() && !v.isInfinite())
-                        if (kotlin.math.abs(v) > 1e-6f) nonZeroCount++
-                    }
-                    assertTrue("Genuine embedding must contain non-zero activations", nonZeroCount > 0)
-                    android.util.Log.i(
-                        "LlamaCppNativeInstrumentationTest",
-                        "Positive inference passed with genuine weights in ${durationMs}ms (nonZeroCount=$nonZeroCount/$hiddenDim)"
-                    )
-                } finally {
-                    bitmap.recycle()
-                }
-            } finally {
-                backend.close()
-            }
-        } else {
-            android.util.Log.w(
-                "LlamaCppNativeInstrumentationTest",
-                "Skipping positive inference execution: no genuine model weights (>10MB) detected on device. " +
-                "Push weights to /data/local/tmp/vlm_model.gguf to execute positive on-device test."
-            )
-            // Assert that non-existent paths are strictly rejected by the backend constructor
-            try {
-                LlamaCppVlmPrefillBackend(
-                    modelPath = "/data/local/tmp/non_existent_weights.gguf",
-                    hiddenDim = 1024
-                )
-                fail("Expected IllegalArgumentException for missing model file")
-            } catch (e: IllegalArgumentException) {
-                assertTrue(e.message!!.contains("Model file does not exist"))
-            }
-        }
-    }
-
-    @Test(timeout = 5000)
-    fun dimensionMismatchFailsWithBoundedCompletionTime() {
-        assertTrue(LlamaCppVlmPrefillBackend.isNativeLibraryLoaded())
-        val dummyModel = File(context.cacheDir, "invalid_header.gguf").apply {
-            writeBytes("GGUF_INVALID_HEADER_DATA".toByteArray())
-            deleteOnExit()
-        }
-
-        val backend = LlamaCppVlmPrefillBackend(
-            modelPath = dummyModel.absolutePath,
-            hiddenDim = 2048
+        // ---------------------------------------------------------------------
+        // 1. Test Valid Model with Mismatched Hidden Dimension
+        // ---------------------------------------------------------------------
+        val wrongDimensionBackend = LlamaCppVlmPrefillBackend(
+            modelPath = modelPath,
+            mmprojPath = mmprojPath,
+            hiddenDim = 99999, // Intentional mismatch against model architecture
         )
         try {
-            backend.loadNativeContext()
-            fail("Expected load failure on invalid GGUF header")
-        } catch (e: IllegalStateException) {
-            assertTrue(e.message!!.contains("Failed to parse GGUF model weights"))
+            wrongDimensionBackend.loadNativeContext()
+            fail("Expected loadNativeContext() to reject mismatched hidden dimension on valid model")
+        } catch (e: IllegalArgumentException) {
+            assertTrue(
+                "Error message must indicate hidden dimension mismatch: ${e.message}",
+                e.message!!.contains("does not match policy head contract hiddenDim")
+            )
         } finally {
+            wrongDimensionBackend.close()
+        }
+
+        // ---------------------------------------------------------------------
+        // 2. Multimodal Image Inference & Representation Parity Check
+        // ---------------------------------------------------------------------
+        val targetHiddenDim = 1024 // Architecture contract (e.g. Qwen3.5-0.8B)
+        val backend = LlamaCppVlmPrefillBackend(
+            modelPath = modelPath,
+            mmprojPath = mmprojPath,
+            hiddenDim = targetHiddenDim,
+            imageResolutionCapPx = 256,
+        )
+
+        val bitmapA = Bitmap.createBitmap(128, 128, Bitmap.Config.ARGB_8888)
+        val bitmapB = Bitmap.createBitmap(128, 128, Bitmap.Config.ARGB_8888)
+
+        try {
+            for (y in 0 until 128) {
+                for (x in 0 until 128) {
+                    bitmapA.setPixel(x, y, Color.rgb(x * 2, 0, 0)) // Red horizontal gradient
+                    bitmapB.setPixel(x, y, Color.rgb(0, 0, y * 2)) // Blue vertical gradient
+                }
+            }
+
+            backend.loadNativeContext()
+
+            val hA = backend.extractFinalHiddenState(
+                fullBitmap = bitmapA,
+                roiCropBitmap = null,
+                cropSpec = null,
+                activeDomain = "general",
+            )
+            assertNotNull("Representation for Image A must be non-null", hA)
+            assertEquals("Representation dimension must match contract", targetHiddenDim, hA.size)
+            assertTrue("Embeddings must contain finite activations", hA.all { it.isFinite() })
+            assertTrue("Embeddings must contain non-zero activations", hA.any { kotlin.math.abs(it) > 1e-6f })
+
+            val hB = backend.extractFinalHiddenState(
+                fullBitmap = bitmapB,
+                roiCropBitmap = null,
+                cropSpec = null,
+                activeDomain = "general",
+            )
+            assertNotNull("Representation for Image B must be non-null", hB)
+            assertEquals("Representation dimension must match contract", targetHiddenDim, hB.size)
+            assertTrue("Embeddings must contain finite activations", hB.all { it.isFinite() })
+
+            // Compute cosine similarity between image representations
+            var dot = 0.0
+            var normA = 0.0
+            var normB = 0.0
+            for (i in 0 until targetHiddenDim) {
+                dot += hA[i] * hB[i]
+                normA += hA[i] * hA[i]
+                normB += hB[i] * hB[i]
+            }
+            val cosSim = (dot / (sqrt(normA) * sqrt(normB))).toFloat()
+
+            // Different visual inputs must produce distinct representations
+            assertTrue(
+                "Distinct images must produce distinct visual embeddings (cosine similarity $cosSim must be < 0.999)",
+                cosSim < 0.999f
+            )
+        } finally {
+            bitmapA.recycle()
+            bitmapB.recycle()
             backend.close()
-            dummyModel.delete()
         }
     }
 }

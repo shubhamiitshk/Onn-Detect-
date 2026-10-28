@@ -8,8 +8,8 @@
 #include <algorithm>
 
 #include "llama.h"
-#include "clip.h"
-#include "llava.h"
+#include "mtmd.h"
+#include "mtmd-helper.h"
 
 #define TAG "LlamaForensicJni"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
@@ -17,13 +17,17 @@
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
 
 /**
- * Genuine on-device multimodal prefill bridge for llama.cpp.
+ * Genuine on-device multimodal prefill bridge for llama.cpp using unified libmtmd.
  *
- * Pinned upstream release: llama.cpp b4832 (commit 07d15723470a0a5b15d8ccad1aff5b20354ffbe1, March 6, 2025).
- * Multimodal pipeline: clip / llava for vision projection + llama.cpp for transformer backbone.
+ * Pinned upstream release: llama.cpp b8291 (commit c363256839fdffae184279ad8e5f0f3775c48b77, March 12, 2026).
+ * Architecture support: Qwen3.5 (qwen35), SmolVLM2, SigLIP, LLaVA.
+ * Multimodal pipeline: libmtmd unified tokenization + multimodal projection + llama transformer backbone.
  *
- * Enforces strict zero-fallback policy: if native libraries or model weights fail to load,
- * throws explicit Java exceptions. Synthetic vectors (such as sine wave fallbacks) are strictly forbidden.
+ * Training parity guarantees:
+ * 1. Prompt format strictly reproduces HuggingFace chat template with add_generation_prompt=True.
+ * 2. Visual encoding supports both full image and uncropped original-source ROI zoom.
+ * 3. Extracted embedding corresponds strictly to the assistant prefix token (last token, index -1).
+ * 4. Zero synthetic vector fallbacks: missing weights or parse failures throw explicit Java exceptions.
  */
 
 namespace {
@@ -36,7 +40,7 @@ struct LlamaForensicContext {
     int hidden_dim = 1024;
     llama_model* model = nullptr;
     llama_context* ctx = nullptr;
-    clip_ctx* clip = nullptr;
+    mtmd_context* mtmd = nullptr;
     bool active = false;
 
     LlamaForensicContext(const std::string& m_path, const std::string& mm_path, int dim)
@@ -46,11 +50,10 @@ struct LlamaForensicContext {
         release_internal();
     }
 
-    // Direct cleanup without reacquiring mutex (safe to call when lock is already held)
     void release_internal() {
-        if (clip) {
-            clip_free(clip);
-            clip = nullptr;
+        if (mtmd) {
+            mtmd_free(mtmd);
+            mtmd = nullptr;
         }
         if (ctx) {
             llama_free(ctx);
@@ -75,6 +78,10 @@ void throw_java_exception(JNIEnv* env, const char* class_name, const char* messa
     if (ex_class) {
         env->ThrowNew(ex_class, message);
     }
+}
+
+void throw_java_exception(JNIEnv* env, const char* class_name, const std::string& message) {
+    throw_java_exception(env, class_name, message.c_str());
 }
 
 } // namespace
@@ -114,7 +121,7 @@ Java_com_onndetect_detection_visual_LlamaCppVlmPrefillBackend_nativeInitContext(
 
     // 1. Load model weights using upstream llama_model_load_from_file with default parameters
     llama_model_params mparams = llama_model_default_params();
-    mparams.n_gpu_layers = 0; // CPU inference on Android by default
+    mparams.n_gpu_layers = 0; // CPU inference on Android
     ctx->model = llama_model_load_from_file(ctx->model_path.c_str(), mparams);
     if (!ctx->model) {
         std::string err = "Failed to parse GGUF model weights from: " + ctx->model_path +
@@ -137,7 +144,7 @@ Java_com_onndetect_detection_visual_LlamaCppVlmPrefillBackend_nativeInitContext(
 
     // 3. Create evaluation context with embeddings enabled
     llama_context_params cparams = llama_context_default_params();
-    cparams.n_ctx = 2048;
+    cparams.n_ctx = 4096;
     cparams.n_batch = 512;
     cparams.n_threads = 4;
     cparams.embeddings = true;
@@ -149,19 +156,22 @@ Java_com_onndetect_detection_visual_LlamaCppVlmPrefillBackend_nativeInitContext(
         return 0;
     }
 
-    // 4. Load vision projector if provided
+    // 4. Load multimodal projector via libmtmd if mmproj path provided
     if (!ctx->mmproj_path.empty()) {
-        ctx->clip = clip_model_load(ctx->mmproj_path.c_str(), 1);
-        if (!ctx->clip) {
-            std::string err = "Failed to load vision mmproj projector from: " + ctx->mmproj_path;
+        struct mtmd_context_params mtmd_params = mtmd_context_params_default();
+        mtmd_params.use_gpu = false;
+        mtmd_params.n_threads = 4;
+        ctx->mtmd = mtmd_init_from_file(ctx->mmproj_path.c_str(), ctx->model, mtmd_params);
+        if (!ctx->mtmd) {
+            std::string err = "Failed to load multimodal mmproj projector from: " + ctx->mmproj_path;
             delete ctx;
             throw_java_exception(env, "java/lang/IllegalStateException", err.c_str());
             return 0;
         }
     }
 
-    LOGI("nativeInitContext succeeded: ctx=%p, model=%p, clip=%p, hidden_dim=%d",
-         ctx->ctx, ctx->model, ctx->clip, hiddenDim);
+    LOGI("nativeInitContext succeeded: ctx=%p, model=%p, mtmd=%p, hidden_dim=%d",
+         ctx->ctx, ctx->model, ctx->mtmd, hiddenDim);
     return reinterpret_cast<jlong>(ctx);
 }
 
@@ -215,118 +225,91 @@ Java_com_onndetect_detection_visual_LlamaCppVlmPrefillBackend_nativeExtractFinal
 
     std::lock_guard<std::recursive_mutex> lock(g_native_mutex);
 
-    // 1. Clear KV cache to prevent token state pollution across runs
-    llama_kv_cache_clear(ctx->ctx);
+    // 1. Clear memory/KV cache to prevent token state pollution across runs
+    llama_memory_t mem = llama_get_memory(ctx->ctx);
+    if (mem) {
+        llama_memory_clear(mem, true);
+    }
 
-    // 2. Prepare dialectical prompt
-    std::string prompt = "<|im_start|>user\n<image>\nAnalyze image for forensic manipulation artifacts in domain: " +
-                         domain_str + ".<|im_end|>\n<|im_start|>assistant\n<think>";
+    // 2. Prepare multimodal input bitmaps
+    std::vector<mtmd_bitmap*> bitmaps_vec;
+    bitmaps_vec.push_back(mtmd_bitmap_init(
+        static_cast<uint32_t>(fullWidth),
+        static_cast<uint32_t>(fullHeight),
+        reinterpret_cast<const unsigned char*>(full_bytes)
+    ));
 
-    const struct llama_vocab * vocab = llama_model_get_vocab(ctx->model);
+    bool has_roi = (roiRgb && roi_bytes && roiWidth > 0 && roiHeight > 0);
+    if (has_roi) {
+        bitmaps_vec.push_back(mtmd_bitmap_init(
+            static_cast<uint32_t>(roiWidth),
+            static_cast<uint32_t>(roiHeight),
+            reinterpret_cast<const unsigned char*>(roi_bytes)
+        ));
+    }
+
+    std::vector<const mtmd_bitmap*> bitmaps_ptrs;
+    for (auto* b : bitmaps_vec) {
+        bitmaps_ptrs.push_back(b);
+    }
 
     // 3. Multimodal prefill evaluation
-    if (ctx->clip) {
-        clip_image_u8* img = clip_image_u8_init();
-        clip_build_img_from_pixels(reinterpret_cast<const unsigned char*>(full_bytes), fullWidth, fullHeight, img);
+    if (ctx->mtmd) {
+        // Construct prompt strictly matching HuggingFace chat template format:
+        // User message: visual media markers + prompt text
+        // Assistant generation prefix: <|im_start|>assistant\n
+        std::string marker = mtmd_default_marker(); // Default "<__media__>"
+        std::string prompt;
+        if (has_roi) {
+            prompt = "<|im_start|>user\n" + marker + "\n" + marker +
+                     "\nAssess forensic authenticity in domain: " + domain_str + ".<|im_end|>\n<|im_start|>assistant\n";
+        } else {
+            prompt = "<|im_start|>user\n" + marker +
+                     "\nAssess forensic authenticity in domain: " + domain_str + ".<|im_end|>\n<|im_start|>assistant\n";
+        }
 
-        float* img_embd = nullptr;
-        int n_img_pos = 0;
-        bool embed_ok = llava_image_embed_make_with_clip_img(ctx->clip, 4, img, &img_embd, &n_img_pos);
-        clip_image_u8_free(img);
+        mtmd_input_chunks* chunks = mtmd_input_chunks_init();
+        mtmd_input_text input_text = { prompt.c_str(), true, true };
 
-        if (!embed_ok || !img_embd || n_img_pos <= 0) {
+        int tok_res = mtmd_tokenize(ctx->mtmd, chunks, &input_text, bitmaps_ptrs.data(), bitmaps_ptrs.size());
+        for (auto* b : bitmaps_vec) {
+            mtmd_bitmap_free(b);
+        }
+
+        if (tok_res != 0) {
+            mtmd_input_chunks_free(chunks);
             env->ReleaseByteArrayElements(fullRgb, full_bytes, JNI_ABORT);
             if (roiRgb && roi_bytes) env->ReleaseByteArrayElements(roiRgb, roi_bytes, JNI_ABORT);
             throw_java_exception(env, "java/lang/IllegalStateException",
-                                 "Failed to encode visual tokens via clip projector");
+                                 "mtmd_tokenize failed to parse prompt and visual bitmaps (code: " + std::to_string(tok_res) + ")");
             return nullptr;
         }
 
-        std::string image_tag = "<image>";
-        size_t img_tag_pos = prompt.find(image_tag);
-        std::string prefix = (img_tag_pos != std::string::npos) ? prompt.substr(0, img_tag_pos) : "";
-        std::string postfix = (img_tag_pos != std::string::npos) ? prompt.substr(img_tag_pos + image_tag.length()) : prompt;
+        llama_pos new_n_past = 0;
+        int eval_res = mtmd_helper_eval_chunks(ctx->mtmd, ctx->ctx, chunks, 0, 0, 512, true, &new_n_past);
+        mtmd_input_chunks_free(chunks);
 
-        int n_past = 0;
-
-        // Evaluate prefix tokens before <image>
-        if (!prefix.empty()) {
-            std::vector<llama_token> prefix_tokens(prefix.length() + 16);
-            int n_prefix = llama_tokenize(vocab, prefix.c_str(), prefix.length(),
-                                          prefix_tokens.data(), prefix_tokens.size(), true, true);
-            if (n_prefix > 0) {
-                prefix_tokens.resize(n_prefix);
-                llama_batch batch = llama_batch_init(n_prefix, 0, 1);
-                for (int i = 0; i < n_prefix; ++i) {
-                    batch.token[i] = prefix_tokens[i];
-                    batch.pos[i] = n_past + i;
-                    batch.n_seq_id[i] = 1;
-                    batch.seq_id[i][0] = 0;
-                    batch.logits[i] = false;
-                }
-                batch.n_tokens = n_prefix;
-                if (llama_decode(ctx->ctx, batch) != 0) {
-                    llama_batch_free(batch);
-                    free(img_embd);
-                    env->ReleaseByteArrayElements(fullRgb, full_bytes, JNI_ABORT);
-                    if (roiRgb && roi_bytes) env->ReleaseByteArrayElements(roiRgb, roi_bytes, JNI_ABORT);
-                    throw_java_exception(env, "java/lang/IllegalStateException",
-                                         "llama_decode failed on prefix tokens");
-                    return nullptr;
-                }
-                llama_batch_free(batch);
-                n_past += n_prefix;
-            }
-        }
-
-        // Evaluate image embeddings
-        struct llava_image_embed image_embed = { img_embd, n_img_pos };
-        if (!llava_eval_image_embed(ctx->ctx, &image_embed, 512, &n_past)) {
-            free(img_embd);
+        if (eval_res != 0) {
             env->ReleaseByteArrayElements(fullRgb, full_bytes, JNI_ABORT);
             if (roiRgb && roi_bytes) env->ReleaseByteArrayElements(roiRgb, roi_bytes, JNI_ABORT);
             throw_java_exception(env, "java/lang/IllegalStateException",
-                                 "llava_eval_image_embed failed to evaluate image tokens");
+                                 "mtmd_helper_eval_chunks failed during multimodal visual evaluation (code: " + std::to_string(eval_res) + ")");
             return nullptr;
-        }
-        free(img_embd);
-
-        // Evaluate postfix tokens with logits/embeddings enabled on the last token
-        std::vector<llama_token> postfix_tokens(postfix.length() + 16);
-        int n_postfix = llama_tokenize(vocab, postfix.c_str(), postfix.length(),
-                                       postfix_tokens.data(), postfix_tokens.size(), false, true);
-        if (n_postfix > 0) {
-            postfix_tokens.resize(n_postfix);
-            llama_batch batch = llama_batch_init(n_postfix, 0, 1);
-            for (int i = 0; i < n_postfix; ++i) {
-                batch.token[i] = postfix_tokens[i];
-                batch.pos[i] = n_past + i;
-                batch.n_seq_id[i] = 1;
-                batch.seq_id[i][0] = 0;
-                batch.logits[i] = (i == n_postfix - 1);
-            }
-            batch.n_tokens = n_postfix;
-            if (llama_decode(ctx->ctx, batch) != 0) {
-                llama_batch_free(batch);
-                env->ReleaseByteArrayElements(fullRgb, full_bytes, JNI_ABORT);
-                if (roiRgb && roi_bytes) env->ReleaseByteArrayElements(roiRgb, roi_bytes, JNI_ABORT);
-                throw_java_exception(env, "java/lang/IllegalStateException",
-                                     "llama_decode failed on postfix tokens");
-                return nullptr;
-            }
-            llama_batch_free(batch);
-            n_past += n_postfix;
         }
     } else {
-        // Language-only prompt evaluation
+        // Text-only evaluation
+        for (auto* b : bitmaps_vec) {
+            mtmd_bitmap_free(b);
+        }
+        std::string prompt = "<|im_start|>user\nAssess forensic authenticity in domain: " + domain_str + ".<|im_end|>\n<|im_start|>assistant\n";
+        const struct llama_vocab * vocab = llama_model_get_vocab(ctx->model);
         std::vector<llama_token> tokens(prompt.length() + 16);
         int n_tokens = llama_tokenize(vocab, prompt.c_str(), prompt.length(),
                                       tokens.data(), tokens.size(), true, true);
         if (n_tokens <= 0) {
             env->ReleaseByteArrayElements(fullRgb, full_bytes, JNI_ABORT);
             if (roiRgb && roi_bytes) env->ReleaseByteArrayElements(roiRgb, roi_bytes, JNI_ABORT);
-            throw_java_exception(env, "java/lang/IllegalStateException",
-                                 "Failed to tokenize dialectical prompt");
+            throw_java_exception(env, "java/lang/IllegalStateException", "Failed to tokenize text prompt");
             return nullptr;
         }
         tokens.resize(n_tokens);
@@ -343,41 +326,37 @@ Java_com_onndetect_detection_visual_LlamaCppVlmPrefillBackend_nativeExtractFinal
             llama_batch_free(batch);
             env->ReleaseByteArrayElements(fullRgb, full_bytes, JNI_ABORT);
             if (roiRgb && roi_bytes) env->ReleaseByteArrayElements(roiRgb, roi_bytes, JNI_ABORT);
-            throw_java_exception(env, "java/lang/IllegalStateException",
-                                 "llama_decode failed on prompt tokens");
+            throw_java_exception(env, "java/lang/IllegalStateException", "llama_decode failed on prompt tokens");
             return nullptr;
         }
         llama_batch_free(batch);
     }
 
-    // 4. Extract final token hidden state vector
-    float* embd = llama_get_embeddings_ith(ctx->ctx, -1);
-    if (!embd) {
-        embd = llama_get_embeddings(ctx->ctx);
-    }
+    env->ReleaseByteArrayElements(fullRgb, full_bytes, JNI_ABORT);
+    if (roiRgb && roi_bytes) env->ReleaseByteArrayElements(roiRgb, roi_bytes, JNI_ABORT);
 
+    // 4. Extract representation of the final token (assistant prefix token)
+    const float* embd = llama_get_embeddings_ith(ctx->ctx, -1);
     if (!embd) {
-        env->ReleaseByteArrayElements(fullRgb, full_bytes, JNI_ABORT);
-        if (roiRgb && roi_bytes) env->ReleaseByteArrayElements(roiRgb, roi_bytes, JNI_ABORT);
         throw_java_exception(env, "java/lang/IllegalStateException",
-                             "Native prefill evaluation failed: llama_get_embeddings returned null");
+                             "Failed to retrieve embeddings from llama_get_embeddings_ith(-1)");
         return nullptr;
     }
 
-    std::vector<float> h_last(ctx->hidden_dim, 0.0f);
-    std::memcpy(h_last.data(), embd, ctx->hidden_dim * sizeof(float));
-
-    env->ReleaseByteArrayElements(fullRgb, full_bytes, JNI_ABORT);
-    if (roiRgb && roi_bytes) {
-        env->ReleaseByteArrayElements(roiRgb, roi_bytes, JNI_ABORT);
+    int n_embd = llama_model_n_embd(ctx->model);
+    if (n_embd != ctx->hidden_dim) {
+        throw_java_exception(env, "java/lang/IllegalStateException",
+                             "Model embedding dimension (" + std::to_string(n_embd) +
+                             ") does not match expected hiddenDim (" + std::to_string(ctx->hidden_dim) + ")");
+        return nullptr;
     }
 
     jfloatArray result = env->NewFloatArray(ctx->hidden_dim);
     if (!result) {
-        throw_java_exception(env, "java/lang/OutOfMemoryError", "Failed to allocate return jfloatArray");
+        throw_java_exception(env, "java/lang/OutOfMemoryError", "Failed to allocate jfloatArray for representation");
         return nullptr;
     }
-    env->SetFloatArrayRegion(result, 0, ctx->hidden_dim, h_last.data());
+    env->SetFloatArrayRegion(result, 0, ctx->hidden_dim, embd);
     return result;
 }
 
@@ -389,6 +368,7 @@ Java_com_onndetect_detection_visual_LlamaCppVlmPrefillBackend_nativeFreeContext(
 ) {
     auto* ctx = reinterpret_cast<LlamaForensicContext*>(contextHandle);
     if (ctx) {
+        ctx->release();
         delete ctx;
     }
 }

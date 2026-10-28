@@ -74,11 +74,11 @@ object OnDemandForensicVlmAnalyzer {
     var overridePolicyBundle: PolicyBundle? = null
 
     /**
-     * Official independently trusted publisher Ed25519 public key hex.
+     * Official independently trusted publisher Ed25519 public key hex (Rotated production key).
      * Production packs must be signed by this key; self-signed packs are strictly rejected.
      */
     const val OFFICIAL_PUBLISHER_PUBLIC_KEY_HEX =
-        "c0776fc7a2844b40915c13550a1dc428a36ced6cd5b27f4d5cdbe8d19cca8a3c"
+        "50de4c4a6ebf5c72f73cacf2c11a58dafa40f139e400694c0b5187f307a6a8e3"
 
     /**
      * Pinned publisher Ed25519 public key hex for validating VLM model packs.
