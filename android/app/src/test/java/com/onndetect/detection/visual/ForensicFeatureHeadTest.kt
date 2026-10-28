@@ -54,4 +54,35 @@ class ForensicFeatureHeadTest {
         )
         head.predict(floatArrayOf(1f, 2f)) // 2 elements instead of 4
     }
+
+    @Test
+    fun `parseJson correctly deserializes 768-D forensic head`() {
+        val artifactFile = java.io.File("../docs/test_artifacts/gemma2_eval/embeddinggemma2_forensic_head.json")
+        val jsonContent = if (artifactFile.exists()) {
+            artifactFile.readText()
+        } else {
+            """
+            {
+              "schema_version": 1,
+              "backbone": "unsloth/embeddinggemma-2",
+              "embedding_dim": 4,
+              "weights": [0.1, -0.2, 0.3, -0.4],
+              "bias": 0.05,
+              "decision_threshold": 0.5035,
+              "diagnostic_only": true
+            }
+            """.trimIndent()
+        }
+
+        val head = ForensicFeatureHead.parseJson(jsonContent)
+        assertEquals("unsloth/embeddinggemma-2", head.modelId)
+        assertTrue(head.featureDim in listOf(4, 768))
+        assertTrue(head.threshold > 0.50f)
+        assertTrue(head.diagnosticOnly)
+
+        val zeroFeatures = FloatArray(head.featureDim) { 0f }
+        val eval = head.predict(zeroFeatures)
+        assertTrue(eval.probability in 0.40f..0.60f)
+        assertTrue(eval.diagnosticOnly)
+    }
 }

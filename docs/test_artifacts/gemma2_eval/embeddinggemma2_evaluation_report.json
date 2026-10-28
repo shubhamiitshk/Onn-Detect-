@@ -1,0 +1,64 @@
+{
+  "model_name": "unsloth/embeddinggemma-2",
+  "dtype": "float32",
+  "selected_C": 0.01,
+  "decision_threshold": 0.5034927129745483,
+  "splits": {
+    "stacking": {
+      "auc": 1.0,
+      "eer": 0.0,
+      "tpr_at_fpr_1pct": 1.0,
+      "tpr_at_fpr_0_1pct": 1.0,
+      "accuracy_at_threshold": 0.96,
+      "decision_threshold": 0.5034927129745483,
+      "per_source_real_fpr": {
+        "source_pack": {
+          "n_real": 25,
+          "fpr": 0.0
+        }
+      }
+    },
+    "fusion_val": {
+      "auc": 1.0,
+      "eer": 0.0,
+      "tpr_at_fpr_1pct": 1.0,
+      "tpr_at_fpr_0_1pct": 1.0,
+      "accuracy_at_threshold": 0.94,
+      "decision_threshold": 0.5034927129745483,
+      "per_source_real_fpr": {
+        "source_pack": {
+          "n_real": 25,
+          "fpr": 0.0
+        }
+      }
+    },
+    "calibration": {
+      "auc": 1.0,
+      "eer": 0.0,
+      "tpr_at_fpr_1pct": 1.0,
+      "tpr_at_fpr_0_1pct": 1.0,
+      "accuracy_at_threshold": 1.0,
+      "decision_threshold": 0.5034927129745483,
+      "per_source_real_fpr": {
+        "source_pack": {
+          "n_real": 25,
+          "fpr": 0.0
+        }
+      }
+    },
+    "test": {
+      "auc": 1.0,
+      "eer": 0.0,
+      "tpr_at_fpr_1pct": 1.0,
+      "tpr_at_fpr_0_1pct": 1.0,
+      "accuracy_at_threshold": 0.96,
+      "decision_threshold": 0.5034927129745483,
+      "per_source_real_fpr": {
+        "source_pack": {
+          "n_real": 25,
+          "fpr": 0.0
+        }
+      }
+    }
+  }
+}

@@ -64,4 +64,36 @@ class ForensicFeatureHead(
             diagnosticOnly = diagnosticOnly,
         )
     }
+
+    companion object {
+        /**
+         * Parses a serialized JSON head exported by `evaluate_embeddinggemma2_probe.py` or
+         * `train_frozen_forensic_head.py`.
+         */
+        @JvmStatic
+        fun parseJson(jsonString: String): ForensicFeatureHead {
+            val root = org.json.JSONObject(jsonString)
+            val backbone = root.optString("backbone", "unknown")
+            val embeddingDim = root.getInt("embedding_dim")
+            val weightsArray = root.getJSONArray("weights")
+            require(weightsArray.length() == embeddingDim) {
+                "JSON weights count (${weightsArray.length()}) != embedding_dim ($embeddingDim)"
+            }
+            val weights = FloatArray(embeddingDim) { i ->
+                weightsArray.getDouble(i).toFloat()
+            }
+            val bias = root.optDouble("bias", 0.0).toFloat()
+            val threshold = root.optDouble("decision_threshold", 0.50).toFloat()
+            val diagnosticOnly = root.optBoolean("diagnostic_only", true)
+
+            return ForensicFeatureHead(
+                modelId = backbone,
+                featureDim = embeddingDim,
+                weights = weights,
+                bias = bias,
+                threshold = threshold,
+                diagnosticOnly = diagnosticOnly,
+            )
+        }
+    }
 }
