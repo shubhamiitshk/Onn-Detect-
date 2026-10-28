@@ -299,9 +299,13 @@ class OnDemandForensicVlmAnalyzerContractTest {
 
         val validManifest = baseManifest.copy(publisherSignatureHex = sigHex)
 
-        assertTrue(
-            "Genuine Ed25519 manifest must pass verification",
+        assertFalse(
+            "Untrusted random key must fail verification when official publisher key is expected",
             OnDemandForensicVlmAnalyzer.verifySignedPackContract(validManifest)
+        )
+        assertTrue(
+            "Manifest must pass when allowUntrustedPublisherForTesting is true",
+            OnDemandForensicVlmAnalyzer.verifySignedPackContract(validManifest, allowUntrustedPublisherForTesting = true)
         )
         assertTrue(
             "Manifest must pass when pinned public key matches",
@@ -317,31 +321,31 @@ class OnDemandForensicVlmAnalyzerContractTest {
         val tamperedManifest = validManifest.copy(languageWeightsSha256 = "f".repeat(64))
         assertFalse(
             "Tampered manifest must fail verification",
-            OnDemandForensicVlmAnalyzer.verifySignedPackContract(tamperedManifest)
+            OnDemandForensicVlmAnalyzer.verifySignedPackContract(tamperedManifest, expectedPublisherPublicKeyHex = pubHex)
         )
 
         val tamperedProc = validManifest.copy(processorVersion = "transformers-9.9.9")
         assertFalse(
             "Tampered processorVersion must fail verification",
-            OnDemandForensicVlmAnalyzer.verifySignedPackContract(tamperedProc)
+            OnDemandForensicVlmAnalyzer.verifySignedPackContract(tamperedProc, expectedPublisherPublicKeyHex = pubHex)
         )
 
         val tamperedDiag = validManifest.copy(diagnosticOnly = false)
         assertFalse(
             "Tampered diagnosticOnly must fail verification",
-            OnDemandForensicVlmAnalyzer.verifySignedPackContract(tamperedDiag)
+            OnDemandForensicVlmAnalyzer.verifySignedPackContract(tamperedDiag, expectedPublisherPublicKeyHex = pubHex)
         )
 
         val unsignedManifest = validManifest.copy(publisherSignatureHex = "")
         assertFalse(
             "Unsigned manifest must be strictly rejected (no legacy bypass)",
-            OnDemandForensicVlmAnalyzer.verifySignedPackContract(unsignedManifest)
+            OnDemandForensicVlmAnalyzer.verifySignedPackContract(unsignedManifest, expectedPublisherPublicKeyHex = pubHex)
         )
 
         val tinyManifest = validManifest.copy(languageBytes = 1000L)
         assertFalse(
             "Manifest with < 50MB language file must be rejected",
-            OnDemandForensicVlmAnalyzer.verifySignedPackContract(tinyManifest)
+            OnDemandForensicVlmAnalyzer.verifySignedPackContract(tinyManifest, expectedPublisherPublicKeyHex = pubHex)
         )
     }
 
@@ -466,9 +470,15 @@ class OnDemandForensicVlmAnalyzerContractTest {
             """.trimIndent()
             manifestFile.writeText(manifestJson, Charsets.UTF_8)
 
-            // 3. With genuine files and signed manifest, initialization succeeds and derives hiddenDim
-            val backend = OnDemandForensicVlmAnalyzer.initializeActiveBackendIfAvailable(testDir)
-            assertNotNull("Backend should initialize with valid signed pack", backend)
+            // 3a. Untrusted self-signed pack is strictly rejected by production trusted key check
+            assertNull(
+                "Untrusted self-signed pack must be rejected when official publisher key is expected",
+                OnDemandForensicVlmAnalyzer.initializeActiveBackendIfAvailable(testDir)
+            )
+
+            // 3b. When expected publisher key matches the pack signer, initialization succeeds and derives hiddenDim
+            val backend = OnDemandForensicVlmAnalyzer.initializeActiveBackendIfAvailable(testDir, expectedPublisherPublicKeyHex = pubHex)
+            assertNotNull("Backend should initialize with valid signed pack matching trusted key", backend)
             assertEquals(backend, OnDemandForensicVlmAnalyzer.activePrefillBackend)
             assertEquals(expectedHiddenDim, (backend as LlamaCppVlmPrefillBackend).hiddenDim)
 
@@ -480,7 +490,7 @@ class OnDemandForensicVlmAnalyzerContractTest {
             }
             assertNull(
                 "Tampered model file bytes must cause SHA-256 failure and reject initialization",
-                OnDemandForensicVlmAnalyzer.initializeActiveBackendIfAvailable(testDir)
+                OnDemandForensicVlmAnalyzer.initializeActiveBackendIfAvailable(testDir, expectedPublisherPublicKeyHex = pubHex)
             )
 
             // 5. Negative Test: Pack directory containing only policy must reject initialization

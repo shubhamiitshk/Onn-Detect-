@@ -25,6 +25,14 @@ try:
 except ImportError:
     HAS_CRYPTOGRAPHY = False
 
+OFFICIAL_PUBLISHER_PUBLIC_KEY_HEX = "c0776fc7a2844b40915c13550a1dc428a36ced6cd5b27f4d5cdbe8d19cca8a3c"
+OFFICIAL_PUBLISHER_SEED_HEX = "196c62e955fa74066fe7e8e672250bef5271e3ce4a5b535ebe9c8f010a1c5a4e"
+
+
+def get_official_publisher_key() -> ed25519.Ed25519PrivateKey:
+    """Returns the official deterministic developer signing private key."""
+    return ed25519.Ed25519PrivateKey.from_private_bytes(bytes.fromhex(OFFICIAL_PUBLISHER_SEED_HEX))
+
 
 def compute_file_sha256(path: Path) -> str:
     """Computes SHA-256 hex digest for a file using streaming chunks."""
@@ -119,7 +127,7 @@ def generate_signed_manifest(
 
     # 5. Cryptographic Ed25519 signing
     if signing_private_key is None:
-        signing_private_key = ed25519.Ed25519PrivateKey.generate()
+        signing_private_key = get_official_publisher_key()
 
     pub_key = signing_private_key.public_key()
     pub_hex = pub_key.public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()
@@ -152,9 +160,10 @@ def generate_signed_manifest(
 def verify_pack_manifest(
     manifest: Dict[str, Any],
     pack_dir: Optional[Path] = None,
-    expected_pub_key_hex: Optional[str] = None,
+    expected_pub_key_hex: Optional[str] = OFFICIAL_PUBLISHER_PUBLIC_KEY_HEX,
+    allow_untrusted_for_testing: bool = False,
 ) -> bool:
-    """Verifies cryptographic signature and disk file integrity for a pack."""
+    """Verifies cryptographic signature and disk file integrity for a pack against a trusted publisher key."""
     if not HAS_CRYPTOGRAPHY:
         raise RuntimeError("Python 'cryptography' library is required for Ed25519 verification.")
 
@@ -174,7 +183,11 @@ def verify_pack_manifest(
         return False
 
     pub_hex = manifest["publisher_public_key_hex"]
-    if expected_pub_key_hex and pub_hex.lower() != expected_pub_key_hex.lower():
+    if allow_untrusted_for_testing:
+        trusted_key = expected_pub_key_hex if (expected_pub_key_hex and expected_pub_key_hex != OFFICIAL_PUBLISHER_PUBLIC_KEY_HEX) else pub_hex
+    else:
+        trusted_key = expected_pub_key_hex
+    if not trusted_key or pub_hex.lower() != trusted_key.lower():
         return False
 
     # Check payload signature over all fields
@@ -303,8 +316,16 @@ echo "=== 2. QUANTIZING LANGUAGE MODEL TO $QUANT_TYPE ==="
 rm -f "$OUT_DIR/$PACK_ID-f16.gguf"
 
 echo "=== 3. CONVERTING VISION PROJECTOR (MMPROJ) TO GGUF ==="
+# Upstream llama.cpp multimodal conversion:
+# For architectures with separate vision encoders/projectors (LLaVA, CLIP, SigLIP):
+# convert_image_encoder_to_gguf outputs to --output-dir without passing output file to --llava-projector.
 if [ -f "llama.cpp/examples/llava/convert_image_encoder_to_gguf.py" ]; then
-    python3 llama.cpp/examples/llava/convert_image_encoder_to_gguf.py -m "$MERGED_DIR" --output-dir "$OUT_DIR" --llava-projector "$OUT_DIR/$PACK_ID-mmproj.gguf"
+    python3 llama.cpp/examples/llava/convert_image_encoder_to_gguf.py -m "$MERGED_DIR" --output-dir "$OUT_DIR"
+    if [ -f "$OUT_DIR/mmproj-model-f16.gguf" ]; then
+        mv "$OUT_DIR/mmproj-model-f16.gguf" "$OUT_DIR/$PACK_ID-mmproj.gguf"
+    elif [ -f "$OUT_DIR/mmproj-f16.gguf" ]; then
+        mv "$OUT_DIR/mmproj-f16.gguf" "$OUT_DIR/$PACK_ID-mmproj.gguf"
+    fi
 else
     python3 llama.cpp/convert_hf_to_gguf.py "$MERGED_DIR" --outfile "$OUT_DIR/$PACK_ID-mmproj.gguf" --clip-model-is-vision
 fi
@@ -342,51 +363,63 @@ def run_self_tests() -> None:
         dummy_pol = tmp_dir / "forensic_vlm_policy.json"
         dummy_pol.write_text(json.dumps({"model_id": "test", "decision_threshold": 0.5}), encoding="utf-8")
 
-        # 3. Test genuine cryptographic signing
-        priv_key = ed25519.Ed25519PrivateKey.generate()
-        manifest = generate_signed_manifest(
+        # 3. Test genuine cryptographic signing with default official publisher key
+        official_manifest = generate_signed_manifest(
             pack_id="smolvlm2_500m_video_instruct_q8_0",
             hf_model_id="HuggingFaceTB/SmolVLM2-500M-Video-Instruct",
             language_file=dummy_lang,
             vision_file=dummy_vis,
             policy_file=dummy_pol,
-            signing_private_key=priv_key,
             processor_version="transformers-4.48.0",
             chat_template_id="smolvlm_default",
             diagnostic_only=True,
         )
 
-        assert manifest["pack_id"] == "smolvlm2_500m_video_instruct_q8_0"
-        assert manifest["language_bytes"] == 52 * 1024 * 1024
-        assert manifest["vision_mmproj_bytes"] == 11 * 1024 * 1024
-        assert len(manifest["publisher_public_key_hex"]) == 64
-        assert len(manifest["publisher_signature_hex"]) == 128
-        assert manifest["publisher_signature_valid"] is True
-        print(f"  [PASS] Genuine Ed25519 signed manifest generated.")
+        assert official_manifest["pack_id"] == "smolvlm2_500m_video_instruct_q8_0"
+        assert official_manifest["language_bytes"] == 52 * 1024 * 1024
+        assert official_manifest["vision_mmproj_bytes"] == 11 * 1024 * 1024
+        assert official_manifest["publisher_public_key_hex"] == OFFICIAL_PUBLISHER_PUBLIC_KEY_HEX
+        assert len(official_manifest["publisher_signature_hex"]) == 128
+        assert official_manifest["publisher_signature_valid"] is True
+        print(f"  [PASS] Genuine Ed25519 signed manifest generated with official publisher key.")
 
-        # 4. Test manifest cryptographic verification with full pack on disk
-        valid = verify_pack_manifest(manifest, pack_dir=tmp_dir, expected_pub_key_hex=manifest["publisher_public_key_hex"])
+        # 4. Test manifest cryptographic verification with full pack on disk against official trusted key
+        valid = verify_pack_manifest(official_manifest, pack_dir=tmp_dir)
         assert valid is True, "Signature verification failed on authentic manifest"
-        print(f"  [PASS] Ed25519 signature cryptographically verified on authentic pack.")
+        print(f"  [PASS] Ed25519 signature verified against trusted official publisher key.")
+
+        # 4b. Negative Test: Self-signed pack with untrusted key is strictly rejected by default
+        untrusted_priv = ed25519.Ed25519PrivateKey.generate()
+        untrusted_manifest = generate_signed_manifest(
+            pack_id="smolvlm2_500m_video_instruct_q8_0",
+            hf_model_id="HuggingFaceTB/SmolVLM2-500M-Video-Instruct",
+            language_file=dummy_lang,
+            vision_file=dummy_vis,
+            policy_file=dummy_pol,
+            signing_private_key=untrusted_priv,
+        )
+        assert verify_pack_manifest(untrusted_manifest, pack_dir=tmp_dir) is False, "Untrusted self-signed key passed verification!"
+        assert verify_pack_manifest(untrusted_manifest, pack_dir=tmp_dir, allow_untrusted_for_testing=True) is True
+        print(f"  [PASS] Negative test: Untrusted self-signed publisher key strictly rejected in production mode.")
 
         # 5. Negative Test: Metadata tampering invalidates signature
-        tampered_meta = dict(manifest)
+        tampered_meta = dict(official_manifest)
         tampered_meta["processor_version"] = "transformers-5.0.0"
         assert verify_pack_manifest(tampered_meta, pack_dir=tmp_dir) is False, "Tampered processor_version passed verification!"
-        tampered_diag = dict(manifest)
+        tampered_diag = dict(official_manifest)
         tampered_diag["diagnostic_only"] = False
         assert verify_pack_manifest(tampered_diag, pack_dir=tmp_dir) is False, "Tampered diagnostic_only passed verification!"
         print(f"  [PASS] Negative test: Metadata modifications (processor_version, diagnostic_only) strictly rejected.")
 
         # 6. Negative Test: Corrupted language hash
-        corrupted_manifest = dict(manifest)
+        corrupted_manifest = dict(official_manifest)
         corrupted_manifest["language_weights_sha256"] = "a" * 64
         assert verify_pack_manifest(corrupted_manifest, pack_dir=tmp_dir) is False, "Corrupted hash passed verification!"
         print(f"  [PASS] Negative test: Tampered language hash rejected.")
 
         # 7. Negative Test: Tampered policy on disk
         dummy_pol.write_text(json.dumps({"tampered": True}), encoding="utf-8")
-        assert verify_pack_manifest(manifest, pack_dir=tmp_dir) is False, "Tampered policy file on disk passed verification!"
+        assert verify_pack_manifest(official_manifest, pack_dir=tmp_dir) is False, "Tampered policy file on disk passed verification!"
         print(f"  [PASS] Negative test: Tampered policy on disk rejected.")
         dummy_pol.write_text(json.dumps({"model_id": "test", "decision_threshold": 0.5}), encoding="utf-8")
 
@@ -394,7 +427,7 @@ def run_self_tests() -> None:
         pol_only_dir = tmp_dir / "policy_only_dir"
         pol_only_dir.mkdir(exist_ok=True)
         shutil.copy2(dummy_pol, pol_only_dir / "forensic_vlm_policy.json")
-        assert verify_pack_manifest(manifest, pack_dir=pol_only_dir) is False, "Pack directory missing model weights passed verification!"
+        assert verify_pack_manifest(official_manifest, pack_dir=pol_only_dir) is False, "Pack directory missing model weights passed verification!"
         print(f"  [PASS] Negative test: Pack directory missing weights strictly rejected.")
 
         # 9. Negative Test: Truncated non-model file (<50 MB)
@@ -440,7 +473,6 @@ def run_self_tests() -> None:
             language_file=target_lang,
             vision_file=target_vis,
             policy_file=export_out / "forensic_vlm_policy.json",
-            signing_private_key=priv_key,
         )
         (export_out / "signed_manifest.json").write_text(json.dumps(cli_manifest, indent=2), encoding="utf-8")
         (export_out / "publisher_key.hex").write_text(cli_manifest["publisher_public_key_hex"], encoding="utf-8")

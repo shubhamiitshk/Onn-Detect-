@@ -36,6 +36,12 @@ class LlamaCppNativeInstrumentationTest {
 
     @Test
     fun dummyGgufModelStrictlyFailsAndNeverEmitsSyntheticVectors() {
+        // 1. First assert native library is loaded in process memory
+        assertTrue(
+            "Native shared library must be loaded before running model loader test",
+            LlamaCppVlmPrefillBackend.isNativeLibraryLoaded()
+        )
+
         // Ensure testMockDelegate is null: execution must route strictly to native C++ JNI
         LlamaCppVlmPrefillBackend.testMockDelegate = null
 
@@ -51,13 +57,14 @@ class LlamaCppNativeInstrumentationTest {
         )
 
         try {
-            // A 1 KB dummy model must fail parsing in native llama_load_model_from_file
+            // A 1 KB dummy model must fail parsing in native llama_model_load_from_file
             backend.loadNativeContext()
             fail("Expected native llama loader to throw IllegalStateException for 1KB dummy model")
         } catch (e: IllegalStateException) {
+            // Verify failure originates from genuine GGUF parser rejecting invalid binary
             assertTrue(
-                "Error message must indicate native load or runtime failure: ${e.message}",
-                e.message!!.contains("GGUF") || e.message!!.contains("libllama") || e.message!!.contains("context")
+                "Error message must indicate genuine GGUF weight parsing failure, not missing library: ${e.message}",
+                e.message!!.contains("Failed to parse GGUF model weights")
             )
         } finally {
             backend.close()

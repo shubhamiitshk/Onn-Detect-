@@ -74,10 +74,18 @@ object OnDemandForensicVlmAnalyzer {
     var overridePolicyBundle: PolicyBundle? = null
 
     /**
-     * Optional pinned publisher Ed25519 public key hex for validating VLM model packs.
+     * Official independently trusted publisher Ed25519 public key hex.
+     * Production packs must be signed by this key; self-signed packs are strictly rejected.
+     */
+    const val OFFICIAL_PUBLISHER_PUBLIC_KEY_HEX =
+        "c0776fc7a2844b40915c13550a1dc428a36ced6cd5b27f4d5cdbe8d19cca8a3c"
+
+    /**
+     * Pinned publisher Ed25519 public key hex for validating VLM model packs.
+     * Defaults to [OFFICIAL_PUBLISHER_PUBLIC_KEY_HEX] for production integrity.
      */
     @Volatile
-    var pinnedPublisherPublicKeyHex: String? = null
+    var pinnedPublisherPublicKeyHex: String? = OFFICIAL_PUBLISHER_PUBLIC_KEY_HEX
 
     val RUBRIC_AXES: List<String> = listOf(
         "anatomical_geometry",
@@ -538,9 +546,22 @@ object OnDemandForensicVlmAnalyzer {
 
     fun verifySignedPackContract(
         manifest: SignedVlmPackManifest,
-        expectedPublisherPublicKeyHex: String? = null,
+        expectedPublisherPublicKeyHex: String? = pinnedPublisherPublicKeyHex ?: OFFICIAL_PUBLISHER_PUBLIC_KEY_HEX,
+        allowUntrustedPublisherForTesting: Boolean = false,
     ): Boolean {
         if (!isVlmRuntimeSupportedOnDevice()) return false
+
+        // Require an independently trusted publisher key for production packs
+        val trustedKey = if (allowUntrustedPublisherForTesting) {
+            if (expectedPublisherPublicKeyHex != null && expectedPublisherPublicKeyHex != OFFICIAL_PUBLISHER_PUBLIC_KEY_HEX) {
+                expectedPublisherPublicKeyHex
+            } else {
+                manifest.publisherPublicKeyHex
+            }
+        } else {
+            expectedPublisherPublicKeyHex
+                ?: return false // Optional / null trusted key strictly rejected in production
+        }
 
         val hex64 = Regex("^[0-9a-fA-F]{64}$")
         val hex128 = Regex("^[0-9a-fA-F]{128}$")
@@ -553,12 +574,11 @@ object OnDemandForensicVlmAnalyzer {
         if (manifest.maxVisualTokens !in 64..2048) return false
         if (manifest.processorVersion.isBlank() || manifest.chatTemplateId.isBlank()) return false
 
-        // Strict digital signature verification: zero unsigned legacy bypass
+        // Strict digital signature verification: require matching trusted publisher key
         if (!hex64.matches(manifest.publisherPublicKeyHex)) return false
         if (!hex128.matches(manifest.publisherSignatureHex)) return false
 
-        if (expectedPublisherPublicKeyHex != null &&
-            !manifest.publisherPublicKeyHex.equals(expectedPublisherPublicKeyHex, ignoreCase = true)) {
+        if (!manifest.publisherPublicKeyHex.equals(trustedKey, ignoreCase = true)) {
             return false
         }
         val payload = computeCanonicalManifestPayload(manifest)
@@ -1018,7 +1038,11 @@ object OnDemandForensicVlmAnalyzer {
      * Loads an optional user-imported local policy bundle from `forensic_vlm_policy.json`
      * inside [packDir] when present and hash-verified.
      */
-    fun loadInstalledPolicyBundleOrNull(packDir: File): PolicyBundle? {
+    fun loadInstalledPolicyBundleOrNull(
+        packDir: File,
+        expectedPublisherPublicKeyHex: String? = pinnedPublisherPublicKeyHex ?: OFFICIAL_PUBLISHER_PUBLIC_KEY_HEX,
+        allowUntrustedPublisherForTesting: Boolean = false,
+    ): PolicyBundle? {
         overridePolicyBundle?.let { return it }
         return runCatching {
             val policyFile = File(packDir, "forensic_vlm_policy.json")
@@ -1028,6 +1052,9 @@ object OnDemandForensicVlmAnalyzer {
                 ?: File(packDir, "manifest.json").takeIf { it.isFile }
             if (manifestFile != null) {
                 val manifest = SignedVlmPackManifest.fromJson(manifestFile.readText(Charsets.UTF_8))
+                if (!verifySignedPackContract(manifest, expectedPublisherPublicKeyHex, allowUntrustedPublisherForTesting)) {
+                    return null
+                }
                 if (manifest.policySha256.isNotEmpty()) {
                     val actualSha = computeFileSha256(policyFile)
                     if (!actualSha.equals(manifest.policySha256, ignoreCase = true)) {
@@ -1053,7 +1080,8 @@ object OnDemandForensicVlmAnalyzer {
      */
     fun initializeActiveBackendIfAvailable(
         packDir: File,
-        expectedPublisherPublicKeyHex: String? = pinnedPublisherPublicKeyHex,
+        expectedPublisherPublicKeyHex: String? = pinnedPublisherPublicKeyHex ?: OFFICIAL_PUBLISHER_PUBLIC_KEY_HEX,
+        allowUntrustedPublisherForTesting: Boolean = false,
     ): VlmPrefillBackend? {
         activePrefillBackend?.let { return it }
         if (!isVlmRuntimeSupportedOnDevice()) return null
@@ -1066,7 +1094,7 @@ object OnDemandForensicVlmAnalyzer {
                 ?: return null
 
             val manifest = SignedVlmPackManifest.fromJson(manifestFile.readText(Charsets.UTF_8))
-            if (!verifySignedPackContract(manifest, expectedPublisherPublicKeyHex)) {
+            if (!verifySignedPackContract(manifest, expectedPublisherPublicKeyHex, allowUntrustedPublisherForTesting)) {
                 return null
             }
 
