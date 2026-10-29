@@ -1,0 +1,79 @@
+{
+  "audit_date_local": "2026-10-29",
+  "timezone": "Asia/Calcutta",
+  "source_commit": "c1505afdf6d149ee55e12388449a93a48ca15d28",
+  "production_source_modified": false,
+  "verification_kind": "Implementation checks and synthetic adversarial proofs; no independently measured detection accuracy or physical-device performance",
+  "android_build": {
+    "command": "cd android; .\\gradlew.bat testDebugUnitTest lintDebug assembleRelease assembleDebugAndroidTest --offline --no-daemon",
+    "exit_code": 0,
+    "elapsed": "7m22s",
+    "instrumentation_executed": false
+  },
+  "jvm_tests": {
+    "suites": 47,
+    "tests": 405,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "lint": {
+    "Warning": 80
+  },
+  "python_tooling": {
+    "command": ".\\.venv\\Scripts\\python.exe -m unittest discover -s scripts/tests -q",
+    "passed": 63,
+    "exit_code": 0
+  },
+  "python_scenarios": {
+    "command": ".\\.venv\\Scripts\\python.exe -m pytest tests/e2e -q",
+    "passed": 145,
+    "exit_code": 0,
+    "scope_note": "Mixed contracts, source checks, helper integration and synthetic stand-ins; not complete Android end-to-end coverage"
+  },
+  "tier5": {
+    "command": ".\\.venv\\Scripts\\python.exe -m unittest discover -s tests -p tier5_adversarial_stress_test.py -q",
+    "passed": 9,
+    "exit_code": 0
+  },
+  "ml": {
+    "command": ".\\.venv\\Scripts\\python.exe -m pytest ml/tests -q",
+    "passed": 181,
+    "skipped": 1,
+    "subtests_passed": 3,
+    "warnings": 19,
+    "exit_code": 0
+  },
+  "python_syntax": {
+    "tracked_files_parsed": 171,
+    "errors": 0
+  },
+  "gates": {
+    "lineage": "passed",
+    "android_source_consistency": "passed, 99 Kotlin sources, desktop-only warning",
+    "docs_consistency": "passed narrow phrase/existence checks",
+    "workflow_structure": "passed, 3 workflows",
+    "fft_reference": "passed, synthetic images",
+    "apk_diagnostic": "passed on rebuilt APK",
+    "apk_require_validated_models": "rejected as expected: independent device evidence absent",
+    "strict_asset_bundle": "rejected: unmanifested trust/c2pa_trust_anchors.pem"
+  },
+  "release_apk": {
+    "path": "android/app/build/outputs/apk/release/app-release.apk",
+    "bytes": 146249094,
+    "sha256": "65c3222be42adea680e567f62f8127356143e1f48edb4c9dfcd11f780d0170c8"
+  },
+  "synthetic_proofs": {
+    "c2pa_runtime": "audit_detection_2026-10-29/runtime-proof.txt",
+    "receipt_verifier": "audit_detection_2026-10-29/receipt-proof.txt",
+    "notes": "Ephemeral local test CA/software key fixtures; not a production-media conformance or device attestation evaluation"
+  },
+  "not_performed": [
+    "connected Android instrumentation",
+    "physical ARM64 benchmarking",
+    "new model training",
+    "dataset label/group adjudication",
+    "reproduction of supplied historical detector accuracy",
+    "remote CI execution"
+  ]
+}

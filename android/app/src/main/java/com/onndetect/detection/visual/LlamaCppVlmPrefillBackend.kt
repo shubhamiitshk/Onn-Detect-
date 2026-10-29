@@ -1,8 +1,13 @@
 package com.onndetect.detection.visual
 
 import android.graphics.Bitmap
+import androidx.annotation.Keep
 import androidx.annotation.VisibleForTesting
 import java.io.File
+import java.nio.ByteBuffer
+import java.nio.CharBuffer
+import java.nio.charset.CodingErrorAction
+import java.util.concurrent.CancellationException
 
 /**
  * Concrete on-device VLM prefill & RAG generation backend powered by `llama.cpp`'s native
@@ -66,7 +71,7 @@ class LlamaCppVlmPrefillBackend(
         ) -> String)? = null
     }
 
-    private var nativeContextHandle: Long = 0L
+    @Volatile private var nativeContextHandle: Long = 0L
 
     init {
         val modelFile = File(modelPath)
@@ -126,6 +131,7 @@ class LlamaCppVlmPrefillBackend(
         }
     }
 
+    @Synchronized
     override fun extractFinalHiddenState(
         fullBitmap: Bitmap,
         roiCropBitmap: Bitmap?,
@@ -179,16 +185,33 @@ class LlamaCppVlmPrefillBackend(
      * Generates a bounded multimodal or text RAG response using the loaded GGUF model
      * (`Qwen/Qwen3.5-0.8B` or `SmolVLM2-500M-Video-Instruct`).
      */
+    @Synchronized
     fun generateMultimodalResponse(
         prompt: String,
         bitmap: Bitmap? = null,
         maxNewTokens: Int = 160,
     ): String {
+        return generateMultimodalResponseStreaming(prompt, bitmap, maxNewTokens, onToken = {}, isCancelled = { false })
+    }
+
+    /** Streams native token bytes as they are sampled, including split UTF-8 characters. */
+    @Synchronized
+    fun generateMultimodalResponseStreaming(
+        prompt: String,
+        bitmap: Bitmap? = null,
+        maxNewTokens: Int = 160,
+        onToken: (String) -> Unit,
+        isCancelled: () -> Boolean,
+    ): String {
         require(prompt.isNotBlank()) { "RAG prompt cannot be blank" }
         val boundedTokens = maxNewTokens.coerceIn(8, 512)
+        val receiver = NativeTokenReceiver(onToken, isCancelled)
+        receiver.checkActive()
 
         testGenerationDelegate?.let { mock ->
-            return mock(prompt, bitmap, boundedTokens)
+            // The delegate is a completed-answer test seam, not a substitute native stream.
+            receiver.onTokenBytes(mock(prompt, bitmap, boundedTokens).toByteArray(Charsets.UTF_8))
+            return receiver.finish()
         }
 
         check(libraryLoaded) {
@@ -207,21 +230,22 @@ class LlamaCppVlmPrefillBackend(
             Triple(null, 0, 0)
         }
 
-        return nativeGenerateMultimodalResponse(
+        receiver.checkActive()
+        nativeGenerateMultimodalResponseStreaming(
             contextHandle = nativeContextHandle,
             prompt = prompt,
             imageRgb = imgBytes,
             imageWidth = imgW,
             imageHeight = imgH,
             maxNewTokens = boundedTokens,
+            receiver = receiver,
         )
+        return receiver.finish()
     }
 
+    @Synchronized
     override fun close() {
-        if (nativeContextHandle != 0L) {
-            nativeFreeContext(nativeContextHandle)
-            nativeContextHandle = 0L
-        }
+        unloadNativeContext()
     }
 
     // =========================================================================
@@ -238,15 +262,76 @@ class LlamaCppVlmPrefillBackend(
         roiHeight: Int,
         domain: String,
     ): FloatArray
-    private external fun nativeGenerateMultimodalResponse(
+    private external fun nativeGenerateMultimodalResponseStreaming(
         contextHandle: Long,
         prompt: String,
         imageRgb: ByteArray?,
         imageWidth: Int,
         imageHeight: Int,
         maxNewTokens: Int,
-    ): String
+        receiver: NativeTokenReceiver,
+    )
     private external fun nativeFreeContext(contextHandle: Long)
+
+    @Keep
+    private class NativeTokenReceiver(
+        private val onToken: (String) -> Unit,
+        private val cancelled: () -> Boolean,
+    ) {
+        private val decoder = Utf8TokenDecoder()
+        private val output = StringBuilder()
+
+        // llama.cpp can poll this from an attached CPU worker thread.
+        fun shouldCancel(): Boolean = Thread.currentThread().isInterrupted || runCatching(cancelled).getOrDefault(true)
+
+        fun checkActive() {
+            if (shouldCancel()) throw CancellationException("Response stopped")
+        }
+
+        fun onTokenBytes(bytes: ByteArray): Boolean {
+            checkActive()
+            emit(decoder.append(bytes))
+            return !shouldCancel()
+        }
+
+        fun finish(): String {
+            checkActive()
+            emit(decoder.finish())
+            return output.toString()
+        }
+
+        private fun emit(text: String) {
+            if (text.isNotEmpty()) {
+                output.append(text)
+                onToken(text)
+            }
+        }
+    }
+
+    /** A tokenizer may split an emoji or non-Latin character across several byte tokens. */
+    internal class Utf8TokenDecoder {
+        private val decoder = Charsets.UTF_8.newDecoder()
+            .onMalformedInput(CodingErrorAction.REPLACE)
+            .onUnmappableCharacter(CodingErrorAction.REPLACE)
+        private var pending = ByteArray(0)
+
+        fun append(bytes: ByteArray): String = decode(bytes, endOfInput = false)
+        fun finish(): String = decode(ByteArray(0), endOfInput = true)
+
+        private fun decode(bytes: ByteArray, endOfInput: Boolean): String {
+            val input = ByteBuffer.wrap(pending + bytes)
+            val output = CharBuffer.allocate(input.remaining() + 2)
+            decoder.decode(input, output, endOfInput).throwExceptionIfError()
+            pending = ByteArray(input.remaining()).also { input.get(it) }
+            if (endOfInput) decoder.flush(output).throwExceptionIfError()
+            output.flip()
+            return output.toString()
+        }
+
+        private fun java.nio.charset.CoderResult.throwExceptionIfError() {
+            if (isError) throwException()
+        }
+    }
 
     // =========================================================================
     // Pixel Preprocessing Utilities

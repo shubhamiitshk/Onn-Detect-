@@ -1,0 +1,9 @@
+PROOF: synthetic ephemeral CA fixtures, not real signed C2PA media conformance
+signed_payload_source=digitalCapture; identical COSE reused for every case
+original: signed=true; source=digitalCapture
+unsigned_clai_changed: signed=true; source=trainedAlgorithmicMedia; confirmsAI=true
+covered_media_byte_changed_and_unsigned_hash_recomputed: signed=true; sameCOSE=true; mediaSHAChanged=true
+expired_leaf: checkValidityExpired=true; verifyChainAccepted=true
+unvalidated_audio_boost: visual=.55; audio=1; audioValidatedSuccess=false; result=0.7075; crossesVisualThreshold=true
+stock_gate srm_forensic_cnn_int8.tflite: allOk=true; validated=true; deviceValidated=false; cascadeValidated=true; threshold=0.57819986; failures=[]
+stock_gate lcnn_audio_int8.tflite: allOk=true; validated=true; deviceValidated=false; cascadeValidated=true; threshold=0.35546875; failures=[]

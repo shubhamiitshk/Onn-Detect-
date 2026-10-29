@@ -1,0 +1,7 @@
+PROOF: locally generated software EC key from existing test fixture
+self_signed_certificate=True
+android_attestation_extension_present=False
+claimed_tier=STRONGBOX
+verifier_valid=True
+verifier_hardware_backed=True
+reasons=[]

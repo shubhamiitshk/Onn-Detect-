@@ -18,6 +18,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -50,21 +55,21 @@ enum class GlassBottomTab(
     DETECT(
         route = Routes.HOME,
         title = "Detect",
-        subtitle = "Img • Aud • Vid",
+        subtitle = "Media scans",
         iconSymbol = "🔍",
         accentColor = CyberCyan,
     ),
     CHAT_RAG(
         route = Routes.CHAT_RAG_BASE,
-        title = "RAG Chat",
-        subtitle = "Qwen 0.8B • VLM",
+        title = "Chat",
+        subtitle = "Private assistant",
         iconSymbol = "💬",
         accentColor = NeonPurple,
     ),
     VOICE_VAULT(
         route = Routes.VOICE_VAULT,
         title = "Voice Vault",
-        subtitle = "Family Guard",
+        subtitle = "Saved voices",
         iconSymbol = "🛡️",
         accentColor = AuthenticGreen,
     ),
@@ -88,7 +93,7 @@ fun LiquidGlassScaffold(
                 .offset(x = (-60).dp, y = (-40).dp)
                 .background(
                     brush = Brush.radialGradient(
-                        colors = listOf(CyberCyan.copy(alpha = 0.16f), Color.Transparent)
+                        colors = listOf(CyberCyan.copy(alpha = 0.075f), Color.Transparent)
                     ),
                     shape = CircleShape
                 )
@@ -100,7 +105,7 @@ fun LiquidGlassScaffold(
                 .offset(x = 80.dp, y = (-20).dp)
                 .background(
                     brush = Brush.radialGradient(
-                        colors = listOf(NeonPurple.copy(alpha = 0.14f), Color.Transparent)
+                        colors = listOf(DeepIndigo.copy(alpha = 0.065f), Color.Transparent)
                     ),
                     shape = CircleShape
                 )
@@ -112,20 +117,19 @@ fun LiquidGlassScaffold(
                 .offset(y = 40.dp)
                 .background(
                     brush = Brush.radialGradient(
-                        colors = listOf(DeepIndigo.copy(alpha = 0.18f), Color.Transparent)
+                        colors = listOf(DeepIndigo.copy(alpha = 0.08f), Color.Transparent)
                     ),
                     shape = CircleShape
                 )
         )
 
-        val contentPadding = PaddingValues(bottom = 104.dp)
-        content(contentPadding)
-
         val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
+        val contentPadding = PaddingValues(bottom = if (imeBottom == 0) 96.dp else 0.dp)
+        content(contentPadding)
         AnimatedVisibility(
             visible = imeBottom == 0,
-            enter = fadeIn(),
-            exit = fadeOut(),
+            enter = fadeIn(tween(150)),
+            exit = fadeOut(tween(120)),
             modifier = Modifier.align(Alignment.BottomCenter)
         ) {
             LiquidGlassBottomBar(
@@ -151,26 +155,27 @@ fun LiquidGlassCard(
     val shape = RoundedCornerShape(cornerRadius)
     val borderBrush = Brush.verticalGradient(
         colors = listOf(
-            Color.White.copy(alpha = 0.30f),
-            accentColor.copy(alpha = 0.38f),
-            DeepIndigo.copy(alpha = 0.16f),
+            Color.White.copy(alpha = 0.20f),
+            accentColor.copy(alpha = 0.11f),
+            Color.White.copy(alpha = 0.045f),
         )
     )
     val glassFill = Brush.verticalGradient(
         colors = listOf(
-            SurfaceElevated.copy(alpha = 0.78f),
-            SurfaceCard.copy(alpha = 0.64f),
+            SurfaceElevated.copy(alpha = 0.86f),
+            SurfaceCard.copy(alpha = 0.76f),
         )
     )
 
     val clickableMod = if (onClick != null) {
-        Modifier.clickable(enabled = enabled, onClick = onClick)
+        Modifier.sizeIn(minHeight = 48.dp).clickable(enabled = enabled, role = Role.Button, onClick = onClick)
     } else {
         Modifier
     }
 
     Box(
         modifier = modifier
+            .shadow(8.dp, shape, clip = false, ambientColor = Color.Black.copy(alpha = 0.12f), spotColor = Color.Black.copy(alpha = 0.18f))
             .clip(shape)
             .background(glassFill)
             .border(1.dp, borderBrush, shape)
@@ -179,13 +184,13 @@ fun LiquidGlassCard(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(2.dp)
+                .height(1.dp)
                 .background(
                     Brush.horizontalGradient(
                         listOf(
                             Color.Transparent,
-                            Color.White.copy(alpha = 0.35f),
-                            accentColor.copy(alpha = 0.45f),
+                            Color.White.copy(alpha = 0.24f),
+                            accentColor.copy(alpha = 0.16f),
                             Color.Transparent,
                         )
                     )
@@ -204,24 +209,25 @@ fun LiquidGlassBottomBar(
     val outerShape = RoundedCornerShape(28.dp)
     Box(
         modifier = modifier
+            .widthIn(max = 560.dp)
             .fillMaxWidth()
+            .shadow(16.dp, outerShape, clip = false, ambientColor = Color.Black.copy(alpha = 0.18f), spotColor = Color.Black.copy(alpha = 0.22f))
             .clip(outerShape)
             .background(
                 Brush.verticalGradient(
                     colors = listOf(
-                        Color(0xD917223B),
-                        Color(0xE60B101E),
+                        Color(0xF0242D3D),
+                        Color(0xF2121925),
                     )
                 )
             )
             .border(
-                width = 1.2.dp,
+                width = 1.dp,
                 brush = Brush.horizontalGradient(
                     colors = listOf(
-                        Color.White.copy(alpha = 0.28f),
-                        CyberCyan.copy(alpha = 0.40f),
-                        NeonPurple.copy(alpha = 0.35f),
-                        AuthenticGreen.copy(alpha = 0.35f),
+                        Color.White.copy(alpha = 0.20f),
+                        CyberCyan.copy(alpha = 0.11f),
+                        Color.White.copy(alpha = 0.045f),
                     )
                 ),
                 shape = outerShape
@@ -239,8 +245,8 @@ fun LiquidGlassBottomBar(
                 val bgBrush = if (isSelected) {
                     Brush.verticalGradient(
                         colors = listOf(
-                            tab.accentColor.copy(alpha = 0.28f),
-                            tab.accentColor.copy(alpha = 0.10f),
+                            Color.White.copy(alpha = 0.10f),
+                            Color.White.copy(alpha = 0.035f),
                         )
                     )
                 } else {
@@ -254,8 +260,8 @@ fun LiquidGlassBottomBar(
                 val itemBorder = if (isSelected) {
                     Brush.verticalGradient(
                         colors = listOf(
-                            Color.White.copy(alpha = 0.45f),
-                            tab.accentColor.copy(alpha = 0.65f),
+                            Color.White.copy(alpha = 0.20f),
+                            tab.accentColor.copy(alpha = 0.16f),
                         )
                     )
                 } else {
@@ -270,10 +276,11 @@ fun LiquidGlassBottomBar(
                 Box(
                     modifier = Modifier
                         .weight(1f)
+                        .heightIn(min = 56.dp)
                         .clip(itemShape)
                         .background(bgBrush)
                         .border(1.dp, itemBorder, itemShape)
-                        .clickable { onSelectTab(tab) }
+                        .clickable(role = Role.Tab) { onSelectTab(tab) }
                         .padding(vertical = 8.dp, horizontal = 6.dp),
                     contentAlignment = Alignment.Center
                 ) {
@@ -297,8 +304,8 @@ fun LiquidGlassBottomBar(
                         Text(
                             text = tab.subtitle,
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (isSelected) tab.accentColor else TextTertiary,
-                            fontSize = 9.sp,
+                            color = if (isSelected) CyberCyanLight else TextTertiary,
+                            fontSize = 10.sp,
                             fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
                         )
                     }
@@ -350,7 +357,7 @@ fun RunningCircleIndicator(
         label = "coreScale"
     )
 
-    Canvas(modifier = modifier.size(size)) {
+    Canvas(modifier = modifier.size(size).semantics { progressBarRangeInfo = ProgressBarRangeInfo.Indeterminate }) {
         val strokePx = strokeWidth.toPx()
         val diameter = this.size.minDimension
         val ringRadius = (diameter - strokePx) / 2f
@@ -404,7 +411,7 @@ fun LiquidGlassPill(
     content: @Composable RowScope.() -> Unit,
 ) {
     val shape = RoundedCornerShape(cornerRadius)
-    val clickableMod = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier
+    val clickableMod = if (onClick != null) Modifier.sizeIn(minHeight = 48.dp).clickable(role = Role.Button, onClick = onClick) else Modifier
     Box(
         modifier = modifier
             .clip(shape)
@@ -420,9 +427,9 @@ fun LiquidGlassPill(
                 1.dp,
                 Brush.horizontalGradient(
                     listOf(
-                        Color.White.copy(alpha = 0.22f),
-                        accentColor.copy(alpha = 0.45f),
-                        DeepIndigo.copy(alpha = 0.18f)
+                        Color.White.copy(alpha = 0.18f),
+                        accentColor.copy(alpha = 0.13f),
+                        Color.White.copy(alpha = 0.05f)
                     )
                 ),
                 shape
