@@ -7,6 +7,8 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.ColorSpace
 import android.graphics.Matrix
+import android.graphics.Paint
+import android.graphics.RectF
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.ParcelFileDescriptor
@@ -19,6 +21,7 @@ import com.onndetect.detection.temporal.FrameCosineDelta
 import com.onndetect.detection.temporal.VideoDecoder
 import com.onndetect.detection.visual.LlamaCppVlmPrefillBackend
 import com.onndetect.detection.visual.OnDemandForensicVlmAnalyzer
+import com.onndetect.chat.ChatModelStore
 import com.onndetect.detection.visual.ResidualHeatmapExtractor
 import com.onndetect.domain.models.AnalysisStatus
 import com.onndetect.domain.models.DetectionVerdict
@@ -38,6 +41,7 @@ import java.util.Locale
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
+import org.json.JSONObject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
@@ -89,6 +93,10 @@ class ForensicRagEngine @Inject constructor(
         val estimatedSubjectTag: String = "not evaluated",
         val featureVector: FloatArray = FloatArray(0),
         val sourceTitle: String? = null,
+        val sourceUri: String? = null,
+        val sourceKind: RagMediaKind? = null,
+        val pageIndex: Int? = null,
+        val sourceSha256: String? = null,
     )
 
     data class IndexedMediaKnowledgeBase(
@@ -103,6 +111,7 @@ class ForensicRagEngine @Inject constructor(
         val chunks: List<TimelineChunk>,
         val voiceVaultMatchSummary: String,
         val scamRiskWarnings: List<String>,
+        val sourceSha256: String? = null,
     )
 
     data class RagAnswer(
@@ -112,6 +121,9 @@ class ForensicRagEngine @Inject constructor(
         val usedOnDeviceVlm: Boolean,
         val engineBadge: String,
         val latencyMs: Long,
+        val runtimeModelId: String? = null,
+        val runtimeLanguageSha256: String? = null,
+        val visualContextUsed: Boolean = false,
     )
 
     companion object {
@@ -151,6 +163,9 @@ class ForensicRagEngine @Inject constructor(
                 source.chunks.take(perSource).map { chunk ->
                     chunk.copy(
                         sourceTitle = chunk.sourceTitle ?: source.mediaTitle,
+                        sourceUri = chunk.sourceUri ?: source.sourceUri,
+                        sourceKind = chunk.sourceKind ?: source.mediaKind,
+                        sourceSha256 = chunk.sourceSha256 ?: source.sourceSha256,
                         formattedTimeRange = "${source.mediaTitle.take(80)} · ${chunk.formattedTimeRange}",
                         visualDescription = "Assessment for this file: ${source.headlineVerdict}. ${chunk.visualDescription}",
                     )
@@ -267,14 +282,28 @@ class ForensicRagEngine @Inject constructor(
         val recorded = runCatching { DetectionVerdict.valueOf(entity.verdict) }.getOrDefault(DetectionVerdict.INCONCLUSIVE)
         // Do not reinterpret stored scores with today's model thresholds.
         val verdict = if (status == AnalysisStatus.SUCCESS && entity.modelValidated) recorded.name else "INCONCLUSIVE"
+        val evidence = entity.evidenceJson?.let { runCatching { JSONObject(it) }.getOrNull() }
+        val analyzedMs = evidence?.optLong("analyzedDurationMs", 0L)?.coerceAtLeast(0) ?: 0L
+        val totalMs = evidence?.optLong("totalDurationMs", 0L)?.coerceAtLeast(0) ?: 0L
+        val timestamps = evidence?.optJSONArray("timestampsMs")?.let { values ->
+            (0 until minOf(values.length(), 30)).mapNotNull { i -> values.optLong(i, -1L).takeIf { it >= 0 } }
+        }.orEmpty()
+        val coverage = if (totalMs > 0) "Recorded media coverage: ${formatMs(analyzedMs)} of ${formatMs(totalMs)}. "
+            else "Media time coverage was not recorded. "
+        val identity = listOf("modelVersion", "preprocessingVersion", "calibrationVersion").mapNotNull { key ->
+            evidence?.optString(key)?.takeIf { it.isNotBlank() }?.let { "$key=$it" }
+        }.joinToString("; ")
         val chunk = TimelineChunk(
-            0, 0, entity.durationMs, if (entity.durationMs > 0) "Saved scan · ${formatMs(entity.durationMs)}" else "Saved scan",
+            0, 0, 0, "Scan ${entity.id.take(8)} · saved report",
             listOf("saved scan", entity.scanMode.lowercase(Locale.US)),
-            "Recorded assessment: $verdict. Detector score: ${measurement(entity.score)}. Residual score: ${measurement(signals?.srmForensicScore ?: Float.NaN)}. ${entity.reason.orEmpty()}",
+            "Recorded ${entity.scanMode} assessment: $verdict; status=${entity.status}. Detector score: ${measurement(entity.score)}. " +
+                "Residual score: ${measurement(signals?.srmForensicScore ?: Float.NaN)}. Semantic score: ${measurement(signals?.vfmProbeScore ?: Float.NaN)}. " +
+                coverage + (if (timestamps.isNotEmpty()) "Sampled media timestamps: ${timestamps.joinToString { formatMs(it) }}. " else "") +
+                "Processing time was ${entity.durationMs} ms; it is not media duration. $identity. ${entity.reason.orEmpty()}",
             if (entity.scanMode.contains("AUDIO")) "Recorded speech detector score: ${measurement(signals?.audioModelScore ?: Float.NaN)}." else "Not applicable.",
             "Speaker identity was not verified by chat.", entity.score, signals?.srmForensicScore ?: Float.NaN,
         )
-        return IndexedMediaKnowledgeBase(entity.id, RagMediaKind.SCAN_HISTORY_RECORD, "Scan ${entity.id.take(8)}", null, entity.durationMs,
+        return IndexedMediaKnowledgeBase(entity.id, RagMediaKind.SCAN_HISTORY_RECORD, "Scan ${entity.id.take(8)}", null, totalMs,
             entity.score, verdict, "Saved evidence", listOf(chunk), chunk.voiceVaultSummary,
             listOf("This is saved telemetry; the original media is not retained in scan history."))
     }
@@ -357,7 +386,8 @@ class ForensicRagEngine @Inject constructor(
             val decoded = decodeImage(file)
             try {
                 onProgress("Checking image evidence…")
-                val result = imageResult(decoded.bitmap, localUri, decoded.mime == "image/jpeg", decoded.minEdge, digest(file))
+                val mediaHash = digest(file)
+                val result = imageResult(decoded.bitmap, localUri, decoded.mime == "image/jpeg", decoded.minEdge, mediaHash)
                 val verdict = deviceVerdict(result)
                 val box = result.heatmap?.takeIf { it.size == 1024 }?.let { ResidualHeatmapExtractor.extractHotspotBoundingBox(it, 32, 8) }
                 val note = if (!result.releaseDeviceValidated) "Independent device validation is outstanding; these measurements are diagnostic." else result.reason.orEmpty()
@@ -366,7 +396,7 @@ class ForensicRagEngine @Inject constructor(
                     "Not applicable.", "Not applicable.", result.overallScore, result.signals.srmForensicScore,
                     hotspotBoxNorm = box?.let { floatArrayOf(it.normX0, it.normY0, it.normX1, it.normY1) }, hotspotZScore = box?.zScore ?: 0f)
                 IndexedMediaKnowledgeBase(UUID.randomUUID().toString(), RagMediaKind.IMAGE, "Attached image", uri.toString(), 0,
-                    result.overallScore, verdict, "Image evidence", listOf(chunk), "Not applicable.", listOf(note).filter { it.isNotBlank() })
+                    result.overallScore, verdict, "Image evidence", listOf(chunk), "Not applicable.", listOf(note).filter { it.isNotBlank() }, sourceSha256 = mediaHash)
             } finally { decoded.bitmap.recycle() }
         }
 
@@ -389,7 +419,7 @@ class ForensicRagEngine @Inject constructor(
         }
 
     suspend fun indexVideoUri(uri: Uri, maxFrames: Int = 12, onProgress: (String) -> Unit = {}): IndexedMediaKnowledgeBase =
-        withImported(uri, 512L * 1024 * 1024) { _, localUri ->
+        withImported(uri, 512L * 1024 * 1024) { file, localUri ->
             val job = currentCoroutineContext()
             onProgress("Reading video samples…")
             val decoded = videoDecoder.sampleFrames(localUri, maxFrames = maxFrames.coerceIn(1, 8), checkStop = { job.ensureActive() })
@@ -409,7 +439,7 @@ class ForensicRagEngine @Inject constructor(
                 }
                 IndexedMediaKnowledgeBase(UUID.randomUUID().toString(), RagMediaKind.VIDEO, "Attached video", uri.toString(), decoded.durationMs,
                     Float.NaN, "INCONCLUSIVE", "Sampled video evidence", chunks, "Speaker identity is not verified by chat.",
-                    listOf("${chunks.size} sampled frames were inspected. Changes between samples may be missed.", "Recording-level video aggregation has not been independently calibrated."))
+                    listOf("${chunks.size} sampled frames were inspected. Changes between samples may be missed.", "Recording-level video aggregation has not been independently calibrated."), sourceSha256 = digest(file))
             } finally { decoded.frames.forEach { if (!it.isRecycled) it.recycle() } }
         }
 
@@ -466,7 +496,7 @@ class ForensicRagEngine @Inject constructor(
                                         if (selectableText.isBlank()) listOf("document", "pdf", "page") else listOf("document", "pdf", "page", "text"),
                                         text, "Not applicable.", "Not applicable.", Float.NaN, Float.NaN,
                                         hotspotBoxNorm = if (section == 0) box?.let { floatArrayOf(it.normX0, it.normY0, it.normX1, it.normY1) } else null,
-                                        hotspotZScore = if (section == 0) box?.zScore ?: 0f else 0f, sourceTitle = fileName)
+                                        hotspotZScore = if (section == 0) box?.zScore ?: 0f else 0f, sourceTitle = fileName, pageIndex = i)
                                 }
                             } finally { bitmap.recycle() }
                         }
@@ -499,7 +529,72 @@ class ForensicRagEngine @Inject constructor(
             error("Supported documents are PDF, TXT, Markdown, JSON, CSV, and log text. Choose Images for a photo or screenshot.")
         }
         IndexedMediaKnowledgeBase(UUID.randomUUID().toString(), RagMediaKind.DOCUMENT, fileName.take(160), uri.toString(), 0,
-            Float.NaN, if (pdf) "INCONCLUSIVE" else "TEXT INDEXED — authenticity not evaluated", "Document evidence", chunks, "Not applicable.", warnings)
+            Float.NaN, if (pdf) "INCONCLUSIVE" else "TEXT INDEXED — authenticity not evaluated", "Document evidence", chunks, "Not applicable.", warnings, sourceSha256 = digest(file))
+    }
+
+    /** Decodes visual context under the same content hash as the indexed evidence. */
+    private suspend fun <T> withVisualContext(
+        kb: IndexedMediaKnowledgeBase?,
+        retrieved: List<TimelineChunk>,
+        block: suspend (Bitmap?, String) -> T,
+    ): T {
+        val selected = retrieved.firstOrNull { chunk ->
+            val kind = chunk.sourceKind ?: kb?.mediaKind
+            kind == RagMediaKind.IMAGE || kind == RagMediaKind.VIDEO || (kind == RagMediaKind.DOCUMENT && chunk.pageIndex != null)
+        }
+        val kind = selected?.sourceKind ?: kb?.mediaKind
+        val source = selected?.sourceUri ?: kb?.sourceUri
+        val expectedHash = selected?.sourceSha256 ?: kb?.sourceSha256
+        if (source == null || expectedHash == null || kind !in setOf(RagMediaKind.IMAGE, RagMediaKind.VIDEO, RagMediaKind.DOCUMENT)) {
+            return block(null, "No pixels are supplied. Answer only from the available text and measured evidence.")
+        }
+        if (kind == RagMediaKind.DOCUMENT && selected?.pageIndex == null) return block(null, "The attached document supplies retrieved text, not pixels.")
+        val maxBytes = when (kind) { RagMediaKind.VIDEO -> 512L * 1024 * 1024; RagMediaKind.IMAGE -> 64L * 1024 * 1024; else -> MAX_DOCUMENT_BYTES }
+        return withImported(Uri.parse(source), maxBytes) { file, localUri ->
+            require(digest(file) == expectedHash) { "This attachment changed since it was indexed. Attach it again before asking about its pixels." }
+            val title = selected?.sourceTitle ?: kb?.mediaTitle ?: "Attached media"
+            when (kind) {
+                RagMediaKind.IMAGE -> {
+                    val image = decodeImage(file)
+                    try { block(image.bitmap, "The supplied pixels are from $title. Describe visible content when asked. Visual appearance is not proof of generation or authenticity; preserve the measured assessment.") }
+                    finally { image.bitmap.recycle() }
+                }
+                RagMediaKind.VIDEO -> {
+                    val job = currentCoroutineContext()
+                    val samples = videoDecoder.sampleFrames(localUri, maxFrames = 4, outSize = 160, checkStop = { job.ensureActive() })
+                    val board = Bitmap.createBitmap(320, 368, Bitmap.Config.ARGB_8888)
+                    try {
+                        val canvas = Canvas(board).apply { drawColor(Color.WHITE) }
+                        val label = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK; textSize = 14f }
+                        samples.frames.forEachIndexed { i, frame ->
+                            val x = (i % 2) * 160f; val y = (i / 2) * 184f
+                            val scale = minOf(160f / frame.width, 160f / frame.height)
+                            val w = frame.width * scale; val h = frame.height * scale
+                            canvas.drawBitmap(frame, null, RectF(x + (160 - w) / 2, y + (160 - h) / 2, x + (160 + w) / 2, y + (160 + h) / 2), null)
+                            canvas.drawText(formatMs(samples.timestampsMs.getOrElse(i) { 0L }), x + 5, y + 179, label)
+                        }
+                        block(board, "$title is shown as up to four sampled frames, ordered left-to-right then top-to-bottom. Tile labels are actual sampled timestamps: ${samples.timestampsMs.joinToString { formatMs(it) }}. This is not continuous video or a full-video authenticity decision.")
+                    } finally { board.recycle(); samples.frames.forEach { if (!it.isRecycled) it.recycle() } }
+                }
+                else -> {
+                    ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY).use { descriptor ->
+                        PdfRenderer(descriptor).use { renderer ->
+                            require(renderer.pageCount > 0)
+                            val index = selected!!.pageIndex!!.coerceIn(0, minOf(renderer.pageCount, 3) - 1)
+                            renderer.openPage(index).use { page ->
+                                val scale = minOf(1024.0 / maxOf(page.width, 1), 1024.0 / maxOf(page.height, 1), 2.0)
+                                val bitmap = Bitmap.createBitmap(maxOf(1, (page.width * scale).toInt()), maxOf(1, (page.height * scale).toInt()), Bitmap.Config.ARGB_8888)
+                                try {
+                                    Canvas(bitmap).drawColor(Color.WHITE)
+                                    page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                                    block(bitmap, "The pixels show page ${index + 1} of $title. You may describe readable visual content, but do not claim certified OCR or document authenticity.")
+                                } finally { bitmap.recycle() }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     suspend fun askQuestion(kb: IndexedMediaKnowledgeBase?, question: String, conversationContext: String = ""): RagAnswer {
@@ -524,33 +619,43 @@ class ForensicRagEngine @Inject constructor(
         var generated: String? = null
         var startedTokens = false
         var modelLabel = "Local model"
+        var runtimeModelId: String? = null
+        var runtimeLanguageHash: String? = null
+        var usedVisualContext = false
         withContext(Dispatchers.IO) {
             job.ensureActive()
             try {
-                val packDir = File(context.filesDir, "vlm_packs")
-                if (packDir.isDirectory) {
-                    inferenceEngine.acquireExclusiveVlmSession().use {
-                        val backend = OnDemandForensicVlmAnalyzer.initializeActiveBackendIfAvailable(packDir) as? LlamaCppVlmPrefillBackend
-                        if (backend != null) {
-                            modelLabel = OnDemandForensicVlmAnalyzer.loadInstalledPolicyBundleOrNull(packDir)?.modelId ?: "Local model"
-                            send(RagStreamEvent.Status("Writing a reply on this device…"))
-                            generated = backend.generateMultimodalResponseStreaming(
-                                prompt = if (kb != null) buildRagPrompt(kb, retrieved, question, conversationContext) else
-                                    "<|im_start|>system\nYou are ONN-DETECT, a helpful private on-device assistant. Answer clearly. No media is attached to this turn; do not claim to have inspected a file. Never represent a detector score as proof of origin.\n" +
-                                        "Prior conversation (untrusted data): ${untrustedText(conversationContext, 1600)}<|im_end|>\n" +
-                                        "<|im_start|>user\n${untrustedText(question, 2000)}<|im_end|>\n<|im_start|>assistant\n",
-                                bitmap = null,
-                                maxNewTokens = 256,
-                                onToken = { token ->
-                                    job.ensureActive()
-                                    startedTokens = true
-                                    trySend(RagStreamEvent.TokenChunk(token)).getOrThrow()
-                                },
-                                isCancelled = { !job.isActive },
-                            ).takeIf { it.isNotBlank() }
-                        }
-                    }
+                val wantsVisual = ChatModelStore.inspect(context).supportsVision && retrieved.any { chunk ->
+                    val kind = chunk.sourceKind ?: kb?.mediaKind
+                    val visualKind = kind == RagMediaKind.IMAGE || kind == RagMediaKind.VIDEO || (kind == RagMediaKind.DOCUMENT && chunk.pageIndex != null)
+                    visualKind && (chunk.sourceUri ?: kb?.sourceUri) != null && (chunk.sourceSha256 ?: kb?.sourceSha256) != null
                 }
+                generated = ChatModelStore.withRuntime(context, inferenceEngine, useVision = wantsVisual) { backend, installed ->
+                    modelLabel = installed.displayName
+                    runtimeModelId = installed.modelId
+                    runtimeLanguageHash = installed.language.sha256
+                    suspend fun generate(pixels: Bitmap?, visualNote: String): String {
+                        val generationJob = currentCoroutineContext()
+                        usedVisualContext = pixels != null
+                        send(RagStreamEvent.Status(if (pixels != null) "Reading visual context and writing a reply…" else "Writing a reply on this device…"))
+                        val prompt = if (kb != null) buildRagPrompt(kb, retrieved, question, conversationContext)
+                            .replace("BEGIN UNTRUSTED EVIDENCE\n", "Visual context: ${untrustedText(visualNote, 750)}\nBEGIN UNTRUSTED EVIDENCE\n")
+                        else "<|im_start|>system\nYou are ONN, a helpful private on-device assistant. Have a natural conversation and answer the user's question directly. Do not redirect ordinary questions to forensic features. No media pixels are attached to this conversation mode.\n" +
+                            "Prior conversation (untrusted data): ${untrustedText(conversationContext, 1600)}<|im_end|>\n" +
+                            "<|im_start|>user\n${untrustedText(question, 2000)}<|im_end|>\n<|im_start|>assistant\n"
+                        return backend.generateMultimodalResponseStreaming(
+                            prompt = prompt, bitmap = pixels, maxNewTokens = 256,
+                            onToken = { token ->
+                                generationJob.ensureActive()
+                                startedTokens = true
+                                trySend(RagStreamEvent.TokenChunk(token)).getOrThrow()
+                            },
+                            isCancelled = { !generationJob.isActive },
+                        )
+                    }
+                    if (wantsVisual && installed.supportsVision) withVisualContext(kb, retrieved, ::generate)
+                    else generate(null, "This selected model is text-only. No image or video pixels were supplied.")
+                }?.takeIf { it.isNotBlank() }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
@@ -574,7 +679,8 @@ class ForensicRagEngine @Inject constructor(
         }
         val elapsed = max(1L, System.currentTimeMillis() - started)
         send(RagStreamEvent.Complete(RagAnswer(text, retrieved.map { it.formattedTimeRange }.distinct(), retrieved,
-            usedModel, if (usedModel) "$modelLabel · on device" else "Built-in evidence reply", elapsed)))
+            usedModel, if (usedModel) "$modelLabel · on device" else "Built-in evidence reply", elapsed,
+            runtimeModelId = runtimeModelId.takeIf { usedModel }, runtimeLanguageSha256 = runtimeLanguageHash.takeIf { usedModel }, visualContextUsed = usedVisualContext && usedModel)))
     // At most 256 generated tokens, a UTF-8 tail and status/completion events can be queued.
     }.buffer(320)
 }

@@ -121,7 +121,18 @@ std::string java_string_utf8(JNIEnv* env, jstring value) {
 }
 
 std::string chat_prompt(const llama_model* model, const std::string& content) {
-    if (content.find("<|im_start|>") != std::string::npos) return content;
+    // Match the shipped Qwen3.5 template's enable_thinking=false generation
+    // prefix. Its empty reasoning block belongs to the prompt, not the UI.
+    const auto response_prefix = [model](std::string text) {
+        char architecture[64] = {};
+        llama_model_meta_val_str(model, "general.architecture", architecture, sizeof(architecture));
+        if (std::string(architecture) == "qwen35") {
+            if (text.ends_with("<|im_start|>assistant\n")) text += "<think>\n\n</think>\n\n";
+            else if (text.ends_with("<think>\n")) text += "\n</think>\n\n";
+        }
+        return text;
+    };
+    if (content.find("<|im_start|>") != std::string::npos) return response_prefix(content);
     const llama_chat_message message = { "user", content.c_str() };
     const char* model_template = llama_model_chat_template(model, nullptr);
     std::vector<char> formatted(content.size() + 1024);
@@ -130,8 +141,8 @@ std::string chat_prompt(const llama_model* model, const std::string& content) {
         formatted.resize(length);
         length = llama_chat_apply_template(model_template, &message, 1, true, formatted.data(), static_cast<int32_t>(formatted.size()));
     }
-    if (length > 0 && length <= static_cast<int>(formatted.size())) return std::string(formatted.data(), length);
-    return "<|im_start|>user\n" + content + "<|im_end|>\n<|im_start|>assistant\n";
+    if (length > 0 && length <= static_cast<int>(formatted.size())) return response_prefix(std::string(formatted.data(), length));
+    return response_prefix("<|im_start|>user\n" + content + "<|im_end|>\n<|im_start|>assistant\n");
 }
 
 struct GenerationCallbacks {
@@ -529,7 +540,16 @@ Java_com_onndetect_detection_visual_LlamaCppVlmPrefillBackend_nativeGenerateMult
         mtmd_bitmap* bitmap = mtmd_bitmap_init(static_cast<uint32_t>(imageWidth), static_cast<uint32_t>(imageHeight), reinterpret_cast<const unsigned char*>(bytes));
         const mtmd_bitmap* bitmaps[1] = { bitmap };
         std::string marker = mtmd_default_marker();
-        std::string full_prompt = chat_prompt(ctx->model, prompt.find(marker) != std::string::npos ? prompt : marker + "\n" + prompt);
+        // The media marker belongs inside the last user turn. Putting it before
+        // an already formatted system/user prompt changes the role structure.
+        std::string media_prompt = prompt;
+        if (media_prompt.find(marker) == std::string::npos) {
+            const std::string user_prefix = "<|im_start|>user\n";
+            const size_t last_user = media_prompt.rfind(user_prefix);
+            if (last_user != std::string::npos) media_prompt.insert(last_user + user_prefix.size(), marker + "\n");
+            else media_prompt = marker + "\n" + media_prompt;
+        }
+        std::string full_prompt = chat_prompt(ctx->model, media_prompt);
         mtmd_input_chunks* chunks = mtmd_input_chunks_init();
         mtmd_input_text text = { full_prompt.c_str(), true, true };
         const int tokenize_result = mtmd_tokenize(ctx->mtmd, chunks, &text, bitmaps, 1);

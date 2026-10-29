@@ -27,6 +27,14 @@ All media decoding, neural inference, cryptographic verification, and tamper ana
 
 ---
 
+## Private Media Chat
+
+The Android chat supports typed messages and up to four image, video, audio, PDF or text attachments per message. It includes attachment previews, source citations, follow-up context, incremental replies, a running indicator, stop/retry/copy actions, and a keyboard-aware glass interface.
+
+A compatible verified local model pack enables native token generation. Without one, the app provides clearly labelled built-in evidence summaries. PDF selectable-text extraction requires Android 15/API 35 or later and covers the first three pages; scanned-document OCR is not available. Chat does not upgrade missing or unvalidated evidence into an authenticity claim.
+
+See [chat implementation and limits](docs/CHAT_EXPERIENCE_2026-10-30.md).
+
 ## Empirical Benchmark Summary (Historical / Aspirational)
 
 > NOTE: The figures below are historical/aspirational benchmarks from the v10 sealed splits. Neural assets in this tree are explicitly UNVALIDATED; the app returns `INCONCLUSIVE` for statistical verdicts. These numbers are NOT a claim of current detector performance and must not be read as such.

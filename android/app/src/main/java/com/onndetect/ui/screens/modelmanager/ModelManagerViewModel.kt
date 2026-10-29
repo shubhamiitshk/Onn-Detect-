@@ -4,20 +4,25 @@ import android.app.Application
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.onndetect.chat.ChatModelStore
 import com.onndetect.detection.visual.OnDemandForensicVlmAnalyzer
 import com.onndetect.detection.visual.VlmPackManager
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 data class ModelManagerUiState(
     val deviceProfile: VlmPackManager.DeviceHardwareProfile,
-    val catalog: List<VlmPackManager.VlmCatalogEntry>,
     val installedPack: VlmPackManager.InstalledVlmPackDetails?,
+    val chatStatus: ChatModelStore.Status = ChatModelStore.Status(null, false, "Checking conversation model…", false),
     val isImporting: Boolean = false,
     val importProgressText: String = "",
     val errorMessage: String? = null,
@@ -27,107 +32,74 @@ data class ModelManagerUiState(
 )
 
 @HiltViewModel
-class ModelManagerViewModel @Inject constructor(
-    application: Application,
-) : AndroidViewModel(application) {
-
-    private val _uiState = MutableStateFlow(buildInitialState())
+class ModelManagerViewModel @Inject constructor(application: Application) : AndroidViewModel(application) {
+    private val _uiState = MutableStateFlow(ModelManagerUiState(
+        deviceProfile = VlmPackManager.inspectDevice(application),
+        installedPack = VlmPackManager.getInstalledPackDetails(application),
+        allowCustomKey = OnDemandForensicVlmAnalyzer.allowUntrustedPublisherForTesting,
+        cascadeEnabled = OnDemandForensicVlmAnalyzer.experimentalVlmCascadeEnabled,
+    ))
     val uiState: StateFlow<ModelManagerUiState> = _uiState.asStateFlow()
 
-    private fun buildInitialState(): ModelManagerUiState {
-        val app = getApplication<Application>()
-        val profile = VlmPackManager.inspectDevice(app)
-        val catalog = VlmPackManager.getCatalog(profile)
-        val installed = VlmPackManager.getInstalledPackDetails(app)
-
-        return ModelManagerUiState(
-            deviceProfile = profile,
-            catalog = catalog,
-            installedPack = installed,
-            allowCustomKey = OnDemandForensicVlmAnalyzer.allowUntrustedPublisherForTesting,
-            cascadeEnabled = OnDemandForensicVlmAnalyzer.experimentalVlmCascadeEnabled,
-        )
+    init {
+        viewModelScope.launch { ChatModelStore.status.collect { status -> _uiState.update { it.copy(chatStatus = status) } } }
+        refreshInstalledPack()
     }
 
     fun refreshInstalledPack() {
-        val app = getApplication<Application>()
-        val installed = VlmPackManager.getInstalledPackDetails(app)
-        _uiState.update {
-            it.copy(
-                installedPack = installed,
-                cascadeEnabled = OnDemandForensicVlmAnalyzer.experimentalVlmCascadeEnabled,
-                allowCustomKey = OnDemandForensicVlmAnalyzer.allowUntrustedPublisherForTesting,
-            )
-        }
-    }
-
-    fun importZip(uri: Uri) {
         viewModelScope.launch {
-            _uiState.update {
-                it.copy(
-                    isImporting = true,
-                    importProgressText = "Preparing pack import...",
-                    errorMessage = null,
-                    successMessage = null,
-                )
-            }
-
-            val result = VlmPackManager.importPackZip(
-                context = getApplication(),
-                zipUri = uri,
-                allowCustomKey = _uiState.value.allowCustomKey,
-                onProgress = { step ->
-                    _uiState.update { it.copy(importProgressText = step) }
-                }
-            )
-
-            result.fold(
-                onSuccess = { pack ->
-                    _uiState.update {
-                        it.copy(
-                            isImporting = false,
-                            installedPack = pack,
-                            cascadeEnabled = true,
-                            successMessage = "Successfully installed and verified '${pack.packId}'! Tier-2 escalation is active.",
-                            errorMessage = null,
-                        )
-                    }
-                },
-                onFailure = { err ->
-                    _uiState.update {
-                        it.copy(
-                            isImporting = false,
-                            errorMessage = err.localizedMessage ?: "Failed to import pack archive",
-                            successMessage = null,
-                        )
-                    }
-                }
-            )
+            try {
+                val app = getApplication<Application>()
+                ChatModelStore.refresh(app)
+                val installed = withContext(Dispatchers.IO) { VlmPackManager.getInstalledPackDetails(app) }
+                _uiState.update { it.copy(installedPack = installed, deviceProfile = VlmPackManager.inspectDevice(app)) }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) { _uiState.update { it.copy(errorMessage = error.message ?: "Could not inspect local model storage.") } }
         }
     }
 
-    fun uninstall() {
-        val app = getApplication<Application>()
-        val success = VlmPackManager.uninstallPack(app)
-        if (success) {
-            _uiState.update {
-                it.copy(
-                    installedPack = null,
-                    cascadeEnabled = false,
-                    successMessage = "VLM feature pack uninstalled successfully. Storage freed.",
-                    errorMessage = null,
+    fun importChatZip(uri: Uri) {
+        if (_uiState.value.isImporting) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isImporting = true, importProgressText = "Opening conversation pack…", errorMessage = null, successMessage = null) }
+            try {
+                val result = ChatModelStore.importPackZip(getApplication(), uri) { progress -> _uiState.update { it.copy(importProgressText = progress) } }
+                result.fold(
+                    onSuccess = { pack -> _uiState.update { it.copy(successMessage = "${pack.displayName} is ready for chat${if (pack.supportsVision) " and visual questions" else ""}.") } },
+                    onFailure = { failure -> _uiState.update { it.copy(errorMessage = failure.message ?: "Could not import this conversation pack.") } },
                 )
-            }
-        } else {
-            _uiState.update {
-                it.copy(errorMessage = "Failed to uninstall pack")
-            }
+            } finally { _uiState.update { it.copy(isImporting = false, importProgressText = "") } }
         }
     }
 
-    fun toggleCascade(enabled: Boolean) {
-        OnDemandForensicVlmAnalyzer.experimentalVlmCascadeEnabled = enabled
-        _uiState.update { it.copy(cascadeEnabled = enabled) }
+    fun removeChatModel() {
+        if (_uiState.value.isImporting) return
+        viewModelScope.launch {
+            try {
+                ChatModelStore.uninstall(getApplication())
+                _uiState.update { it.copy(successMessage = "Conversation model removed. Bundled detectors are unchanged.", errorMessage = null) }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) { _uiState.update { it.copy(errorMessage = error.message ?: "Could not remove the conversation model.") } }
+        }
+    }
+
+    /** Legacy forensic research packs remain a separate explicit workflow. */
+    fun importZip(uri: Uri) {
+        if (_uiState.value.isImporting) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isImporting = true, importProgressText = "Opening forensic research pack…", errorMessage = null, successMessage = null) }
+            try {
+                val result = VlmPackManager.importPackZip(getApplication(), uri, _uiState.value.allowCustomKey) { progress ->
+                    _uiState.update { it.copy(importProgressText = progress) }
+                }
+                result.fold(
+                    onSuccess = { installed -> _uiState.update { it.copy(installedPack = installed,
+                        cascadeEnabled = OnDemandForensicVlmAnalyzer.experimentalVlmCascadeEnabled,
+                        successMessage = "Forensic research pack imported. Conversation model selection is unchanged.") } },
+                    onFailure = { failure -> _uiState.update { it.copy(errorMessage = failure.message ?: "Could not import the research pack.") } },
+                )
+            } finally { _uiState.update { it.copy(isImporting = false, importProgressText = "") } }
+        }
     }
 
     fun toggleAllowCustomKey(enabled: Boolean) {
@@ -135,7 +107,5 @@ class ModelManagerViewModel @Inject constructor(
         _uiState.update { it.copy(allowCustomKey = enabled) }
     }
 
-    fun clearMessages() {
-        _uiState.update { it.copy(errorMessage = null, successMessage = null) }
-    }
+    fun clearMessages() = _uiState.update { it.copy(errorMessage = null, successMessage = null) }
 }

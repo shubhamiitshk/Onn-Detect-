@@ -1,0 +1,115 @@
+{
+  "date_local": "2026-10-30",
+  "timezone": "Asia/Calcutta",
+  "source_head": "d48de77ed89041cc58bab62a30954c139ffbfd10",
+  "source_dirty": true,
+  "unit_tests": {
+    "suites": 48,
+    "tests": 413,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "connected_tests": {
+    "tests": 11,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "classes": {
+      "com.onndetect.ChatExperienceTest": 7,
+      "com.onndetect.ChatSessionInstrumentationTest": 2,
+      "com.onndetect.NativeStreamingInstrumentationTest": 2
+    },
+    "cases": [
+      {
+        "class": "com.onndetect.ChatExperienceTest",
+        "name": "saveEmptyChatDesignPreview",
+        "seconds": 4.081
+      },
+      {
+        "class": "com.onndetect.ChatExperienceTest",
+        "name": "composerDisablesEmptySendAndSubmitsTypedMessage",
+        "seconds": 3.52
+      },
+      {
+        "class": "com.onndetect.ChatExperienceTest",
+        "name": "saveStreamingConversationDesignPreview",
+        "seconds": 2.186
+      },
+      {
+        "class": "com.onndetect.ChatExperienceTest",
+        "name": "streamingShowsRunningIndicatorAndStopControl",
+        "seconds": 1.467
+      },
+      {
+        "class": "com.onndetect.ChatExperienceTest",
+        "name": "failedResponseProvidesRetryAction",
+        "seconds": 1.719
+      },
+      {
+        "class": "com.onndetect.ChatExperienceTest",
+        "name": "attachmentOnlyMessageCanSendAndAttachmentCanBeRemoved",
+        "seconds": 1.861
+      },
+      {
+        "class": "com.onndetect.ChatExperienceTest",
+        "name": "composerControlsRemainReachableWithLargeText",
+        "seconds": 1.452
+      },
+      {
+        "class": "com.onndetect.ChatSessionInstrumentationTest",
+        "name": "attachedTextTraversesImporterAndProducesGroundedReply",
+        "seconds": 1.385
+      },
+      {
+        "class": "com.onndetect.ChatSessionInstrumentationTest",
+        "name": "busySendIsIgnoredAndNewConversationClearsAttachmentsAndContext",
+        "seconds": 1.46
+      },
+      {
+        "class": "com.onndetect.NativeStreamingInstrumentationTest",
+        "name": "actualGgufEmitsTokensBeforeReturningFinalResponse",
+        "seconds": 76.004
+      },
+      {
+        "class": "com.onndetect.NativeStreamingInstrumentationTest",
+        "name": "nativeGenerationStopsAfterCancellationDuringTokenDelivery",
+        "seconds": 21.796
+      }
+    ]
+  },
+  "device": "onn_api36 API36 x86_64 read-only disposable emulator, 2GB RAM, 2 virtual CPU cores",
+  "native_model": "Existing local Qwen3.5-0.8B-Q4_0.gguf deployed to test-only /data/local/tmp; genuine GGUF inference, no generated-model mock",
+  "native_test_scope": "Real token callbacks and cancellation; not detector accuracy or physical-phone performance",
+  "lint": {
+    "errors": 0,
+    "warnings": 81
+  },
+  "build": "Minified release and connected test build successful; latest final build 3m14s",
+  "apk": {
+    "path": "android/app/build/outputs/apk/release/app-release.apk",
+    "bytes": 146385270,
+    "sha256": "5b3d4ca0a17589ebd255b52189c044bcb710d5792ea4f36859b510b389508c9d",
+    "signing_note": "Local/diagnostic release signing configuration; no production signing promotion"
+  },
+  "previews": {
+    "kind": "Real Android Compose renders with synthetic design-fixture messages, not detector accuracy examples",
+    "paths": [
+      "outputs/chat-ui/ONN-Chat-Preview/chat-empty.png",
+      "outputs/chat-ui/ONN-Chat-Preview/chat-streaming.png"
+    ]
+  },
+  "limits": [
+    "General-purpose generated conversation needs compatible verified installed local model pack",
+    "No ChatGPT cloud connection",
+    "PDF selectable-text extraction API35+; first3pages; no OCR",
+    "Current model training/device validation and remaining audit findings are separate work",
+    "Chat transcript is session-local; no new persistent chat database"
+  ],
+  "gates": {
+    "apk_permissions_hashes_16k": "passed",
+    "android_source_consistency": "passed; desktop-only validation warning",
+    "documentation_consistency": "passed",
+    "git_diff_check": "passed"
+  }
+}

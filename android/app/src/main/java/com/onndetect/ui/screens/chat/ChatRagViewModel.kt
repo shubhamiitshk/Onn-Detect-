@@ -1,12 +1,15 @@
 package com.onndetect.ui.screens.chat
 
 import android.net.Uri
+import android.content.Context
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.onndetect.data.repository.ScanHistoryRepository
+import com.onndetect.chat.ChatModelStore
 import com.onndetect.rag.ForensicRagEngine
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -18,6 +21,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import java.text.DateFormat
+import java.util.Date
 import java.util.UUID
 import javax.inject.Inject
 
@@ -27,7 +32,13 @@ data class AttachedMedia(
     val fileName: String,
     val mimeType: String? = null,
     val fileSizeFormatted: String? = null,
+    /** Saved scan identity; report attachments never enter the provider importer. */
+    val scanId: String? = null,
 )
+
+enum class ChatIntent { NORMAL, MEDIA, REPORT }
+
+data class ScanReportChoice(val id: String, val title: String, val assessment: String, val dateLabel: String)
 
 data class ChatMessage(
     val id: String,
@@ -54,6 +65,13 @@ data class ChatRagUiState(
     val errorMessage: String? = null,
     val stagedAttachments: List<AttachedMedia> = emptyList(),
     val canRetry: Boolean = false,
+    val intent: ChatIntent = ChatIntent.NORMAL,
+    val recentReports: List<ScanReportChoice> = emptyList(),
+    val reportsLoading: Boolean = true,
+    val modelReady: Boolean = false,
+    val modelName: String = "No chat model selected",
+    val modelStatusMessage: String = "Set up a local model for generated conversation.",
+    val modelSupportsVision: Boolean = false,
 )
 
 @HiltViewModel
@@ -61,6 +79,7 @@ class ChatRagViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val ragEngine: ForensicRagEngine,
     private val historyRepository: ScanHistoryRepository,
+    @param:ApplicationContext private val appContext: Context,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(ChatRagUiState())
     val uiState: StateFlow<ChatRagUiState> = _uiState.asStateFlow()
@@ -82,15 +101,69 @@ class ChatRagViewModel @Inject constructor(
     )
 
     init {
+        viewModelScope.launch {
+            ChatModelStore.status.collect { status ->
+                _uiState.update { it.copy(modelReady = status.isReady, modelName = status.modelName,
+                    modelStatusMessage = status.message, modelSupportsVision = status.supportsVision) }
+            }
+        }
+        refreshChatModel()
+        viewModelScope.launch {
+            try {
+                historyRepository.observeAll().collect { records ->
+                    val formatter = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
+                    val choices = records.take(100).map { record ->
+                        val kind = when {
+                            record.scanMode.contains("VIDEO") -> "Video"
+                            record.scanMode.contains("AUDIO") -> "Audio"
+                            record.scanMode.contains("IMAGE") -> "Image"
+                            else -> "Media"
+                        }
+                        val assessment = if (record.status == "SUCCESS" && record.modelValidated &&
+                            record.verdict in setOf("AUTHENTIC", "SYNTHETIC")) record.verdict else "INCONCLUSIVE"
+                        ScanReportChoice(record.id, "$kind scan · ${record.id.take(8)}", assessment,
+                            formatter.format(Date(record.timestamp)))
+                    }
+                    _uiState.update { it.copy(recentReports = choices, reportsLoading = false) }
+                }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { _uiState.update { it.copy(reportsLoading = false) } }
+        }
         // A new chat is empty. Previously scanned private media is loaded only by an explicit route.
         savedStateHandle.get<String>("scanId")?.takeIf(String::isNotBlank)?.let(::loadFromScanHistory)
+    }
+
+    fun refreshChatModel() {
+        viewModelScope.launch(Dispatchers.IO) { ChatModelStore.refresh(appContext) }
+    }
+
+    fun setChatIntent(intent: ChatIntent) {
+        if (_uiState.value.isGenerating || _uiState.value.isIndexing) return
+        if (intent == ChatIntent.NORMAL) {
+            sourceKnowledge.clear()
+            _uiState.update { it.copy(intent = intent, knowledgeBase = null, selectedChunkIndex = null,
+                stagedAttachments = emptyList(), stagedAttachment = null) }
+        } else _uiState.update { it.copy(intent = intent) }
+    }
+
+    fun stageScanReport(scanId: String) {
+        val choice = _uiState.value.recentReports.firstOrNull { it.id == scanId }
+        if (choice == null) {
+            _uiState.update { it.copy(errorMessage = "This scan report is no longer available.") }
+            return
+        }
+        stageAttachments(listOf(AttachedMedia(
+            uri = Uri.parse("onn-report://scan/${Uri.encode(scanId)}"),
+            kind = ForensicRagEngine.RagMediaKind.SCAN_HISTORY_RECORD,
+            fileName = choice.title, fileSizeFormatted = choice.assessment, scanId = scanId,
+        )))
     }
 
     fun loadFromScanHistory(scanId: String) {
         resetWork()
         sourceKnowledge.clear()
         val version = requestVersion
-        _uiState.update { it.copy(isIndexing = true, indexingProgressText = "Opening scan…", errorMessage = null) }
+        _uiState.update { it.copy(isIndexing = true, indexingProgressText = "Opening scan…", errorMessage = null, intent = ChatIntent.REPORT) }
         historyJob = viewModelScope.launch {
             try {
                 val entity = withContext(Dispatchers.IO) { historyRepository.findById(scanId) }
@@ -125,13 +198,21 @@ class ChatRagViewModel @Inject constructor(
 
     fun stageAttachments(attachments: List<AttachedMedia>) {
         if (attachments.isEmpty()) return
-        val supported = attachments.filter { it.uri.scheme == "content" && it.kind != ForensicRagEngine.RagMediaKind.SCAN_HISTORY_RECORD }
+        val supported = attachments.filter {
+            if (it.kind == ForensicRagEngine.RagMediaKind.SCAN_HISTORY_RECORD) !it.scanId.isNullOrBlank() && it.scanId.length <= 200
+            else it.uri.scheme == "content" && it.scanId == null
+        }
         _uiState.update { state ->
             val combined = (state.stagedAttachments + supported).distinctBy { it.uri.toString() }
             val kept = combined.take(MAX_ATTACHMENTS)
             state.copy(
                 stagedAttachments = kept,
                 stagedAttachment = kept.firstOrNull(),
+                intent = when {
+                    kept.isEmpty() -> state.intent
+                    kept.all { it.kind == ForensicRagEngine.RagMediaKind.SCAN_HISTORY_RECORD } -> ChatIntent.REPORT
+                    else -> ChatIntent.MEDIA
+                },
                 errorMessage = when {
                     supported.size != attachments.size -> "Choose images, videos, audio, PDFs or text files from your device."
                     combined.size > MAX_ATTACHMENTS -> "You can attach up to $MAX_ATTACHMENTS files per message."
@@ -155,7 +236,10 @@ class ChatRagViewModel @Inject constructor(
     fun newConversation() {
         resetWork()
         sourceKnowledge.clear()
-        _uiState.value = ChatRagUiState()
+        val current = _uiState.value
+        _uiState.value = ChatRagUiState(recentReports = current.recentReports, reportsLoading = current.reportsLoading,
+            modelReady = current.modelReady, modelName = current.modelName, modelStatusMessage = current.modelStatusMessage,
+            modelSupportsVision = current.modelSupportsVision)
     }
 
     fun clearConversation() = newConversation()
@@ -212,6 +296,7 @@ class ChatRagViewModel @Inject constructor(
                 ForensicRagEngine.RagMediaKind.VIDEO -> "Review this video and explain what the sampled frames and audio can tell us."
                 ForensicRagEngine.RagMediaKind.AUDIO -> "Review this audio for available speech-detector evidence and explain its limitations."
                 ForensicRagEngine.RagMediaKind.DOCUMENT -> "Summarize this document and explain any available forensic observations."
+                ForensicRagEngine.RagMediaKind.SCAN_HISTORY_RECORD -> "Explain this saved forensic report, its measured evidence, coverage, and limitations."
                 else -> "Review this image for AI-generation evidence and explain any uncertainty."
             }
         }
@@ -219,8 +304,8 @@ class ChatRagViewModel @Inject constructor(
             assistantId = UUID.randomUUID().toString(),
             query = query,
             attachments = staged,
-            priorKnowledge = state.knowledgeBase,
-            priorSources = sourceKnowledge.entries.map { it.key to it.value },
+            priorKnowledge = if (state.intent == ChatIntent.NORMAL) null else state.knowledgeBase,
+            priorSources = if (state.intent == ChatIntent.NORMAL) emptyList() else sourceKnowledge.entries.map { it.key to it.value },
             conversationContext = state.messages.filter { !it.isError && !it.isStreaming }.takeLast(8)
                 .joinToString("\n") { "${if (it.isUser) "User" else "Assistant"}: ${it.text.take(1600)}" }.takeLast(8000),
         )
@@ -270,6 +355,12 @@ class ChatRagViewModel @Inject constructor(
                             }
                             withContext(Dispatchers.IO) {
                                 val base = when (attachment.kind) {
+                                    ForensicRagEngine.RagMediaKind.SCAN_HISTORY_RECORD -> {
+                                        onProgress("Opening saved scan report…")
+                                        val record = historyRepository.findById(attachment.scanId ?: error("Missing report identity"))
+                                            ?: error("This scan report is no longer available.")
+                                        ragEngine.indexFromScanHistory(record)
+                                    }
                                     ForensicRagEngine.RagMediaKind.VIDEO -> ragEngine.indexVideoUri(attachment.uri, onProgress = onProgress)
                                     ForensicRagEngine.RagMediaKind.AUDIO -> ragEngine.indexAudioUri(attachment.uri, onProgress)
                                     ForensicRagEngine.RagMediaKind.DOCUMENT -> ragEngine.indexDocumentUri(

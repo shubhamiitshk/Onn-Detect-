@@ -66,6 +66,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.Lifecycle
 import androidx.navigation.NavController
 import com.onndetect.rag.ForensicRagEngine
 import com.onndetect.ui.components.GlassBottomTab
@@ -92,6 +94,8 @@ fun ChatRagScreen(navController: NavController, viewModel: ChatRagViewModel = hi
     val scope = rememberCoroutineScope()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var showAttachments by remember { mutableStateOf(false) }
+    var showReports by remember { mutableStateOf(false) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.refreshChatModel() }
     var requestedKind by remember { mutableStateOf<ForensicRagEngine.RagMediaKind?>(null) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) {
@@ -134,10 +138,23 @@ fun ChatRagScreen(navController: NavController, viewModel: ChatRagViewModel = hi
             onOpenModels = { navController.navigate(Routes.MODEL_MANAGER) },
             onCopy = { text -> (context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager)
                 ?.setPrimaryClip(ClipData.newPlainText("ONN response", text)) },
+            onIntentSelected = viewModel::setChatIntent,
+            onOpenReports = { showReports = true },
             modifier = Modifier.fillMaxSize().padding(bottom = if (imeVisible) 0.dp else scaffoldPadding.calculateBottomPadding()),
         )
     }
-    if (showAttachments) AttachmentSheet(onDismiss = { showAttachments = false }, onPick = ::pick)
+    if (showAttachments) AttachmentSheet(onDismiss = { showAttachments = false }, onPick = ::pick,
+        onReports = { showAttachments = false; viewModel.setChatIntent(ChatIntent.REPORT); showReports = true })
+    if (showReports) RecentReportSheet(
+        reports = uiState.recentReports, loading = uiState.reportsLoading,
+        selectedIds = uiState.stagedAttachments.mapNotNull { it.scanId }.toSet(),
+        availableSlots = (ChatRagViewModel.MAX_ATTACHMENTS - uiState.stagedAttachments.size).coerceAtLeast(0),
+        onToggle = { id ->
+            val staged = uiState.stagedAttachments.firstOrNull { it.scanId == id }
+            if (staged == null) viewModel.stageScanReport(id) else viewModel.removeStagedAttachment(staged.uri)
+        },
+        onDismiss = { showReports = false },
+    )
 }
 
 /** State-driven content used by the app, Compose tests and visual previews. */
@@ -156,6 +173,8 @@ fun ChatRagContent(
     onOpenModels: () -> Unit,
     onCopy: (String) -> Unit,
     modifier: Modifier = Modifier,
+    onIntentSelected: (ChatIntent) -> Unit = {},
+    onOpenReports: () -> Unit = {},
 ) {
     var input by rememberSaveable { mutableStateOf("") }
     var contextExpanded by rememberSaveable { mutableStateOf(false) }
@@ -185,6 +204,8 @@ fun ChatRagContent(
                 onNew = { input = ""; contextExpanded = false; followLatest = true; onNewConversation() },
                 onOpenModels = onOpenModels,
             )
+            ChatModeBar(uiState.intent, busy, onIntentSelected, onAttach, onOpenReports)
+            ChatModelStatus(uiState, onOpenModels)
             uiState.knowledgeBase?.let { kb ->
                 SourceContext(kb, uiState.selectedChunkIndex, contextExpanded, { contextExpanded = !contextExpanded }, onSelectChunk)
             }
@@ -195,7 +216,9 @@ fun ChatRagContent(
                     contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 28.dp),
                     verticalArrangement = Arrangement.spacedBy(26.dp),
                 ) {
-                    if (uiState.messages.isEmpty()) item(key = "welcome") { WelcomeState(onAttach) { input = it } }
+                    if (uiState.messages.isEmpty()) item(key = "welcome") {
+                        WelcomeState(onAttach, onOpenReports, uiState.intent) { input = it }
+                    }
                     items(uiState.messages, key = { it.id }) { message ->
                         MessageRow(message, !busy && uiState.canRetry && message.id == lastMessage?.id,
                             onRetry, onCopy, { contextExpanded = true; onSelectTimestamp(it) })
@@ -233,6 +256,39 @@ fun ChatRagContent(
 }
 
 @Composable
+private fun ChatModeBar(intent: ChatIntent, busy: Boolean, onSelect: (ChatIntent) -> Unit, onAttach: () -> Unit, onReports: () -> Unit) {
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 18.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        listOf(ChatIntent.NORMAL to "Chat", ChatIntent.MEDIA to "Media", ChatIntent.REPORT to "Scan reports").forEach { (mode, label) ->
+            FilterChip(selected = intent == mode, enabled = !busy,
+                onClick = { onSelect(mode); if (mode == ChatIntent.MEDIA) onAttach() else if (mode == ChatIntent.REPORT) onReports() },
+                label = { Text(label, fontSize = 12.sp) },
+                modifier = Modifier.testTag("chat_mode_${mode.name.lowercase(Locale.ROOT)}"),
+                colors = FilterChipDefaults.filterChipColors(containerColor = Color.Transparent,
+                    labelColor = ChatMuted, selectedContainerColor = ChatAccent.copy(alpha = 0.12f), selectedLabelColor = ChatAccent))
+        }
+    }
+}
+
+@Composable
+private fun ChatModelStatus(state: ChatRagUiState, onOpenModels: () -> Unit) {
+    Row(Modifier.padding(horizontal = 18.dp, vertical = 4.dp).fillMaxWidth().glassSurface(14.dp)
+        .clickable(onClick = onOpenModels).padding(horizontal = 12.dp, vertical = 9.dp)
+        .testTag("chat_model_status").semantics { contentDescription = "Chat model: ${state.modelName}. ${state.modelStatusMessage}" },
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+        Box(Modifier.size(6.dp).background(if (state.modelReady) Color(0xFF92D5BD) else Color(0xFFE3BB78), CircleShape))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(if (state.modelReady) state.modelName else "Set up a local chat model", color = ChatInk, fontSize = 11.sp,
+                fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(if (state.modelReady) "Ready for conversation${if (state.modelSupportsVision) " and image questions" else " · text only"}"
+                else state.modelStatusMessage.ifBlank { "Without a model, replies use built-in evidence summaries." }, color = ChatMuted, fontSize = 10.sp,
+                maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+        ChatIcon(Symbol.ARROW, ChatMuted, 16.dp)
+    }
+}
+
+@Composable
 private fun ChatHeader(hasMessages: Boolean, onNew: () -> Unit, onOpenModels: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(start = 22.dp, end = 14.dp, top = 6.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(38.dp).glassSurface(13.dp), contentAlignment = Alignment.Center) { ChatIcon(Symbol.SPARK, ChatAccent, 21.dp) }
@@ -252,19 +308,18 @@ private fun ChatHeader(hasMessages: Boolean, onNew: () -> Unit, onOpenModels: ()
 }
 
 @Composable
-private fun WelcomeState(onAttach: () -> Unit, onPrompt: (String) -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(top = 46.dp, bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+private fun WelcomeState(onAttach: () -> Unit, onOpenReports: () -> Unit, intent: ChatIntent, onPrompt: (String) -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
         Box(Modifier.size(64.dp).glassSurface(22.dp), contentAlignment = Alignment.Center) { ChatIcon(Symbol.SPARK, ChatAccent, 34.dp) }
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("A clearer look\nat your media.", color = ChatInk, fontSize = 32.sp, lineHeight = 38.sp, fontWeight = FontWeight.SemiBold)
-            Text("Ask a question or add a photo, video,\naudio clip or document.", color = ChatMuted, fontSize = 15.sp, lineHeight = 23.sp)
+            Text(when (intent) { ChatIntent.NORMAL -> "What's on\nyour mind?"; ChatIntent.MEDIA -> "A clearer look\nat your media."; ChatIntent.REPORT -> "Understand\nyour scan." }, color = ChatInk, fontSize = 32.sp, lineHeight = 38.sp, fontWeight = FontWeight.SemiBold)
+            Text(when (intent) { ChatIntent.NORMAL -> "Just type to start a conversation. You can also add media or a saved scan report."; ChatIntent.MEDIA -> "Add a photo, video, audio clip or document, then ask about it."; ChatIntent.REPORT -> "Bring an image, audio or video scan report into chat and explore its evidence." }, color = ChatMuted, fontSize = 15.sp, lineHeight = 23.sp)
         }
         Column(Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
             StarterCard(Symbol.IMAGE, "Take a closer look", "Add an image or video", onAttach)
             StarterCard(Symbol.FILE, "Read something together", "Add a PDF or text file", onAttach)
-            StarterCard(Symbol.SPARK, "Understand a result", "What can an AI detector tell me?") {
-                onPrompt("What can an AI detector tell me, and what are its limitations?")
-            }
+            StarterCard(Symbol.FILE, "Explain a scan report", "Choose from your saved image, audio or video scans", onOpenReports)
+            if (intent == ChatIntent.NORMAL) TextButton(onClick = { onPrompt("Hello! Let's chat.") }) { Text("Start with a hello", color = ChatAccent) }
         }
     }
 }
@@ -331,7 +386,7 @@ private fun MessageRow(message: ChatMessage, canRetry: Boolean, onRetry: () -> U
                     val replyMode = when {
                         badge.contains("built-in", ignoreCase = true) -> "Built-in evidence reply"
                         badge == "Local evidence" -> "Saved scan evidence"
-                        badge.contains("on device", ignoreCase = true) -> "Local model reply"
+                        badge.contains("on device", ignoreCase = true) -> "${badge.substringBefore(" · on device")} · local"
                         else -> badge.take(42)
                     }
                     Text(replyMode, color = ChatFaint, fontSize = 10.sp,
@@ -446,7 +501,7 @@ private fun AttachmentCard(attachment: AttachedMedia, onRemove: (() -> Unit)?) {
         AttachmentThumbnail(attachment)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(attachment.fileName, color = ChatInk, fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            val kind = when (attachment.kind) { ForensicRagEngine.RagMediaKind.IMAGE -> "Image"; ForensicRagEngine.RagMediaKind.VIDEO -> "Video"; ForensicRagEngine.RagMediaKind.AUDIO -> "Audio"; else -> "Document" }
+            val kind = when (attachment.kind) { ForensicRagEngine.RagMediaKind.IMAGE -> "Image"; ForensicRagEngine.RagMediaKind.VIDEO -> "Video"; ForensicRagEngine.RagMediaKind.AUDIO -> "Audio"; ForensicRagEngine.RagMediaKind.SCAN_HISTORY_RECORD -> "Scan report"; else -> "Document" }
             Text(listOfNotNull(kind, attachment.fileSizeFormatted).joinToString(" · "), color = ChatMuted, fontSize = 10.sp)
         }
         if (onRemove != null) IconButton(onClick = onRemove, modifier = Modifier.size(40.dp).semantics { contentDescription = "Remove ${attachment.fileName}" }) { ChatIcon(Symbol.CLOSE, ChatMuted, 15.dp) }
@@ -519,7 +574,7 @@ private fun SourceVideo(uri: String, seekMs: Long) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AttachmentSheet(onDismiss: () -> Unit, onPick: (ForensicRagEngine.RagMediaKind?) -> Unit) {
+private fun AttachmentSheet(onDismiss: () -> Unit, onPick: (ForensicRagEngine.RagMediaKind?) -> Unit, onReports: () -> Unit) {
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Color(0xFF17212D), contentColor = ChatInk) {
         Column(Modifier.fillMaxWidth().padding(start = 22.dp, end = 22.dp, bottom = 30.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Text("Add to your message", color = ChatInk, fontSize = 21.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 8.dp))
@@ -528,6 +583,49 @@ private fun AttachmentSheet(onDismiss: () -> Unit, onPick: (ForensicRagEngine.Ra
             AttachmentOption(Symbol.VIDEO, "Video", "Clips and saved videos") { onPick(ForensicRagEngine.RagMediaKind.VIDEO) }
             AttachmentOption(Symbol.AUDIO, "Audio", "Voice notes and recordings") { onPick(ForensicRagEngine.RagMediaKind.AUDIO) }
             AttachmentOption(Symbol.FILE, "Files & documents", "PDF, TXT, Markdown, CSV and JSON") { onPick(null) }
+            AttachmentOption(Symbol.FILE, "Saved scan reports", "Image, audio and video analysis from your history", onReports)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RecentReportSheet(reports: List<ScanReportChoice>, loading: Boolean, selectedIds: Set<String>,
+    availableSlots: Int, onToggle: (String) -> Unit, onDismiss: () -> Unit) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Color(0xFF17212D), contentColor = ChatInk) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Add scan reports", color = ChatInk, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
+                    Text("${selectedIds.size} selected · $availableSlots attachment slots left", color = ChatMuted, fontSize = 12.sp)
+                }
+                TextButton(onClick = onDismiss) { Text("Done", color = ChatAccent) }
+            }
+            Text("Reports retain the recorded assessment and measurements. Original media is not stored with a scan.",
+                color = ChatMuted, fontSize = 12.sp, lineHeight = 18.sp)
+            when {
+                loading -> Row(Modifier.padding(20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = ChatAccent)
+                    Text("Loading saved scans…", color = ChatMuted, fontSize = 13.sp)
+                }
+                reports.isEmpty() -> Text("No scan reports yet. Analyze an image, audio clip or video in Detect, then add its report here.",
+                    color = ChatMuted, fontSize = 14.sp, lineHeight = 22.sp, modifier = Modifier.padding(vertical = 20.dp))
+                else -> LazyColumn(Modifier.fillMaxWidth().heightIn(max = 430.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(reports, key = { it.id }) { report ->
+                        val selected = report.id in selectedIds
+                        Row(Modifier.fillMaxWidth().glassSurface(16.dp)
+                            .clickable(enabled = selected || availableSlots > 0) { onToggle(report.id) }
+                            .padding(horizontal = 12.dp, vertical = 12.dp).testTag("chat_report_${report.id}"),
+                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            ChatIcon(if (selected) Symbol.CHECK else Symbol.FILE, if (selected) ChatAccent else ChatMuted, 20.dp)
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(report.title, color = ChatInk, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                Text("${report.assessment} · ${report.dateLabel}", color = ChatMuted, fontSize = 11.sp)
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

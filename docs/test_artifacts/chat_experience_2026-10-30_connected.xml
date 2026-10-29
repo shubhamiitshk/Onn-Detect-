@@ -1,0 +1,19 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<testsuite name="com.onndetect.ChatExperienceTest" tests="11" failures="0" errors="0" skipped="0" time="117.98" timestamp="2026-10-29T18:42:38" hostname="localhost">
+  <properties>
+    <property name="device" value="onn_api36(AVD) - 16" />
+    <property name="flavor" value="" />
+    <property name="project" value=":app" />
+  </properties>
+  <testcase name="saveEmptyChatDesignPreview" classname="com.onndetect.ChatExperienceTest" time="4.081" />
+  <testcase name="composerDisablesEmptySendAndSubmitsTypedMessage" classname="com.onndetect.ChatExperienceTest" time="3.52" />
+  <testcase name="saveStreamingConversationDesignPreview" classname="com.onndetect.ChatExperienceTest" time="2.186" />
+  <testcase name="streamingShowsRunningIndicatorAndStopControl" classname="com.onndetect.ChatExperienceTest" time="1.467" />
+  <testcase name="failedResponseProvidesRetryAction" classname="com.onndetect.ChatExperienceTest" time="1.719" />
+  <testcase name="attachmentOnlyMessageCanSendAndAttachmentCanBeRemoved" classname="com.onndetect.ChatExperienceTest" time="1.861" />
+  <testcase name="composerControlsRemainReachableWithLargeText" classname="com.onndetect.ChatExperienceTest" time="1.452" />
+  <testcase name="attachedTextTraversesImporterAndProducesGroundedReply" classname="com.onndetect.ChatSessionInstrumentationTest" time="1.385" />
+  <testcase name="busySendIsIgnoredAndNewConversationClearsAttachmentsAndContext" classname="com.onndetect.ChatSessionInstrumentationTest" time="1.46" />
+  <testcase name="actualGgufEmitsTokensBeforeReturningFinalResponse" classname="com.onndetect.NativeStreamingInstrumentationTest" time="76.004" />
+  <testcase name="nativeGenerationStopsAfterCancellationDuringTokenDelivery" classname="com.onndetect.NativeStreamingInstrumentationTest" time="21.796" />
+</testsuite>

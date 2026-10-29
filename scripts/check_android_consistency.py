@@ -25,7 +25,8 @@ print(f"Kotlin sources found: {len(kt_files)}")
 declared = {}   # simple-name -> path
 for p, src in kt_files.items():
     m = re.findall(r"\b(?:class|interface|object|enum class)\s+(\w+)", src)
-    funs = re.findall(r"^\s*(?:@[\w.]+(?:\([^\n]*\))?\s+)*(?:(?:private|internal|public|suspend|inline|override|operator|tailrec)\s+)*fun\s+(?:(?:[\w.?<>]+)\.)?(\w+)\s*\(", src, re.M)
+    # Kotlin permits a type-parameter list between `fun` and its name.
+    funs = re.findall(r"^\s*(?:@[\w.]+(?:\([^\n]*\))?\s+)*(?:(?:private|internal|public|suspend|inline|override|operator|tailrec)\s+)*fun\s+(?:<[^>\n]+>\s+)?(?:(?:[\w.?<>]+)\.)?(\w+)\s*\(", src, re.M)
     declared[p.stem] = p
     for name in m:
         declared.setdefault(name, p)
