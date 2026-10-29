@@ -51,6 +51,9 @@ data class ChatMessage(
     val attachments: List<AttachedMedia> = emptyList(),
     val isError: Boolean = false,
     val wasStopped: Boolean = false,
+    val runtimeModelId: String? = null,
+    val runtimeLanguageSha256: String? = null,
+    val visualContextUsed: Boolean = false,
 )
 
 data class ChatRagUiState(
@@ -409,6 +412,9 @@ class ChatRagViewModel @Inject constructor(
                                                 text = event.answer.answerText,
                                                 citedTimestamps = event.answer.citedTimestamps,
                                                 engineBadge = event.answer.engineBadge,
+                                                runtimeModelId = event.answer.runtimeModelId,
+                                                runtimeLanguageSha256 = event.answer.runtimeLanguageSha256,
+                                                visualContextUsed = event.answer.visualContextUsed,
                                                 isStreaming = false,
                                             ) else it
                                         },
