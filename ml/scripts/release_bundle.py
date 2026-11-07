@@ -143,8 +143,12 @@ def validate_bundle(bundle, require_validated=False, allow_source_fpr_violation=
         if not re.fullmatch('[0-9a-f]{64}', str(digest)) or sha256_file(path) != digest:
             raise ValueError(f'Artifact checksum mismatch: {relative}')
         declared.add(relative)
+    # `trust/` payloads (C2PA anchors) ship in the APK but are not part of the
+    # detector lineage hash map. Mirror verify_android_artifact, which only
+    # hashes models/constants/fusion, instead of rejecting the real assets.
     actual = {p.relative_to(bundle).as_posix() for p in bundle.rglob('*') if p.is_file()}
-    if actual != declared | {manifest_relative}:
+    detector_actual = {p for p in actual if not p.startswith('trust/')}
+    if detector_actual != declared | {manifest_relative}:
         raise ValueError(f'Unmanifested/missing release files: {actual ^ (declared | {manifest_relative})}')
     if sha256_file(bundle / 'evaluation_report.json') != manifest.get('evaluation_report_hash'):
         raise ValueError('Evaluation report linkage mismatch')
@@ -385,7 +389,20 @@ def attach_device_report(bundle, report_path):
         try:
             os.rename(candidate, bundle)
         except Exception:
-            os.rename(backup, bundle)
+            # Windows apps/antivirus can hold a fresh directory briefly and
+            # turn the rollback rename into ERROR_ACCESS_DENIED. Retry a few
+            # times before giving up and losing the original bundle.
+            import time as _time
+            for _attempt in range(5):
+                _time.sleep(0.2 * (_attempt + 1))
+                try:
+                    os.rename(backup, bundle)
+                    break
+                except PermissionError:
+                    if _attempt == 4:
+                        raise
+            else:
+                raise
             raise
     return backup
 

@@ -97,7 +97,7 @@ class AudioClassifier(private val context: Context, private val engine: LiteRTIn
 
                 // Offline AudioSeal neural watermark detection
                 val watermark = audioSealDetector.analyze(decoded.pcm)
-                if (watermark is ProvenanceEvidence.WatermarkMark && watermark.confirmsAiInvolvement) {
+                if (watermark is ProvenanceEvidence.WatermarkMark && watermark.detected) {
                     provenanceEvidence = watermark
                 }
                 // An unusable window is SKIPPED rather than fatal: a file may

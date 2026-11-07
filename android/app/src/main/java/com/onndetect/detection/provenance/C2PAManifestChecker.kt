@@ -236,7 +236,9 @@ class C2PAManifestChecker @Inject constructor() {
 
         fun toFinding(container: String, ranges: List<Pair<Long, Long>>, fileBytes: ByteArray, note: String?): ManifestFinding {
             // The C2PA claim is the COSE payload; a missing 'clai' box is tolerated.
-            val claimData = claim ?: cose?.let { CoseSign1.parse(it)?.payload }
+            // An authenticated COSE payload strictly takes precedence over an unauthenticated unsigned 'clai' box.
+            val signedClaimPayload = cose?.let { CoseSign1.parse(it)?.payload }
+            val claimData = signedClaimPayload ?: claim
             val sourceType = extractDigitalSourceType(claimData)
             return ManifestFinding(
                 present = true,

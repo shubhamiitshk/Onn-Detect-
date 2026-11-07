@@ -85,6 +85,7 @@ class DetectionPipeline @Inject constructor(
          */
         mediaSha256: String? = null): Flow<ScanProgress> = flow {
         val started = SystemClock.elapsedRealtime()
+        val originalMediaSha256 = mediaSha256
         val jobContext = currentCoroutineContext()
         val checkStop = {
             jobContext.ensureActive()
@@ -104,7 +105,7 @@ class DetectionPipeline @Inject constructor(
         fun result(status: AnalysisStatus, reason: String?, score: Float = Float.NaN,
             report: ModelIntegrityChecker.Report? = null,
             decisionThreshold: Float? = report?.threshold,
-            mediaSha256: String? = null): ScanResult {
+            mediaSha256: String? = originalMediaSha256): ScanResult {
             val verdict = VerdictPolicy.decide(score, status, report?.validated == true, decisionThreshold)
             val confirmed = when (val evidence = provenanceEvidence) {
                 is ProvenanceEvidence.C2PAClaim -> evidence.confirmsAiInvolvement

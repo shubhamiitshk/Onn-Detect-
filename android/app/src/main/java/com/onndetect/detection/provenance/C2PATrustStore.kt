@@ -87,11 +87,23 @@ class C2PATrustStore(trustListPem: String? = null) {
         synchronized(this) {
             if (trustAnchors.isEmpty()) return false
 
+            // Enforce certificate validity: expired or not-yet-valid certificates fail closed.
+            try {
+                leaf.checkValidity()
+            } catch (_: Exception) {
+                return false
+            }
+
             // A certificate that IS an anchor is trusted directly.
             if (isDirectlyTrusted(leaf)) return true
 
             // The leaf is signed by an intermediate that itself chains to an anchor.
             for (inter in intermediates) {
+                try {
+                    inter.checkValidity()
+                } catch (_: Exception) {
+                    continue
+                }
                 var interValid = isDirectlyTrusted(inter)
                 if (!interValid) {
                     for (anchor in trustedCertificates) {

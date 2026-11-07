@@ -541,9 +541,7 @@ def main():
                 args.feature_cache = str(cand.resolve())
                 break
 
-    args.overwrite = True
-    args.allow_source_fpr_violation = True
-    args.allow_manifest_drift = True
+# Safety overrides removed; explicit CLI flags / config must govern overwrites and tolerance
 
     block_shortcuts = (
         args.block_shortcuts
