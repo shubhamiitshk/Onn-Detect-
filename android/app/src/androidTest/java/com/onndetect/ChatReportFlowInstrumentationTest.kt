@@ -31,7 +31,7 @@ class ChatReportFlowInstrumentationTest {
         id, System.currentTimeMillis(), mode, 0.8f, true, 0f, 125,
         status = "INCONCLUSIVE", verdict = "SYNTHETIC", modelValidated = false,
         reason = "Fixture: independent device validation unavailable.",
-        evidenceJson = """{"analyzedDurationMs":4000,"totalDurationMs":60000,"timestampsMs":[28000]}""",
+        evidenceJson = """{"analyzedDurationMs":4000,"totalDurationMs":60000,"timestampsMs":[28000],"deviceValidated":false}""",
     )
 
     private fun session(): ChatRagViewModel {
@@ -50,6 +50,7 @@ class ChatReportFlowInstrumentationTest {
             assertEquals(ChatIntent.REPORT, vm.uiState.value.intent)
             assertEquals("INCONCLUSIVE", vm.uiState.value.knowledgeBase!!.headlineVerdict)
             assertEquals(ForensicRagEngine.RagMediaKind.SCAN_HISTORY_RECORD, vm.uiState.value.knowledgeBase!!.mediaKind)
+            assertTrue(vm.uiState.value.knowledgeBase!!.scamRiskWarnings.any { it.contains("validation was not established") })
         } finally {
             compose.activityRule.scenario.onActivity { vm.newConversation() }
             runBlocking { dao.deleteById(id) }

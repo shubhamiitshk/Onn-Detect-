@@ -28,6 +28,8 @@ class LlamaCppVlmPrefillBackend(
     val mmprojPath: String? = null,
     val hiddenDim: Int = 1024,
     val imageResolutionCapPx: Int = 512,
+    /** Zero preserves the model's forensic frontend; conversation can request a bounded visual budget. */
+    val maxImageTokens: Int = 0,
 ) : OnDemandForensicVlmAnalyzer.VlmPrefillBackend, AutoCloseable {
 
     companion object {
@@ -74,6 +76,7 @@ class LlamaCppVlmPrefillBackend(
     @Volatile private var nativeContextHandle: Long = 0L
 
     init {
+        require(maxImageTokens == 0 || maxImageTokens in 16..1024)
         val modelFile = File(modelPath)
         require(modelFile.exists() || testMockDelegate != null || testGenerationDelegate != null) {
             "Model file does not exist at path: $modelPath"
@@ -101,7 +104,7 @@ class LlamaCppVlmPrefillBackend(
             "Native shared library '$JNI_LIB_NAME' is not available. Ensure 'lib$JNI_LIB_NAME.so' is packaged in APK."
         }
         if (nativeContextHandle == 0L) {
-            nativeContextHandle = nativeInitContext(modelPath, mmprojPath ?: "", hiddenDim)
+            nativeContextHandle = nativeInitContext(modelPath, mmprojPath ?: "", hiddenDim, maxImageTokens)
             check(nativeContextHandle != 0L) { "Failed to allocate native llama context for model: $modelPath" }
         }
         return nativeContextHandle
@@ -251,7 +254,7 @@ class LlamaCppVlmPrefillBackend(
     // =========================================================================
     // JNI Native Declarations
     // =========================================================================
-    private external fun nativeInitContext(modelPath: String, mmprojPath: String, hiddenDim: Int): Long
+    private external fun nativeInitContext(modelPath: String, mmprojPath: String, hiddenDim: Int, maxImageTokens: Int): Long
     private external fun nativeExtractFinalHiddenState(
         contextHandle: Long,
         fullRgb: ByteArray,

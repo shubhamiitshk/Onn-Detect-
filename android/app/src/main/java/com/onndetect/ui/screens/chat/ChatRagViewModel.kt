@@ -364,12 +364,14 @@ class ChatRagViewModel @Inject constructor(
                                             ?: error("This scan report is no longer available.")
                                         ragEngine.indexFromScanHistory(record)
                                     }
-                                    ForensicRagEngine.RagMediaKind.VIDEO -> ragEngine.indexVideoUri(attachment.uri, onProgress = onProgress)
+                                    ForensicRagEngine.RagMediaKind.VIDEO -> ragEngine.indexVideoUri(attachment.uri,
+                                        forensicAnalysis = ForensicRagEngine.requestsForensicAnalysis(request.query), onProgress = onProgress)
                                     ForensicRagEngine.RagMediaKind.AUDIO -> ragEngine.indexAudioUri(attachment.uri, onProgress)
                                     ForensicRagEngine.RagMediaKind.DOCUMENT -> ragEngine.indexDocumentUri(
                                         attachment.uri, attachment.fileName, attachment.mimeType, onProgress,
                                     )
-                                    else -> ragEngine.indexImageUri(attachment.uri, onProgress)
+                                    else -> if (ForensicRagEngine.requestsForensicAnalysis(request.query)) ragEngine.indexImageUri(attachment.uri, onProgress)
+                                        else ragEngine.indexChatImageUri(attachment.uri, onProgress)
                                 }
                                 base.copy(mediaTitle = attachment.fileName)
                             }

@@ -8,6 +8,8 @@ import com.onndetect.chat.ChatModelStore
 import com.onndetect.data.local.ScanHistoryDatabase
 import com.onndetect.data.local.ScanHistoryEntity
 import com.onndetect.rag.ForensicRagEngine
+import com.onndetect.inference.LiteRTInferenceEngine
+import com.onndetect.inference.MemoryMappedModelLoader
 import com.onndetect.ui.screens.chat.ChatMessage
 import com.onndetect.ui.screens.chat.ChatRagViewModel
 import kotlinx.coroutines.runBlocking
@@ -18,6 +20,8 @@ import org.junit.BeforeClass
 import org.junit.Rule
 import org.junit.Test
 import java.io.File
+import java.util.concurrent.CancellationException
+import java.util.concurrent.atomic.AtomicBoolean
 
 /** Exercises the installed conversation pack through the same ViewModel/engine used by the app. */
 class ChatModelRoutingInstrumentationTest {
@@ -49,7 +53,11 @@ class ChatModelRoutingInstrumentationTest {
     }
 
     private fun completed(vm: ChatRagViewModel, seconds: Long = 180): ChatMessage {
-        compose.waitUntil(seconds * 1000) { !vm.uiState.value.isGenerating && vm.uiState.value.messages.size >= 2 }
+        try {
+            compose.waitUntil(seconds * 1000) { !vm.uiState.value.isGenerating && vm.uiState.value.messages.size >= 2 }
+        } catch (timeout: Throwable) {
+            throw AssertionError("Model did not finish: ${vm.uiState.value.streamingStatus}; partial=${vm.uiState.value.messages.lastOrNull()?.text}", timeout)
+        }
         val state = vm.uiState.value
         assertFalse(state.errorMessage.orEmpty(), state.canRetry)
         val answer = state.messages.last()
@@ -77,7 +85,7 @@ class ChatModelRoutingInstrumentationTest {
                 compose.activityRule.scenario.onActivity {
                     vm.newConversation()
                     vm.stageAttachment(Uri.parse("content://com.onndetect.test.delayed-media/$fixture"),
-                        ForensicRagEngine.RagMediaKind.IMAGE, "$color.png", "image/png")
+                        ForensicRagEngine.RagMediaKind.IMAGE, "photo.png", "image/png")
                     vm.sendMessage("What is the dominant color of the supplied image? Reply with one color word only.")
                 }
                 val answer = completed(vm)
@@ -111,6 +119,39 @@ class ChatModelRoutingInstrumentationTest {
         } finally {
             compose.activityRule.scenario.onActivity { vm.newConversation() }
             runBlocking { dao.deleteById(id) }
+        }
+    }
+
+    @Test fun videoQuestionUsesRealDecodedSamplesAndProjector() {
+        val vm = session()
+        try {
+            compose.activityRule.scenario.onActivity {
+                vm.stageAttachment(Uri.parse("content://com.onndetect.test.delayed-media/chat-video"),
+                    ForensicRagEngine.RagMediaKind.VIDEO, "clip.mp4", "video/mp4")
+                vm.sendMessage("What is the dominant color inside the sampled video frames? Reply with one color word only.")
+            }
+            val answer = completed(vm)
+            assertTrue("Video must supply decoded frame pixels to the model", answer.visualContextUsed)
+            assertTrue(answer.text, answer.text.contains("blue", ignoreCase = true))
+            assertTrue(vm.uiState.value.knowledgeBase!!.chunks.isNotEmpty())
+            assertTrue(vm.uiState.value.knowledgeBase!!.overallAiProb.isNaN())
+        } finally { compose.activityRule.scenario.onActivity { vm.newConversation() } }
+    }
+
+    @Test fun importedModelStopsAndReleasesItsInferenceLease() = runBlocking {
+        val cancel = AtomicBoolean(false)
+        var received = false
+        var stopped = false
+        LiteRTInferenceEngine(MemoryMappedModelLoader(context)).use { engine ->
+            try {
+                ChatModelStore.withRuntime(context, engine) { backend, _ ->
+                    backend.generateMultimodalResponseStreaming("Count upwards from one.", maxNewTokens = 128,
+                        onToken = { received = true; cancel.set(true) }, isCancelled = { cancel.get() })
+                }
+            } catch (_: CancellationException) { stopped = true }
+            assertTrue("Cancellation must reach genuine model output", received)
+            assertTrue("The native response must stop", stopped)
+            assertFalse("A cancelled response must release its model lease", engine.isModelBlocked("siglip_probe_int8.tflite"))
         }
     }
 }

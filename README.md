@@ -31,9 +31,9 @@ All media decoding, neural inference, cryptographic verification, and tamper ana
 
 The Android chat supports typed messages and up to four image, video, audio, PDF or text attachments per message. It includes attachment previews, source citations, follow-up context, incremental replies, a running indicator, stop/retry/copy actions, and a keyboard-aware glass interface.
 
-A compatible verified local model pack enables native token generation. Without one, the app provides clearly labelled built-in evidence summaries. PDF selectable-text extraction requires Android 15/API 35 or later and covers the first three pages; scanned-document OCR is not available. Chat does not upgrade missing or unvalidated evidence into an authenticity claim.
+An imported, hash-checked conversation pack enables native token generation independently of the experimental forensic head. The conversation pack uses the existing Qwen3.5-0.8B language weights and a matching base-model vision projector. Chat, Media, and Scan reports controls provide normal conversation, actual visual questions, and direct selection of saved image/audio/video reports. Without one, the app provides clearly labelled built-in evidence summaries. PDF selectable-text extraction requires Android 15/API 35 or later and covers the first three pages; certified OCR is not available. Audio attachments supply detector evidence, not transcription. Chat does not upgrade missing or unvalidated evidence into an authenticity claim.
 
-See [chat implementation and limits](docs/CHAT_EXPERIENCE_2026-10-30.md).
+Model setup accepts supported Qwen3.5 GGUF files directly and ZIPs with model files, wrapper folders and ordinary sidecars. See the [import and mobile UI correction](docs/CHAT_IMPORT_UI_FIX_2026-10-30.md), [chat implementation and limits](docs/CHAT_EXPERIENCE_2026-10-30.md), [model routing and import](docs/CHAT_MODEL_ROUTING_2026-10-30.md), and [model-selection research](docs/MODEL_SELECTION_AND_ROUTING_2026-10-30.md).
 
 ## Empirical Benchmark Summary (Historical / Aspirational)
 

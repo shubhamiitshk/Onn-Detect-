@@ -1,0 +1,2310 @@
+{
+  "recorded_at_utc": "2026-10-29T20:23:19.230920+00:00",
+  "git_head": "ca39074e19b3c81cfffa478c538451daf58e8ff8",
+  "source_state": "Working tree contains implementation and documentation changes; no commit created by this verification.",
+  "runtime": {
+    "device": "Disposable read-only onn_api36 emulator",
+    "api": 36,
+    "abi": "x86_64",
+    "ram_mb": 3072,
+    "virtual_cpus": 2,
+    "backend": "llama.cpp CPU",
+    "physical_phone_benchmark": false
+  },
+  "unit_tests": {
+    "tests": 420,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "cases": [
+      {
+        "name": "invalidMediaRemainsUnsupportedAndOtherExecutionFailuresStayModelFailures",
+        "class_name": "com.onndetect.AnalysisFailurePolicyTest",
+        "test_duration_seconds": 0.025
+      },
+      {
+        "name": "modelInterfaceRejectionsAreFailuresEvenWhenBackendUsesIllegalArgument",
+        "class_name": "com.onndetect.AnalysisFailurePolicyTest",
+        "test_duration_seconds": 0.037
+      },
+      {
+        "name": "unvalidatedLegacyAssessmentCannotPersistAuthenticity",
+        "class_name": "com.onndetect.AssessmentPersistenceTest",
+        "test_duration_seconds": 0.029
+      },
+      {
+        "name": "corruptAndMissingSignalsDoNotCreateEvidence",
+        "class_name": "com.onndetect.AssessmentPersistenceTest",
+        "test_duration_seconds": 0.023
+      },
+      {
+        "name": "zeroSurvivesRoundTripAndUnavailableValuesAreNotNumbers",
+        "class_name": "com.onndetect.AssessmentPersistenceTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "legacyOrUnknownVerdictsAlwaysAbstain",
+        "class_name": "com.onndetect.AssessmentPersistenceTest",
+        "test_duration_seconds": 0.004
+      },
+      {
+        "name": "failureCannotPersistClassifiedVerdictEvenIfCallerContradictsIt",
+        "class_name": "com.onndetect.AssessmentPersistenceTest",
+        "test_duration_seconds": 0.003
+      },
+      {
+        "name": "evidencePersistsVoiceMatchReport",
+        "class_name": "com.onndetect.AssessmentPersistenceTest",
+        "test_duration_seconds": 0.012
+      },
+      {
+        "name": "evidencePersistsKycInjectionReport",
+        "class_name": "com.onndetect.AssessmentPersistenceTest",
+        "test_duration_seconds": 0.002
+      },
+      {
+        "name": "evidencePersistsModelVersionsCoverageAndNoSourceExif",
+        "class_name": "com.onndetect.AssessmentPersistenceTest",
+        "test_duration_seconds": 0.003
+      },
+      {
+        "name": "matchesPillowExactlyOnADownscale",
+        "class_name": "com.onndetect.BicubicResizerTest",
+        "test_duration_seconds": 0.048
+      },
+      {
+        "name": "matchesPillowOnTheWholeUpscaledImage",
+        "class_name": "com.onndetect.BicubicResizerTest",
+        "test_duration_seconds": 0.023
+      },
+      {
+        "name": "theResultIsNotTheSameAsABoxFilter",
+        "class_name": "com.onndetect.BicubicResizerTest",
+        "test_duration_seconds": 0.01
+      },
+      {
+        "name": "matchesPillowExactlyOnTheLastRowOfAnUpscale",
+        "class_name": "com.onndetect.BicubicResizerTest",
+        "test_duration_seconds": 0.008
+      },
+      {
+        "name": "aFlatImageStaysFlat",
+        "class_name": "com.onndetect.BicubicResizerTest",
+        "test_duration_seconds": 0.002
+      },
+      {
+        "name": "matchesPillowExactlyOnTheFirstRowOfAnUpscale",
+        "class_name": "com.onndetect.BicubicResizerTest",
+        "test_duration_seconds": 0.008
+      },
+      {
+        "name": "aPresentButUnverifiedManifestDoesNotConfirmAiInvolvement",
+        "class_name": "com.onndetect.C2PAManifestCheckerTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "findsAManifestInASingleSegmentJpegApp11",
+        "class_name": "com.onndetect.C2PAManifestCheckerTest",
+        "test_duration_seconds": 0.583
+      },
+      {
+        "name": "handlesAnEmptyStream",
+        "class_name": "com.onndetect.C2PAManifestCheckerTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "anInsignificantWatermarkDetectionDoesNotConfirm",
+        "class_name": "com.onndetect.C2PAManifestCheckerTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "aSignificantWatermarkDetectionRecordsDetectedWithoutAutomaticAiVerdict",
+        "class_name": "com.onndetect.C2PAManifestCheckerTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "findsAManifestInAnIsoBmffUuidBoxWithoutDescendingIntoMdat",
+        "class_name": "com.onndetect.C2PAManifestCheckerTest",
+        "test_duration_seconds": 0.012
+      },
+      {
+        "name": "absenceIsNotEvidenceOfAuthenticity",
+        "class_name": "com.onndetect.C2PAManifestCheckerTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "coseRawAndDerConversionsRoundTrip",
+        "class_name": "com.onndetect.C2PAManifestCheckerTest",
+        "test_duration_seconds": 0.012
+      },
+      {
+        "name": "reportsNoManifestForAPlainJpeg",
+        "class_name": "com.onndetect.C2PAManifestCheckerTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "reportsNoManifestForGarbage",
+        "class_name": "com.onndetect.C2PAManifestCheckerTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "aVerifiedManifestDoesConfirmAiInvolvement",
+        "class_name": "com.onndetect.C2PAManifestCheckerTest",
+        "test_duration_seconds": 0.006
+      },
+      {
+        "name": "reassemblesMultiSegmentApp11ByEnAndZ",
+        "class_name": "com.onndetect.C2PAManifestCheckerTest",
+        "test_duration_seconds": 0.012
+      },
+      {
+        "name": "theConfidenceStatesAreDistinct",
+        "class_name": "com.onndetect.C2PAManifestCheckerTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "theFictionalC2csMarkerIsNotASignature",
+        "class_name": "com.onndetect.C2PAManifestCheckerTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "anUnterminatedApp11GroupIsNotTrusted",
+        "class_name": "com.onndetect.C2PAManifestCheckerTest",
+        "test_duration_seconds": 0.008
+      },
+      {
+        "name": "findsAManifestBeyondTheOld64KbScanWindow",
+        "class_name": "com.onndetect.C2PAManifestCheckerTest",
+        "test_duration_seconds": 0.017
+      },
+      {
+        "name": "aVerifiedManifestWithANonGenerativeSourceTypeDoesNotConfirm",
+        "class_name": "com.onndetect.C2PAManifestCheckerTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "digitalSourceTypeComesFromTheClaimNotTheContainer",
+        "class_name": "com.onndetect.C2PAManifestCheckerTest",
+        "test_duration_seconds": 0.012
+      },
+      {
+        "name": "theBandEdgesAreInclusive",
+        "class_name": "com.onndetect.CascadePolicyTest",
+        "test_duration_seconds": 0.004
+      },
+      {
+        "name": "theDecisionStatusIsInconclusiveOnlyWhenTheVerdictIs",
+        "class_name": "com.onndetect.CascadePolicyTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "anOutOfRangeThresholdIsRejected",
+        "class_name": "com.onndetect.CascadePolicyTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "theReportedScoreIsAlwaysTheFusionScore",
+        "class_name": "com.onndetect.CascadePolicyTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "missingEngineCLetsEngineADecide",
+        "class_name": "com.onndetect.CascadePolicyTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "disagreementInsideTheBandAbstains",
+        "class_name": "com.onndetect.CascadePolicyTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "agreementInsideTheBandResolves",
+        "class_name": "com.onndetect.CascadePolicyTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "confidentFusionDecidesSyntheticWithoutEscalation",
+        "class_name": "com.onndetect.CascadePolicyTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "confidentFusionDecidesWithoutEscalation",
+        "class_name": "com.onndetect.CascadePolicyTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "anInvertedBandIsRejected",
+        "class_name": "com.onndetect.CascadePolicyTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "manifestPathCannotEscapePackDirectory",
+        "class_name": "com.onndetect.chat.ChatModelStoreTest",
+        "test_duration_seconds": 0.162
+      },
+      {
+        "name": "validConversationContractNeedsNoForensicHead",
+        "class_name": "com.onndetect.chat.ChatModelStoreTest",
+        "test_duration_seconds": 0.194
+      },
+      {
+        "name": "changedBytesFailEvenWhenLengthMatches",
+        "class_name": "com.onndetect.chat.ChatModelStoreTest",
+        "test_duration_seconds": 0.222
+      },
+      {
+        "name": "declaredDimensionCannotOverrideActualGgufMetadata",
+        "class_name": "com.onndetect.chat.ChatModelStoreTest",
+        "test_duration_seconds": 0.09
+      },
+      {
+        "name": "unmanifestedFilesAreRejected",
+        "class_name": "com.onndetect.chat.ChatModelStoreTest",
+        "test_duration_seconds": 0.093
+      },
+      {
+        "name": "allNansEncodeToAllNullsAndDecodeToAllNans",
+        "class_name": "com.onndetect.data.local.SignalBreakdownJsonAdversarialTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "corruptFieldTypesDefaultToNanWithoutCrashing",
+        "class_name": "com.onndetect.data.local.SignalBreakdownJsonAdversarialTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "negativeSentinelsAndInfinitiesAreSanitizedToNullAndNan",
+        "class_name": "com.onndetect.data.local.SignalBreakdownJsonAdversarialTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "malformedOrUnsupportedSchemaReturnsNull",
+        "class_name": "com.onndetect.data.local.SignalBreakdownJsonAdversarialTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "randomFuzzingRoundtripInvariance",
+        "class_name": "com.onndetect.data.local.SignalBreakdownJsonAdversarialTest",
+        "test_duration_seconds": 0.075
+      },
+      {
+        "name": "rawNegativeValuesInJsonDecodeToNan",
+        "class_name": "com.onndetect.data.local.SignalBreakdownJsonAdversarialTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "legacyMobileClipScoreBackwardCompatibility",
+        "class_name": "com.onndetect.data.local.SignalBreakdownJsonAdversarialTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "allValidScoresRoundtripFaithfully",
+        "class_name": "com.onndetect.data.local.SignalBreakdownJsonAdversarialTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "partialJsonAndMissingKeysDefaultToNan",
+        "class_name": "com.onndetect.data.local.SignalBreakdownJsonAdversarialTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "document in-place array mutation hazard on hash collections",
+        "class_name": "com.onndetect.data.local.VoiceVaultCryptoAdversarialTest",
+        "test_duration_seconds": 0.075
+      },
+      {
+        "name": "test SealedBlob with extreme boundary byte values",
+        "class_name": "com.onndetect.data.local.VoiceVaultCryptoAdversarialTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "test HashSet and HashMap operations with cloned and independent instances",
+        "class_name": "com.onndetect.data.local.VoiceVaultCryptoAdversarialTest",
+        "test_duration_seconds": 0.002
+      },
+      {
+        "name": "tampering with IV strictly throws AEADBadTagException",
+        "class_name": "com.onndetect.data.local.VoiceVaultCryptoAdversarialTest",
+        "test_duration_seconds": 0.039
+      },
+      {
+        "name": "truncated ciphertext throws AEADBadTagException",
+        "class_name": "com.onndetect.data.local.VoiceVaultCryptoAdversarialTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "test 1,000 consecutive seals produce completely unique IVs (zero collision)",
+        "class_name": "com.onndetect.data.local.VoiceVaultCryptoAdversarialTest",
+        "test_duration_seconds": 0.18
+      },
+      {
+        "name": "test SealedBlob equality with zero-length and asymmetric empty arrays",
+        "class_name": "com.onndetect.data.local.VoiceVaultCryptoAdversarialTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "test hash collision resistance across 10,000 distinct SealedBlobs",
+        "class_name": "com.onndetect.data.local.VoiceVaultCryptoAdversarialTest",
+        "test_duration_seconds": 0.01
+      },
+      {
+        "name": "tampering with GCM 128-bit authentication tag strictly throws AEADBadTagException",
+        "class_name": "com.onndetect.data.local.VoiceVaultCryptoAdversarialTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "test SealedBlob length extension and prefix sensitivity",
+        "class_name": "com.onndetect.data.local.VoiceVaultCryptoAdversarialTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "test SealedBlob with large 100KiB ciphertext payload",
+        "class_name": "com.onndetect.data.local.VoiceVaultCryptoAdversarialTest",
+        "test_duration_seconds": 0.008
+      },
+      {
+        "name": "verify strict mathematical equivalence relations for SealedBlob",
+        "class_name": "com.onndetect.data.local.VoiceVaultCryptoAdversarialTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "test asymmetric hash calculation prevents IV and ciphertext transposition collisions",
+        "class_name": "com.onndetect.data.local.VoiceVaultCryptoAdversarialTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "a swapped AAD fails authentication instead of decrypting",
+        "class_name": "com.onndetect.data.local.VoiceVaultCryptoTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "silence is never voiced",
+        "class_name": "com.onndetect.data.local.VoiceVaultCryptoTest",
+        "test_duration_seconds": 0.026
+      },
+      {
+        "name": "loud noise with high ZCR is not voiced speech",
+        "class_name": "com.onndetect.data.local.VoiceVaultCryptoTest",
+        "test_duration_seconds": 0.025
+      },
+      {
+        "name": "SealedBlob hashCode satisfies the general contract for equal instances",
+        "class_name": "com.onndetect.data.local.VoiceVaultCryptoTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "SealedBlob handles empty byte arrays correctly",
+        "class_name": "com.onndetect.data.local.VoiceVaultCryptoTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "SealedBlob value equality holds for distinct instances with identical content",
+        "class_name": "com.onndetect.data.local.VoiceVaultCryptoTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "voiced gate counts only energetic low-ZCR frames",
+        "class_name": "com.onndetect.data.local.VoiceVaultCryptoTest",
+        "test_duration_seconds": 0.02
+      },
+      {
+        "name": "SealedBlob equals handles null, reflexivity, and foreign types safely",
+        "class_name": "com.onndetect.data.local.VoiceVaultCryptoTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "every seal produces a fresh IV",
+        "class_name": "com.onndetect.data.local.VoiceVaultCryptoTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "a tampered ciphertext fails authentication",
+        "class_name": "com.onndetect.data.local.VoiceVaultCryptoTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "vaultAad binds id and contact name deterministically",
+        "class_name": "com.onndetect.data.local.VoiceVaultCryptoTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "seal-unseal round trip preserves the sealed bytes",
+        "class_name": "com.onndetect.data.local.VoiceVaultCryptoTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "SealedBlob copy preserves equality and detects parameter modifications",
+        "class_name": "com.onndetect.data.local.VoiceVaultCryptoTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "a short voiced clip fails the 8 second requirement",
+        "class_name": "com.onndetect.data.local.VoiceVaultCryptoTest",
+        "test_duration_seconds": 0.003
+      },
+      {
+        "name": "SealedBlob inequality detects differences in iv, ciphertext, or length",
+        "class_name": "com.onndetect.data.local.VoiceVaultCryptoTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "onDemandForensicVlmRoutesAndFusesDialectically",
+        "class_name": "com.onndetect.DeepThinkAlgorithmsTest",
+        "test_duration_seconds": 0.033
+      },
+      {
+        "name": "authentic video with authentic audio stays authentic",
+        "class_name": "com.onndetect.DeepThinkAlgorithmsTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "uniform diffusion residual across rich and poor mosaics is reinforced",
+        "class_name": "com.onndetect.DeepThinkAlgorithmsTest",
+        "test_duration_seconds": 0.004
+      },
+      {
+        "name": "uniform heatmap produces near-zero z-score",
+        "class_name": "com.onndetect.DeepThinkAlgorithmsTest",
+        "test_duration_seconds": 0.004
+      },
+      {
+        "name": "portrait mode bokeh with low poor-mosaic residual is dampened",
+        "class_name": "com.onndetect.DeepThinkAlgorithmsTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "ai video with real music and smooth motion is not dragged below visual threshold",
+        "class_name": "com.onndetect.DeepThinkAlgorithmsTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "bilateral rppg phase-locked malar pulses yield low anomaly",
+        "class_name": "com.onndetect.DeepThinkAlgorithmsTest",
+        "test_duration_seconds": 0.002
+      },
+      {
+        "name": "v11 multi-window audio combiner protects low-anomaly noisy speech and boosts synthetic",
+        "class_name": "com.onndetect.DeepThinkAlgorithmsTest",
+        "test_duration_seconds": 0.002
+      },
+      {
+        "name": "v11 bilateral rppg phase anomaly boosts borderline talking-head video score",
+        "class_name": "com.onndetect.DeepThinkAlgorithmsTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "desynchronized synthetic malar chromaticity yields high rppg anomaly",
+        "class_name": "com.onndetect.DeepThinkAlgorithmsTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "real video with ai voice clone escalates above visual threshold",
+        "class_name": "com.onndetect.DeepThinkAlgorithmsTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "v11 localized ROI splice with high hotspot z-score boosts calibrated SRM score",
+        "class_name": "com.onndetect.DeepThinkAlgorithmsTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "v11 VFM temporal acceleration detects oscillating jerky synthetic trajectories",
+        "class_name": "com.onndetect.DeepThinkAlgorithmsTest",
+        "test_duration_seconds": 0.005
+      },
+      {
+        "name": "hotspot extractor pinpoints localized 8x8 tampering cluster with high z-score",
+        "class_name": "com.onndetect.DeepThinkAlgorithmsTest",
+        "test_duration_seconds": 0.002
+      },
+      {
+        "name": "the interpreter is allowed up to four threads",
+        "class_name": "com.onndetect.DelegateSelectorTest",
+        "test_duration_seconds": 0.003
+      },
+      {
+        "name": "the thread cap does not follow the device core count",
+        "class_name": "com.onndetect.DelegateSelectorTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "xnnpack is enabled so the int8 graph reaches the simd kernels",
+        "class_name": "com.onndetect.DelegateSelectorTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "pureSilenceIsRejectedBySpeechGateAndVoicedGate",
+        "class_name": "com.onndetect.detection.audio.AudioGatingTest",
+        "test_duration_seconds": 0.015
+      },
+      {
+        "name": "modulatedSpeechPassesSpeechGateAndHasVoicedDuration",
+        "class_name": "com.onndetect.detection.audio.AudioGatingTest",
+        "test_duration_seconds": 0.02
+      },
+      {
+        "name": "stationaryToneIsRejectedBySpeechGate",
+        "class_name": "com.onndetect.detection.audio.AudioGatingTest",
+        "test_duration_seconds": 0.006
+      },
+      {
+        "name": "identical audio produces exact cosine match of 1_0",
+        "class_name": "com.onndetect.detection.audio.SpeakerVerifierTest",
+        "test_duration_seconds": 0.039
+      },
+      {
+        "name": "extractVoiceprint produces 160-dimensional unit normalized vector",
+        "class_name": "com.onndetect.detection.audio.SpeakerVerifierTest",
+        "test_duration_seconds": 0.013
+      },
+      {
+        "name": "matchAgainstVault reports NO_PROFILES_ENROLLED when vault is empty",
+        "class_name": "com.onndetect.detection.audio.SpeakerVerifierTest",
+        "test_duration_seconds": 0.005
+      },
+      {
+        "name": "distinct acoustic voiceprints have lower cosine similarity",
+        "class_name": "com.onndetect.detection.audio.SpeakerVerifierTest",
+        "test_duration_seconds": 0.025
+      },
+      {
+        "name": "VoiceProfileEntity round-trips a legacy CSV embedding accurately",
+        "class_name": "com.onndetect.detection.audio.SpeakerVerifierTest",
+        "test_duration_seconds": 0.013
+      },
+      {
+        "name": "matchAgainstVault succeeds when incoming speech matches enrolled family profile",
+        "class_name": "com.onndetect.detection.audio.SpeakerVerifierTest",
+        "test_duration_seconds": 0.026
+      },
+      {
+        "name": "matchAgainstVault flags mismatch when incoming speech does not match enrolled profile",
+        "class_name": "com.onndetect.detection.audio.SpeakerVerifierTest",
+        "test_duration_seconds": 0.026
+      },
+      {
+        "name": "windowed voiceprint averages 3s windows with a 1500ms hop",
+        "class_name": "com.onndetect.detection.audio.SpeakerVerifierTest",
+        "test_duration_seconds": 0.158
+      },
+      {
+        "name": "abnormal aspect ratio in payment screenshot triggers layout anomaly",
+        "class_name": "com.onndetect.detection.document.DocumentForgeryAnalyzerTest",
+        "test_duration_seconds": 0.022
+      },
+      {
+        "name": "spliced transaction amount triggers noise discontinuity and detects tampered tile",
+        "class_name": "com.onndetect.detection.document.DocumentForgeryAnalyzerTest",
+        "test_duration_seconds": 0.02
+      },
+      {
+        "name": "clean structured screenshot does not flag forgery",
+        "class_name": "com.onndetect.detection.document.DocumentForgeryAnalyzerTest",
+        "test_duration_seconds": 0.024
+      },
+      {
+        "name": "manhattan grid edge alignment distinguishes documents from organic photos",
+        "class_name": "com.onndetect.detection.document.DocumentForgeryAnalyzerTest",
+        "test_duration_seconds": 0.003
+      },
+      {
+        "name": "emulator fingerprinting correctly identifies known emulator environments and accepts real hardware",
+        "class_name": "com.onndetect.detection.kyc.VirtualCameraDetectorTest",
+        "test_duration_seconds": 0.009
+      },
+      {
+        "name": "Xposed or VCam injection hook triggers immediate virtual camera alert",
+        "class_name": "com.onndetect.detection.kyc.VirtualCameraDetectorTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "frozen video frame loop triggers temporal injection alert",
+        "class_name": "com.onndetect.detection.kyc.VirtualCameraDetectorTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "genuine physical camera hardware profile passes with low injection score",
+        "class_name": "com.onndetect.detection.kyc.VirtualCameraDetectorTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "virtual camera driver lacking physical sensor size and reporting LEGACY level is flagged",
+        "class_name": "com.onndetect.detection.kyc.VirtualCameraDetectorTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "emulator environment triggers virtual camera injection alert",
+        "class_name": "com.onndetect.detection.kyc.VirtualCameraDetectorTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "a genuine device reporting a generic brand is NOT an emulator",
+        "class_name": "com.onndetect.detection.kyc.VirtualCameraFalsePositiveTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "a legacy camera alone does not read as a virtual camera",
+        "class_name": "com.onndetect.detection.kyc.VirtualCameraFalsePositiveTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "a real fingerprint with a generic brand is still not an emulator",
+        "class_name": "com.onndetect.detection.kyc.VirtualCameraFalsePositiveTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "a genuine emulator is still detected",
+        "class_name": "com.onndetect.detection.kyc.VirtualCameraFalsePositiveTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "model loader throwing FileNotFoundException returns ProvenanceEvidence Absent without leaking exception",
+        "class_name": "com.onndetect.detection.provenance.AudioSealDetectorTest",
+        "test_duration_seconds": 0.006
+      },
+      {
+        "name": "full agreement 16 of 16 yields highly significant p-value",
+        "class_name": "com.onndetect.detection.provenance.AudioSealDetectorTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "exact 16-bit agreement triggers watermark detection and confirms AI involvement",
+        "class_name": "com.onndetect.detection.provenance.AudioSealDetectorTest",
+        "test_duration_seconds": 0.012
+      },
+      {
+        "name": "two-tailed binomial symmetry - p(k) equals p(N-k)",
+        "class_name": "com.onndetect.detection.provenance.AudioSealDetectorTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "non-significant agreement k less than 12 yields ProvenanceEvidence Absent",
+        "class_name": "com.onndetect.detection.provenance.AudioSealDetectorTest",
+        "test_duration_seconds": 0.012
+      },
+      {
+        "name": "empty audio buffer returns ProvenanceEvidence Absent immediately without invoking engine",
+        "class_name": "com.onndetect.detection.provenance.AudioSealDetectorTest",
+        "test_duration_seconds": 0.004
+      },
+      {
+        "name": "audio buffer with non-finite samples does not crash and returns Absent",
+        "class_name": "com.onndetect.detection.provenance.AudioSealDetectorTest",
+        "test_duration_seconds": 0.015
+      },
+      {
+        "name": "invalid model contract input shape returns ProvenanceEvidence Absent",
+        "class_name": "com.onndetect.detection.provenance.AudioSealDetectorTest",
+        "test_duration_seconds": 0.006
+      },
+      {
+        "name": "short audio buffer below window size returns ProvenanceEvidence Absent",
+        "class_name": "com.onndetect.detection.provenance.AudioSealDetectorTest",
+        "test_duration_seconds": 0.002
+      },
+      {
+        "name": "near-miss 15-bit agreement is rejected as non-significant and returns ProvenanceEvidence Absent",
+        "class_name": "com.onndetect.detection.provenance.AudioSealDetectorTest",
+        "test_duration_seconds": 0.003
+      },
+      {
+        "name": "12-bit agreement yields p ~= 0_0768 and returns ProvenanceEvidence Absent",
+        "class_name": "com.onndetect.detection.provenance.AudioSealDetectorTest",
+        "test_duration_seconds": 0.002
+      },
+      {
+        "name": "successes outside range are coerced safely",
+        "class_name": "com.onndetect.detection.provenance.AudioSealDetectorTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "model predictor emitting non-finite or negative scalar returns ProvenanceEvidence Absent",
+        "class_name": "com.onndetect.detection.provenance.AudioSealDetectorTest",
+        "test_duration_seconds": 0.006
+      },
+      {
+        "name": "incomplete trailing window is discarded safely without error",
+        "class_name": "com.onndetect.detection.provenance.AudioSealDetectorTest",
+        "test_duration_seconds": 0.003
+      },
+      {
+        "name": "multi-window audio selects best window with lowest p-value",
+        "class_name": "com.onndetect.detection.provenance.AudioSealDetectorTest",
+        "test_duration_seconds": 0.003
+      },
+      {
+        "name": "multi-window audio recovers when one window throws an exception",
+        "class_name": "com.onndetect.detection.provenance.AudioSealDetectorTest",
+        "test_duration_seconds": 0.005
+      },
+      {
+        "name": "silent audio buffer returns ProvenanceEvidence Absent",
+        "class_name": "com.onndetect.detection.provenance.AudioSealDetectorTest",
+        "test_duration_seconds": 0.002
+      },
+      {
+        "name": "exact single window processes cleanly and reads byte buffer accurately",
+        "class_name": "com.onndetect.detection.provenance.AudioSealDetectorTest",
+        "test_duration_seconds": 0.003
+      },
+      {
+        "name": "unbundled or missing model asset returns ProvenanceEvidence Absent gracefully",
+        "class_name": "com.onndetect.detection.provenance.AudioSealDetectorTest",
+        "test_duration_seconds": 0.003
+      },
+      {
+        "name": "model predictor throwing exception is caught and returns ProvenanceEvidence Absent",
+        "class_name": "com.onndetect.detection.provenance.AudioSealDetectorTest",
+        "test_duration_seconds": 0.004
+      },
+      {
+        "name": "inverted correlation k less than 8 is rejected by MIN_AGREEING_BITS and returns ProvenanceEvidence Absent",
+        "class_name": "com.onndetect.detection.provenance.AudioSealDetectorTest",
+        "test_duration_seconds": 0.003
+      },
+      {
+        "name": "exact discrete p-values for intermediate agreement levels",
+        "class_name": "com.onndetect.detection.provenance.AudioSealDetectorTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "monotonicity of binomial tail from chance to full agreement",
+        "class_name": "com.onndetect.detection.provenance.AudioSealDetectorTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "chance agreement 8 of 16 yields 1_0 p-value",
+        "class_name": "com.onndetect.detection.provenance.AudioSealDetectorTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "continuous presence score in 0 to 1 range triggers detection without LiteRT contract failure",
+        "class_name": "com.onndetect.detection.provenance.AudioSealDetectorTest",
+        "test_duration_seconds": 0.003
+      },
+      {
+        "name": "boundary trials zero or negative returns 1_0",
+        "class_name": "com.onndetect.detection.provenance.AudioSealDetectorTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "multi-window audio retains earlier best window if subsequent window has higher p-value",
+        "class_name": "com.onndetect.detection.provenance.AudioSealDetectorTest",
+        "test_duration_seconds": 0.002
+      },
+      {
+        "name": "receipt signature verification round-trip succeeds",
+        "class_name": "com.onndetect.detection.provenance.CanonicalReceiptPayloadTest",
+        "test_duration_seconds": 0.034
+      },
+      {
+        "name": "a non-finite signal is rejected rather than signed as zero",
+        "class_name": "com.onndetect.detection.provenance.CanonicalReceiptPayloadTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "all-zero media SHA-256 digest is rejected",
+        "class_name": "com.onndetect.detection.provenance.CanonicalReceiptPayloadTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "a receipt without a hardware attestation is NOT accepted",
+        "class_name": "com.onndetect.detection.provenance.CanonicalReceiptPayloadTest",
+        "test_duration_seconds": 0.006
+      },
+      {
+        "name": "canonical serializer produces sorted lexicographical keys",
+        "class_name": "com.onndetect.detection.provenance.CanonicalReceiptPayloadTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "computeSha256 produces exact 64-char hex digest",
+        "class_name": "com.onndetect.detection.provenance.CanonicalReceiptPayloadTest",
+        "test_duration_seconds": 0.002
+      },
+      {
+        "name": "test extreme concurrency with 64 racing threads on uninitialized signer",
+        "class_name": "com.onndetect.detection.provenance.StrongBoxReceiptSignerAdversarialTest",
+        "test_duration_seconds": 0.246
+      },
+      {
+        "name": "adversarially verify truncated and corrupted signature encodings fail safely",
+        "class_name": "com.onndetect.detection.provenance.StrongBoxReceiptSignerAdversarialTest",
+        "test_duration_seconds": 0.005
+      },
+      {
+        "name": "adversarially mutate signature bytes across all positions",
+        "class_name": "com.onndetect.detection.provenance.StrongBoxReceiptSignerAdversarialTest",
+        "test_duration_seconds": 0.014
+      },
+      {
+        "name": "signature must fail when verified against a foreign public key",
+        "class_name": "com.onndetect.detection.provenance.StrongBoxReceiptSignerAdversarialTest",
+        "test_duration_seconds": 0.009
+      },
+      {
+        "name": "canonical serializer strictly rejects non-finite values and invalid digests",
+        "class_name": "com.onndetect.detection.provenance.StrongBoxReceiptSignerAdversarialTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "test multi-instance independent key generation under concurrency",
+        "class_name": "com.onndetect.detection.provenance.StrongBoxReceiptSignerAdversarialTest",
+        "test_duration_seconds": 0.031
+      },
+      {
+        "name": "subtle payload alterations must fail signature verification",
+        "class_name": "com.onndetect.detection.provenance.StrongBoxReceiptSignerAdversarialTest",
+        "test_duration_seconds": 0.018
+      },
+      {
+        "name": "testSecurityTierConsistentBeforeAndAfterSign",
+        "class_name": "com.onndetect.detection.provenance.StrongBoxReceiptSignerTest",
+        "test_duration_seconds": 0.004
+      },
+      {
+        "name": "testConcurrentSigningKeyStabilityAndThreadSafety",
+        "class_name": "com.onndetect.detection.provenance.StrongBoxReceiptSignerTest",
+        "test_duration_seconds": 0.065
+      },
+      {
+        "name": "testSingleThreadSigningRoundtrip",
+        "class_name": "com.onndetect.detection.provenance.StrongBoxReceiptSignerTest",
+        "test_duration_seconds": 0.01
+      },
+      {
+        "name": "lipSyncAnomalyNanOrInvalidYieldsZeroBoost",
+        "class_name": "com.onndetect.detection.video.VideoScorePolicyAdversarialTest",
+        "test_duration_seconds": 0.002
+      },
+      {
+        "name": "audioInvalidOrOutOfBoundsSkipsAudioEscalation",
+        "class_name": "com.onndetect.detection.video.VideoScorePolicyAdversarialTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "extremeFuzzingMatrixNeverThrowsAndInvariantsHold",
+        "class_name": "com.onndetect.detection.video.VideoScorePolicyAdversarialTest",
+        "test_duration_seconds": 0.009
+      },
+      {
+        "name": "authenticAudioDoesNotPenalizeSyntheticVisual",
+        "class_name": "com.onndetect.detection.video.VideoScorePolicyAdversarialTest",
+        "test_duration_seconds": 0.003
+      },
+      {
+        "name": "visualNanAlwaysReturnsNanRegardlessOfOtherModalities",
+        "class_name": "com.onndetect.detection.video.VideoScorePolicyAdversarialTest",
+        "test_duration_seconds": 0.007
+      },
+      {
+        "name": "visualThresholdNanWithValidVisualPreservesBaseScoreAndNeverReturnsNan",
+        "class_name": "com.onndetect.detection.video.VideoScorePolicyAdversarialTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "visualInfiniteOrOutOfRangeReturnsNan",
+        "class_name": "com.onndetect.detection.video.VideoScorePolicyAdversarialTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "bothAudioAndTemporalNanReturnsVisualScoreUnmodified",
+        "class_name": "com.onndetect.detection.video.VideoScorePolicyAdversarialTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "audioNanWithValidVisualSkipsAudioEscalationWithoutError",
+        "class_name": "com.onndetect.detection.video.VideoScorePolicyAdversarialTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "temporalNanWithValidVisualSkipsTemporalBoost",
+        "class_name": "com.onndetect.detection.video.VideoScorePolicyAdversarialTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "temporalInvalidOrSubthresholdYieldsZeroBoost",
+        "class_name": "com.onndetect.detection.video.VideoScorePolicyAdversarialTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "audioThresholdNanWithValidVisualPreservesBaseScoreAndNeverReturnsNan",
+        "class_name": "com.onndetect.detection.video.VideoScorePolicyAdversarialTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "synthetic audio escalates visual score across threshold",
+        "class_name": "com.onndetect.detection.video.VideoScorePolicyTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "multimodal score preserves nan when visual score is nan or negative",
+        "class_name": "com.onndetect.detection.video.VideoScorePolicyTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "silent video visual only fallback",
+        "class_name": "com.onndetect.detection.video.VideoScorePolicyTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "authentic audio cannot drag visual fake score below threshold",
+        "class_name": "com.onndetect.detection.video.VideoScorePolicyTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "maximum anomaly boost is strictly capped at 30 percent",
+        "class_name": "com.onndetect.detection.video.VideoScorePolicyTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "temporal and lip sync anomaly boosts score when experimental boost explicitly enabled",
+        "class_name": "com.onndetect.detection.video.VideoScorePolicyTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "production combineMultimodalScore decouples unvalidated heuristics from final score",
+        "class_name": "com.onndetect.detection.video.VideoScorePolicyTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "unspecified optional modalities default to nan without affecting base score",
+        "class_name": "com.onndetect.detection.video.VideoScorePolicyTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "nan temporal score yields zero temporal boost",
+        "class_name": "com.onndetect.detection.video.VideoScorePolicyTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "nan visual score preserves nan without collapsing to zero",
+        "class_name": "com.onndetect.detection.video.VideoScorePolicyTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "visual synthetic score dominates combination",
+        "class_name": "com.onndetect.detection.video.VideoScorePolicyTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "nan audio score does not trigger audio escalation",
+        "class_name": "com.onndetect.detection.video.VideoScorePolicyTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "constants are defined correctly",
+        "class_name": "com.onndetect.detection.visual.BioLipLandmarkAnalyzerTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "computeAvffLipSyncCorrelation correctly differentiates sync from desync and preserves polarity",
+        "class_name": "com.onndetect.detection.visual.BioLipLandmarkAnalyzerTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "computeJitterScore returns NaN for insufficient frames",
+        "class_name": "com.onndetect.detection.visual.BioLipLandmarkAnalyzerTest",
+        "test_duration_seconds": 0.017
+      },
+      {
+        "name": "extractMarSeries returns valid per-frame MAR values",
+        "class_name": "com.onndetect.detection.visual.BioLipLandmarkAnalyzerTest",
+        "test_duration_seconds": 0.003
+      },
+      {
+        "name": "smooth biological oscillation yields moderate jitter",
+        "class_name": "com.onndetect.detection.visual.BioLipLandmarkAnalyzerTest",
+        "test_duration_seconds": 0.013
+      },
+      {
+        "name": "static landmarks yield low jitter",
+        "class_name": "com.onndetect.detection.visual.BioLipLandmarkAnalyzerTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "LIP_INDICES contains correct number of indices",
+        "class_name": "com.onndetect.detection.visual.BioLipLandmarkAnalyzerTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "high frequency synthetic jitter yields elevated jitter",
+        "class_name": "com.onndetect.detection.visual.BioLipLandmarkAnalyzerTest",
+        "test_duration_seconds": 0.013
+      },
+      {
+        "name": "linear motion yields low jitter",
+        "class_name": "com.onndetect.detection.visual.BioLipLandmarkAnalyzerTest",
+        "test_duration_seconds": 0.004
+      },
+      {
+        "name": "parseJson correctly deserializes 768-D forensic head",
+        "class_name": "com.onndetect.detection.visual.ForensicFeatureHeadTest",
+        "test_duration_seconds": 0.009
+      },
+      {
+        "name": "predict computes exact affine sigmoid score and respects threshold",
+        "class_name": "com.onndetect.detection.visual.ForensicFeatureHeadTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "rejects mismatched feature dimensions",
+        "class_name": "com.onndetect.detection.visual.ForensicFeatureHeadTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "computeJitterScore computes over consecutive run even when surrounding frames are missing",
+        "class_name": "com.onndetect.detection.visual.LipSyncDetectorLifecycleTest",
+        "test_duration_seconds": 0.01
+      },
+      {
+        "name": "computeJitterScore returns NaN when valid frames are non-consecutive with gaps",
+        "class_name": "com.onndetect.detection.visual.LipSyncDetectorLifecycleTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "computeJitterScore returns NaN when partial landmark subset (40 points) is passed",
+        "class_name": "com.onndetect.detection.visual.LipSyncDetectorLifecycleTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "computeRppgAnomalyFromTimeline returns NaN when non-finite or empty",
+        "class_name": "com.onndetect.detection.visual.LipSyncDetectorLifecycleTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "durationMs provides frame count fallback when METADATA_KEY_VIDEO_FRAME_COUNT is null",
+        "class_name": "com.onndetect.detection.visual.LipSyncDetectorLifecycleTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "parcelFileDescriptor is reliably closed via use block even on extraction failure",
+        "class_name": "com.onndetect.detection.visual.LipSyncDetectorLifecycleTest",
+        "test_duration_seconds": 0.008
+      },
+      {
+        "name": "mediaMetadataRetriever release must occur strictly after frame extraction",
+        "class_name": "com.onndetect.detection.visual.LipSyncDetectorLifecycleTest",
+        "test_duration_seconds": 0.007
+      },
+      {
+        "name": "mediapipe facelandmarker package reflection target follows 0_10 convention",
+        "class_name": "com.onndetect.detection.visual.LipSyncDetectorLifecycleTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "computeRppgAnomalyFromTimeline succeeds on contiguous run of 4 or more frames",
+        "class_name": "com.onndetect.detection.visual.LipSyncDetectorLifecycleTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "timestamp microsecond calculation must scale to microseconds not nanoseconds",
+        "class_name": "com.onndetect.detection.visual.LipSyncDetectorLifecycleTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "computeJitterScore succeeds with valid score when full face mesh (478 points) is passed",
+        "class_name": "com.onndetect.detection.visual.LipSyncDetectorLifecycleTest",
+        "test_duration_seconds": 0.002
+      },
+      {
+        "name": "computeRppgAnomalyFromTimeline returns NaN when contiguous run is less than 4 frames",
+        "class_name": "com.onndetect.detection.visual.LipSyncDetectorLifecycleTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "bitmaps allocated during video extraction must be explicitly recycled in finally block",
+        "class_name": "com.onndetect.detection.visual.LipSyncDetectorLifecycleTest",
+        "test_duration_seconds": 0.003
+      },
+      {
+        "name": "computeJitterScore only computes triplets over consecutive frames",
+        "class_name": "com.onndetect.detection.visual.LipSyncDetectorLifecycleTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "nativeContextLifecycleScopedToLeaseAndUnloadsExplicitly",
+        "class_name": "com.onndetect.detection.visual.LlamaCppVlmPrefillBackendTest",
+        "test_duration_seconds": 0.023
+      },
+      {
+        "name": "testDelegateIntegratesWithAnalyzerContract",
+        "class_name": "com.onndetect.detection.visual.LlamaCppVlmPrefillBackendTest",
+        "test_duration_seconds": 0.008
+      },
+      {
+        "name": "allowsInitializationWhenTestDelegateIsConfigured",
+        "class_name": "com.onndetect.detection.visual.LlamaCppVlmPrefillBackendTest",
+        "test_duration_seconds": 0.003
+      },
+      {
+        "name": "pixelsToRgbBytesPacksExactChannelsInRgbOrder",
+        "class_name": "com.onndetect.detection.visual.LlamaCppVlmPrefillBackendTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "pixelsToRgbBytesRejectsMismatchedDimensions",
+        "class_name": "com.onndetect.detection.visual.LlamaCppVlmPrefillBackendTest",
+        "test_duration_seconds": 0.013
+      },
+      {
+        "name": "throwsWhenNativeLibraryNotLoadedAndNoDelegate",
+        "class_name": "com.onndetect.detection.visual.LlamaCppVlmPrefillBackendTest",
+        "test_duration_seconds": 0.002
+      },
+      {
+        "name": "pixelsToRgbBytesCapsResolutionAndDownsamplesCorrectly",
+        "class_name": "com.onndetect.detection.visual.LlamaCppVlmPrefillBackendTest",
+        "test_duration_seconds": 0.018
+      },
+      {
+        "name": "failsWhenModelFileDoesNotExistAndNoDelegateConfigured",
+        "class_name": "com.onndetect.detection.visual.LlamaCppVlmPrefillBackendTest",
+        "test_duration_seconds": 0.002
+      },
+      {
+        "name": "incompleteFinalCharacterIsReplacedOnlyWhenStreamEnds",
+        "class_name": "com.onndetect.detection.visual.NativeTokenStreamTest",
+        "test_duration_seconds": 0.009
+      },
+      {
+        "name": "cancelledRequestDoesNotInvokeModelDelegate",
+        "class_name": "com.onndetect.detection.visual.NativeTokenStreamTest",
+        "test_duration_seconds": 0.008
+      },
+      {
+        "name": "streamingCallbackAndReturnedAnswerHaveIdenticalUnicodeContent",
+        "class_name": "com.onndetect.detection.visual.NativeTokenStreamTest",
+        "test_duration_seconds": 0.008
+      },
+      {
+        "name": "splitEmojiAndNonLatinTokenBytesReassembleWithoutReplacement",
+        "class_name": "com.onndetect.detection.visual.NativeTokenStreamTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "closeWaitsForActiveGenerationBeforeReleasingContext",
+        "class_name": "com.onndetect.detection.visual.NativeTokenStreamTest",
+        "test_duration_seconds": 0.103
+      },
+      {
+        "name": "leasedProjectionBlocksSiglipDuringPrefillAndReleasesAfterwards",
+        "class_name": "com.onndetect.detection.visual.OnDemandForensicVlmAnalyzerContractTest",
+        "test_duration_seconds": 0.027
+      },
+      {
+        "name": "policyBundleAndHeadProjectionMatchPythonExport",
+        "class_name": "com.onndetect.detection.visual.OnDemandForensicVlmAnalyzerContractTest",
+        "test_duration_seconds": 0.004
+      },
+      {
+        "name": "rejectsUnknownSchemaVersion",
+        "class_name": "com.onndetect.detection.visual.OnDemandForensicVlmAnalyzerContractTest",
+        "test_duration_seconds": 0.004
+      },
+      {
+        "name": "explanationCitesOnlyEvaluatedAxesAndNoHardcodedClaims",
+        "class_name": "com.onndetect.detection.visual.OnDemandForensicVlmAnalyzerContractTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "counterexampleClassLogitTenZeroRubricEvaluatesClassProb",
+        "class_name": "com.onndetect.detection.visual.OnDemandForensicVlmAnalyzerContractTest",
+        "test_duration_seconds": 0.015
+      },
+      {
+        "name": "feasiblePolicyEscalatesOnBoundaryUsingLearnedThresholds",
+        "class_name": "com.onndetect.detection.visual.OnDemandForensicVlmAnalyzerContractTest",
+        "test_duration_seconds": 0.002
+      },
+      {
+        "name": "initializeActiveBackendIfAvailableEnforcesIntegrityAndDiscoversPacks",
+        "class_name": "com.onndetect.detection.visual.OnDemandForensicVlmAnalyzerContractTest",
+        "test_duration_seconds": 0.577
+      },
+      {
+        "name": "leaseIsReleasedWhenPrefillThrows",
+        "class_name": "com.onndetect.detection.visual.OnDemandForensicVlmAnalyzerContractTest",
+        "test_duration_seconds": 0.004
+      },
+      {
+        "name": "fixedFprPrecisionPreservedAfterJsonAndFloatConversion",
+        "class_name": "com.onndetect.detection.visual.OnDemandForensicVlmAnalyzerContractTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "signedManifestCryptographicallyVerifiedAndTamperingRejected",
+        "class_name": "com.onndetect.detection.visual.OnDemandForensicVlmAnalyzerContractTest",
+        "test_duration_seconds": 0.017
+      },
+      {
+        "name": "crossLanguageRoutingParityCasesMatchPython",
+        "class_name": "com.onndetect.detection.visual.OnDemandForensicVlmAnalyzerContractTest",
+        "test_duration_seconds": 0.004
+      },
+      {
+        "name": "infeasiblePolicyNeverEscalates",
+        "class_name": "com.onndetect.detection.visual.OnDemandForensicVlmAnalyzerContractTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "overlappingExclusiveLeasesAreRejected",
+        "class_name": "com.onndetect.detection.visual.OnDemandForensicVlmAnalyzerContractTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "signedVlmPackManifestFromJsonParsesAllFields",
+        "class_name": "com.onndetect.detection.visual.OnDemandForensicVlmAnalyzerContractTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "computeRppgBilateralPhaseAnomaly selects longest valid run when multiple runs exist",
+        "class_name": "com.onndetect.detection.visual.VideoStressAdversarialTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "computeJitterScore boundary frames return Float_NaN",
+        "class_name": "com.onndetect.detection.visual.VideoStressAdversarialTest",
+        "test_duration_seconds": 0.002
+      },
+      {
+        "name": "computeJitterScore is strictly sensitive to temporal order",
+        "class_name": "com.onndetect.detection.visual.VideoStressAdversarialTest",
+        "test_duration_seconds": 0.004
+      },
+      {
+        "name": "computeRppgAnomalyFromTimeline boundary frames return Float_NaN",
+        "class_name": "com.onndetect.detection.visual.VideoStressAdversarialTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "computeRppgBilateralPhaseAnomaly correctly isolates in-phase cardiac pulse across continuous runs",
+        "class_name": "com.onndetect.detection.visual.VideoStressAdversarialTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "computeJitterScore does not trigger false acceleration spikes on simulated head turns across gaps",
+        "class_name": "com.onndetect.detection.visual.VideoStressAdversarialTest",
+        "test_duration_seconds": 0.002
+      },
+      {
+        "name": "computeJitterScore remains near zero across multiple intermittent gaps and large coordinate shifts",
+        "class_name": "com.onndetect.detection.visual.VideoStressAdversarialTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "computeJitterScore filters out degenerate landmarks and extreme coordinates gracefully",
+        "class_name": "com.onndetect.detection.visual.VideoStressAdversarialTest",
+        "test_duration_seconds": 0.002
+      },
+      {
+        "name": "computeRppgBilateralPhaseAnomaly truthfully returns NaN on zero-variance flat signals",
+        "class_name": "com.onndetect.detection.visual.VideoStressAdversarialTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "computeRppgBilateralPhaseAnomaly correctly detects counterphase synthetic deepfake anomalies",
+        "class_name": "com.onndetect.detection.visual.VideoStressAdversarialTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "computeRppgBilateralPhaseAnomaly returns Float_NaN on scattered frames lacking 4 contiguous frames",
+        "class_name": "com.onndetect.detection.visual.VideoStressAdversarialTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "impulse input yields flat spectrum",
+        "class_name": "com.onndetect.FFTUtilTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "constant signal has energy only at DC",
+        "class_name": "com.onndetect.FFTUtilTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "2D power spectrum of constant image is DC-only after shift",
+        "class_name": "com.onndetect.FFTUtilTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "single tone peaks at expected bin",
+        "class_name": "com.onndetect.FFTUtilTest",
+        "test_duration_seconds": 0.005
+      },
+      {
+        "name": "flickering sequence scores high",
+        "class_name": "com.onndetect.FrameCosineDeltaTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "natural-range dynamics score low",
+        "class_name": "com.onndetect.FrameCosineDeltaTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "perfectly frozen sequence saturates anomaly",
+        "class_name": "com.onndetect.FrameCosineDeltaTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "black frame is different from a nonblack frame",
+        "class_name": "com.onndetect.FrameCosineDeltaTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "opposite gradients are anti-correlated",
+        "class_name": "com.onndetect.FrameCosineDeltaTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "orthogonal descriptors have zero cosine",
+        "class_name": "com.onndetect.FrameCosineDeltaTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "identical frames have cosine one",
+        "class_name": "com.onndetect.FrameCosineDeltaTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "an out of range probability is still clipped",
+        "class_name": "com.onndetect.FusionBaseMarginTest",
+        "test_duration_seconds": 0.003
+      },
+      {
+        "name": "matches the python reference logits",
+        "class_name": "com.onndetect.FusionBaseMarginTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "the margin is monotone in the probe score",
+        "class_name": "com.onndetect.FusionBaseMarginTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "a saturated probability uses the trainer's clipped logit",
+        "class_name": "com.onndetect.FusionBaseMarginTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "an unavailable probe contributes no margin",
+        "class_name": "com.onndetect.FusionBaseMarginTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "single column grayscale has no adjacent pairs and must be refused",
+        "class_name": "com.onndetect.GrayscaleConventionTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "luma stays inside uint8 range for the full colour cube",
+        "class_name": "com.onndetect.GrayscaleConventionTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "known fractional-double divergence is pinned",
+        "class_name": "com.onndetect.GrayscaleConventionTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "fractional double weights disagree with integer weights on real triples",
+        "class_name": "com.onndetect.GrayscaleConventionTest",
+        "test_duration_seconds": 0.019
+      },
+      {
+        "name": "extreme diffs are clamped into edge bins",
+        "class_name": "com.onndetect.KLCooccurrenceTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "zero probability bins do not generate NaN",
+        "class_name": "com.onndetect.KLCooccurrenceTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "flat image concentrates mass in center bin and scores high",
+        "class_name": "com.onndetect.KLCooccurrenceTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "shifted distribution gives positive KL and saturates",
+        "class_name": "com.onndetect.KLCooccurrenceTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "degenerate inputs are unavailable",
+        "class_name": "com.onndetect.KLCooccurrenceTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "histogram sums to one",
+        "class_name": "com.onndetect.KLCooccurrenceTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "histogram identical to baseline gives zero KL",
+        "class_name": "com.onndetect.KLCooccurrenceTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "nonfinite histogram is rejected",
+        "class_name": "com.onndetect.KLCooccurrenceTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "zero baseline is rejected",
+        "class_name": "com.onndetect.KLCooccurrenceTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "per-frame mean is NOT zero - guards against the old per-frame bug",
+        "class_name": "com.onndetect.LFCCExtractorTest",
+        "test_duration_seconds": 0.058
+      },
+      {
+        "name": "c0 log-energy retains spread",
+        "class_name": "com.onndetect.LFCCExtractorTest",
+        "test_duration_seconds": 0.029
+      },
+      {
+        "name": "energy matches the CMVN theoretical value",
+        "class_name": "com.onndetect.LFCCExtractorTest",
+        "test_duration_seconds": 0.022
+      },
+      {
+        "name": "matches training front-end golden frames",
+        "class_name": "com.onndetect.LFCCExtractorTest",
+        "test_duration_seconds": 0.028
+      },
+      {
+        "name": "four second window yields 401 frames",
+        "class_name": "com.onndetect.LFCCExtractorTest",
+        "test_duration_seconds": 0.365
+      },
+      {
+        "name": "CMVN is per-coefficient over time - the actual contract",
+        "class_name": "com.onndetect.LFCCExtractorTest",
+        "test_duration_seconds": 0.016
+      },
+      {
+        "name": "shape matches the training front end",
+        "class_name": "com.onndetect.LFCCExtractorTest",
+        "test_duration_seconds": 0.009
+      },
+      {
+        "name": "center crop keeps middle window",
+        "class_name": "com.onndetect.LFCCExtractorTest",
+        "test_duration_seconds": 0.002
+      },
+      {
+        "name": "resampler identity and output length",
+        "class_name": "com.onndetect.LFCCExtractorTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "digital silence stays finite",
+        "class_name": "com.onndetect.LFCCExtractorTest",
+        "test_duration_seconds": 0.016
+      },
+      {
+        "name": "unrelated audio failure does not block image diagnostics",
+        "class_name": "com.onndetect.ModelIntegrityCheckerTest",
+        "test_duration_seconds": 0.029
+      },
+      {
+        "name": "desktop parity cannot be reused for different model bytes or frontend",
+        "class_name": "com.onndetect.ModelIntegrityCheckerTest",
+        "test_duration_seconds": 0.028
+      },
+      {
+        "name": "string validation flags cannot unlock a release",
+        "class_name": "com.onndetect.ModelIntegrityCheckerTest",
+        "test_duration_seconds": 0.004
+      },
+      {
+        "name": "tampered source or fusion bytes invalidate even an audio-only release",
+        "class_name": "com.onndetect.ModelIntegrityCheckerTest",
+        "test_duration_seconds": 0.014
+      },
+      {
+        "name": "model and constant tampering fail closed",
+        "class_name": "com.onndetect.ModelIntegrityCheckerTest",
+        "test_duration_seconds": 0.004
+      },
+      {
+        "name": "missing malformed and empty hash manifests fail closed",
+        "class_name": "com.onndetect.ModelIntegrityCheckerTest",
+        "test_duration_seconds": 0.007
+      },
+      {
+        "name": "legacy bytes may be intact but cannot provide validated verdict",
+        "class_name": "com.onndetect.ModelIntegrityCheckerTest",
+        "test_duration_seconds": 0.003
+      },
+      {
+        "name": "audio-only validation requires the exact source snapshot and fusion tested on device",
+        "class_name": "com.onndetect.ModelIntegrityCheckerTest",
+        "test_duration_seconds": 0.021
+      },
+      {
+        "name": "missing release fails closed",
+        "class_name": "com.onndetect.ModelIntegrityCheckerTest",
+        "test_duration_seconds": 0.002
+      },
+      {
+        "name": "string tensor dimensions are rejected",
+        "class_name": "com.onndetect.ModelIntegrityCheckerTest",
+        "test_duration_seconds": 0.003
+      },
+      {
+        "name": "claiming validation without lineage is rejected",
+        "class_name": "com.onndetect.ModelIntegrityCheckerTest",
+        "test_duration_seconds": 0.003
+      },
+      {
+        "name": "the packaged assets pass the integrity gate",
+        "class_name": "com.onndetect.PackagedAssetsIntegrityTest",
+        "test_duration_seconds": 0.088
+      },
+      {
+        "name": "the packaged release yields a usable calibrated report",
+        "class_name": "com.onndetect.PackagedVerdictChainTest",
+        "test_duration_seconds": 0.019
+      },
+      {
+        "name": "a score above the threshold produces a definite synthetic verdict",
+        "class_name": "com.onndetect.PackagedVerdictChainTest",
+        "test_duration_seconds": 0.015
+      },
+      {
+        "name": "an unvalidated release still abstains",
+        "class_name": "com.onndetect.PackagedVerdictChainTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "the packaged release is honest about the device evaluation",
+        "class_name": "com.onndetect.PackagedVerdictChainTest",
+        "test_duration_seconds": 0.012
+      },
+      {
+        "name": "the second engine actually runs",
+        "class_name": "com.onndetect.PackagedVerdictChainTest",
+        "test_duration_seconds": 0.015
+      },
+      {
+        "name": "a score below the threshold produces a definite authentic verdict",
+        "class_name": "com.onndetect.PackagedVerdictChainTest",
+        "test_duration_seconds": 0.011
+      },
+      {
+        "name": "nonfinite float PCM rejected",
+        "class_name": "com.onndetect.PcmEncodingTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "partial stereo frame rejected",
+        "class_name": "com.onndetect.PcmEncodingTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "unknown encoding rejected",
+        "class_name": "com.onndetect.PcmEncodingTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "signed24 sign extension is correct",
+        "class_name": "com.onndetect.PcmEncodingTest",
+        "test_duration_seconds": 0.009
+      },
+      {
+        "name": "unsigned8 and signed16 extremes decode correctly",
+        "class_name": "com.onndetect.PcmEncodingTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "invalid rate rejected",
+        "class_name": "com.onndetect.PcmEncodingTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "signed32 and float32 stereo use encoding and channel count",
+        "class_name": "com.onndetect.PcmEncodingTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "identity when rates match",
+        "class_name": "com.onndetect.PcmUtilResampleTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "signal shorter than kernel does not crash",
+        "class_name": "com.onndetect.PcmUtilResampleTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "non-integer ratio is exact in length and rate",
+        "class_name": "com.onndetect.PcmUtilResampleTest",
+        "test_duration_seconds": 0.045
+      },
+      {
+        "name": "in-band tone keeps its amplitude",
+        "class_name": "com.onndetect.PcmUtilResampleTest",
+        "test_duration_seconds": 0.062
+      },
+      {
+        "name": "output length is the expected duration",
+        "class_name": "com.onndetect.PcmUtilResampleTest",
+        "test_duration_seconds": 0.029
+      },
+      {
+        "name": "upsampling works and preserves amplitude",
+        "class_name": "com.onndetect.PcmUtilResampleTest",
+        "test_duration_seconds": 0.016
+      },
+      {
+        "name": "linear resampler demonstrably fails the same test",
+        "class_name": "com.onndetect.PcmUtilResampleTest",
+        "test_duration_seconds": 0.01
+      },
+      {
+        "name": "voice-note upsampling preserves tone",
+        "class_name": "com.onndetect.PcmUtilResampleTest",
+        "test_duration_seconds": 0.033
+      },
+      {
+        "name": "out-of-band tones are suppressed",
+        "class_name": "com.onndetect.PcmUtilResampleTest",
+        "test_duration_seconds": 0.159
+      },
+      {
+        "name": "near-Nyquist in-band tone survives",
+        "class_name": "com.onndetect.PcmUtilResampleTest",
+        "test_duration_seconds": 0.05
+      },
+      {
+        "name": "silence stays silent",
+        "class_name": "com.onndetect.PcmUtilResampleTest",
+        "test_duration_seconds": 0.006
+      },
+      {
+        "name": "aChainAloneIsExplicitlyUnverified",
+        "class_name": "com.onndetect.ProvenanceIntegrationTest",
+        "test_duration_seconds": 0.04
+      },
+      {
+        "name": "audioSealBinomialTailIsCorrect",
+        "class_name": "com.onndetect.ProvenanceIntegrationTest",
+        "test_duration_seconds": 0.003
+      },
+      {
+        "name": "anUntrustedRootFailsTheChain",
+        "class_name": "com.onndetect.ProvenanceIntegrationTest",
+        "test_duration_seconds": 0.065
+      },
+      {
+        "name": "cborDecodesOneByteLengthsBetween128And255WithoutSignExtension",
+        "class_name": "com.onndetect.ProvenanceIntegrationTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "verifiesChainCoseSignatureAndDataHashTogether",
+        "class_name": "com.onndetect.ProvenanceIntegrationTest",
+        "test_duration_seconds": 0.019
+      },
+      {
+        "name": "theProductionAssetTrustListParsesIntoAnchors",
+        "class_name": "com.onndetect.ProvenanceIntegrationTest",
+        "test_duration_seconds": 0.048
+      },
+      {
+        "name": "aSignatureByAnotherKeyFailsTheCoseVerification",
+        "class_name": "com.onndetect.ProvenanceIntegrationTest",
+        "test_duration_seconds": 0.03
+      },
+      {
+        "name": "aTransplantedManifestFailsTheDataHashBinding",
+        "class_name": "com.onndetect.ProvenanceIntegrationTest",
+        "test_duration_seconds": 0.021
+      },
+      {
+        "name": "anOverbroadExclusionRangeOutsideManifestHullIsRejected",
+        "class_name": "com.onndetect.ProvenanceIntegrationTest",
+        "test_duration_seconds": 0.054
+      },
+      {
+        "name": "verifierIgnoresPlainJpeg",
+        "class_name": "com.onndetect.ProvenanceIntegrationTest",
+        "test_duration_seconds": 0.011
+      },
+      {
+        "name": "anEmptyTrustStoreFailsClosed",
+        "class_name": "com.onndetect.ProvenanceIntegrationTest",
+        "test_duration_seconds": 0.023
+      },
+      {
+        "name": "formatMsClampsNegativeTimeAndPreservesMinuteBoundaries",
+        "class_name": "com.onndetect.rag.ForensicRagEngineTest",
+        "test_duration_seconds": 0.005
+      },
+      {
+        "name": "retrievalRanksActualTextAheadOfMissingDetectorScore",
+        "class_name": "com.onndetect.rag.ForensicRagEngineTest",
+        "test_duration_seconds": 0.006
+      },
+      {
+        "name": "multipleAttachmentsKeepSourceLabelsAndHaveNoFabricatedAggregateScore",
+        "class_name": "com.onndetect.rag.ForensicRagEngineTest",
+        "test_duration_seconds": 0.002
+      },
+      {
+        "name": "generalRepliesStateRealPdfAndLocalModelLimits",
+        "class_name": "com.onndetect.rag.ForensicRagEngineTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "promptTreatsDocumentRoleDelimitersAsDataAndBoundsContent",
+        "class_name": "com.onndetect.rag.ForensicRagEngineTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "explicitShortAnswersUseABoundedMobileDecodeBudget",
+        "class_name": "com.onndetect.rag.ForensicRagEngineTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "multipleAttachmentsBoundContextWithoutDroppingEveryOtherSource",
+        "class_name": "com.onndetect.rag.ForensicRagEngineTest",
+        "test_duration_seconds": 0.007
+      },
+      {
+        "name": "fallbackKeepsInconclusiveAndDoesNotInventTamperCauseOrIdentity",
+        "class_name": "com.onndetect.rag.ForensicRagEngineTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "retrievalSupportsNonEnglishDocumentTerms",
+        "class_name": "com.onndetect.rag.ForensicRagEngineTest",
+        "test_duration_seconds": 0.003
+      },
+      {
+        "name": "combiningTooManyAttachmentsFailsInsteadOfSilentlyOmittingFiles",
+        "class_name": "com.onndetect.rag.ForensicRagEngineTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "ordinaryVisualQuestionsDoNotUnnecessarilyInvokeForensicModels",
+        "class_name": "com.onndetect.rag.ForensicRagEngineTest",
+        "test_duration_seconds": 0.004
+      },
+      {
+        "name": "a video share resolves to the video route",
+        "class_name": "com.onndetect.SharedMediaResolverTest",
+        "test_duration_seconds": 0.003
+      },
+      {
+        "name": "a missing mime type falls back to the extension",
+        "class_name": "com.onndetect.SharedMediaResolverTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "a file uri is refused",
+        "class_name": "com.onndetect.SharedMediaResolverTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "an image share resolves to the image route",
+        "class_name": "com.onndetect.SharedMediaResolverTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "the mode strings are the ones the scanner route uses",
+        "class_name": "com.onndetect.SharedMediaResolverTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "a multiple share scans the first item only",
+        "class_name": "com.onndetect.SharedMediaResolverTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "an unsupported mime type is refused rather than guessed",
+        "class_name": "com.onndetect.SharedMediaResolverTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "an empty or bare content uri is refused",
+        "class_name": "com.onndetect.SharedMediaResolverTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "the extra stream wins over the clip data",
+        "class_name": "com.onndetect.SharedMediaResolverTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "a network uri is refused",
+        "class_name": "com.onndetect.SharedMediaResolverTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "an unknown extension with no mime type is refused",
+        "class_name": "com.onndetect.SharedMediaResolverTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "no uri at all is refused",
+        "class_name": "com.onndetect.SharedMediaResolverTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "an audio share resolves to the audio route",
+        "class_name": "com.onndetect.SharedMediaResolverTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "unverified credential flags never alter content score",
+        "class_name": "com.onndetect.SignalFusionTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "absent metadata leaves content unchanged",
+        "class_name": "com.onndetect.SignalFusionTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "nonfinite scores are rejected",
+        "class_name": "com.onndetect.SignalFusionTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "out of range scores are rejected",
+        "class_name": "com.onndetect.SignalFusionTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "score boundary positive and negative infinity format to NA",
+        "class_name": "com.onndetect.ui.screens.result.ForensicCertificateExporterTest",
+        "test_duration_seconds": 0.003
+      },
+      {
+        "name": "video scan selects maximum of perturbation, audio, and landmark jitter in composite row",
+        "class_name": "com.onndetect.ui.screens.result.ForensicCertificateExporterTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "canonical receipt payload strictly rejects non-finite float scores",
+        "class_name": "com.onndetect.ui.screens.result.ForensicCertificateExporterTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "generateCertificateJson produces structured audit JSON with valid scores",
+        "class_name": "com.onndetect.ui.screens.result.ForensicCertificateExporterTest",
+        "test_duration_seconds": 0.002
+      },
+      {
+        "name": "audio-only scan formats visual engines as NA and extracts audioModelScore in composite row",
+        "class_name": "com.onndetect.ui.screens.result.ForensicCertificateExporterTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "share text generation handles Float_NaN score without crashing",
+        "class_name": "com.onndetect.ui.screens.result.ForensicCertificateExporterTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "telemetry extraction with null signals formats all rows as NA",
+        "class_name": "com.onndetect.ui.screens.result.ForensicCertificateExporterTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "share text generation formats score cleanly for standard scores",
+        "class_name": "com.onndetect.ui.screens.result.ForensicCertificateExporterTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "canonical receipt payload enforces strictly lexicographically sorted keys and 4dp floats",
+        "class_name": "com.onndetect.ui.screens.result.ForensicCertificateExporterTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "score boundary 1f formats to 100 percent",
+        "class_name": "com.onndetect.ui.screens.result.ForensicCertificateExporterTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "score boundary Float_NaN formats to NA without throwing",
+        "class_name": "com.onndetect.ui.screens.result.ForensicCertificateExporterTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "out-of-bounds scores format to NA",
+        "class_name": "com.onndetect.ui.screens.result.ForensicCertificateExporterTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "share text generation handles boundary scores 0f and 1f",
+        "class_name": "com.onndetect.ui.screens.result.ForensicCertificateExporterTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "generateCertificateJson serializes NaN score as JSON null",
+        "class_name": "com.onndetect.ui.screens.result.ForensicCertificateExporterTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "score boundary 0f formats to 0 percent",
+        "class_name": "com.onndetect.ui.screens.result.ForensicCertificateExporterTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "telemetry extraction with all-NaN signals formats all rows as NA",
+        "class_name": "com.onndetect.ui.screens.result.ForensicCertificateExporterTest",
+        "test_duration_seconds": 0.002
+      },
+      {
+        "name": "media SHA-256 splitting handles short or unavailable digests safely",
+        "class_name": "com.onndetect.ui.screens.result.ForensicCertificateExporterTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "media SHA-256 splitting splits 64-character digest into two 32-character halves",
+        "class_name": "com.onndetect.ui.screens.result.ForensicCertificateExporterTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "threshold percentage formatting handles standard and boundary values",
+        "class_name": "com.onndetect.ui.screens.result.ForensicCertificateExporterTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "telemetry extraction with complete modality signals produces exact percentages",
+        "class_name": "com.onndetect.ui.screens.result.ForensicCertificateExporterTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "missing and nonfinite scores and calibration abstain",
+        "class_name": "com.onndetect.VerdictPolicyTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "all failures and unvalidated scores abstain even above threshold",
+        "class_name": "com.onndetect.VerdictPolicyTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "validated operating point supplies coherent verdict",
+        "class_name": "com.onndetect.VerdictPolicyTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "no frames means no keyframes",
+        "class_name": "com.onndetect.VideoKeyframeSelectorTest",
+        "test_duration_seconds": 0.009
+      },
+      {
+        "name": "a frame separated by a scene cut is scored directly",
+        "class_name": "com.onndetect.VideoKeyframeSelectorTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "no frames means no tower calls",
+        "class_name": "com.onndetect.VideoKeyframeSelectorTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "a near-identical chain inherits the keyframe's score",
+        "class_name": "com.onndetect.VideoKeyframeSelectorTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "the first, middle and last frames are always keyframes",
+        "class_name": "com.onndetect.VideoKeyframeSelectorTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "an unavailable keyframe is not inherited",
+        "class_name": "com.onndetect.VideoKeyframeSelectorTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "the frame after the sharpest transition is a keyframe",
+        "class_name": "com.onndetect.VideoKeyframeSelectorTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "the keyframe count never exceeds the budget",
+        "class_name": "com.onndetect.VideoKeyframeSelectorTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "few frames are all keyframes",
+        "class_name": "com.onndetect.VideoKeyframeSelectorTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "poolingIsMonotoneInEachWindow",
+        "class_name": "com.onndetect.WindowPoolingTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "aShortFileYieldsOneWindow",
+        "class_name": "com.onndetect.WindowPoolingTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "theResultIsAlwaysAProbability",
+        "class_name": "com.onndetect.WindowPoolingTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "aSmallTemperatureApproachesTheMax",
+        "class_name": "com.onndetect.WindowPoolingTest",
+        "test_duration_seconds": 0.015
+      },
+      {
+        "name": "anEmptyInputIsUnavailable",
+        "class_name": "com.onndetect.WindowPoolingTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "aLargeTemperatureApproachesTheMean",
+        "class_name": "com.onndetect.WindowPoolingTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "matchesTheReferenceLseValues",
+        "class_name": "com.onndetect.WindowPoolingTest",
+        "test_duration_seconds": 0.003
+      },
+      {
+        "name": "identicalWindowsPoolToThatValue",
+        "class_name": "com.onndetect.WindowPoolingTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "theResultIsBetweenTheMeanAndTheMax",
+        "class_name": "com.onndetect.WindowPoolingTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "windowOffsetsAreSpreadAndInsideTheFile",
+        "class_name": "com.onndetect.WindowPoolingTest",
+        "test_duration_seconds": 0.004
+      },
+      {
+        "name": "aSingleWindowPoolsToItself",
+        "class_name": "com.onndetect.WindowPoolingTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "interleaved chroma padding matches planar values",
+        "class_name": "com.onndetect.Yuv420ConverterTest",
+        "test_duration_seconds": 0.004
+      },
+      {
+        "name": "limited black and full white decode correctly",
+        "class_name": "com.onndetect.Yuv420ConverterTest",
+        "test_duration_seconds": 0.0
+      },
+      {
+        "name": "crop and plane buffer positions are obeyed",
+        "class_name": "com.onndetect.Yuv420ConverterTest",
+        "test_duration_seconds": 0.001
+      },
+      {
+        "name": "truncated chroma rejected rather than clamped",
+        "class_name": "com.onndetect.Yuv420ConverterTest",
+        "test_duration_seconds": 0.001
+      }
+    ]
+  },
+  "connected_tests": {
+    "tests": 17,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "cases": [
+      {
+        "name": "saveEmptyChatDesignPreview",
+        "class_name": "com.onndetect.ChatExperienceTest",
+        "test_duration_seconds": 5.423
+      },
+      {
+        "name": "composerDisablesEmptySendAndSubmitsTypedMessage",
+        "class_name": "com.onndetect.ChatExperienceTest",
+        "test_duration_seconds": 3.199
+      },
+      {
+        "name": "saveStreamingConversationDesignPreview",
+        "class_name": "com.onndetect.ChatExperienceTest",
+        "test_duration_seconds": 2.449
+      },
+      {
+        "name": "streamingShowsRunningIndicatorAndStopControl",
+        "class_name": "com.onndetect.ChatExperienceTest",
+        "test_duration_seconds": 1.726
+      },
+      {
+        "name": "failedResponseProvidesRetryAction",
+        "class_name": "com.onndetect.ChatExperienceTest",
+        "test_duration_seconds": 2.126
+      },
+      {
+        "name": "attachmentOnlyMessageCanSendAndAttachmentCanBeRemoved",
+        "class_name": "com.onndetect.ChatExperienceTest",
+        "test_duration_seconds": 2.664
+      },
+      {
+        "name": "composerControlsRemainReachableWithLargeText",
+        "class_name": "com.onndetect.ChatExperienceTest",
+        "test_duration_seconds": 1.762
+      },
+      {
+        "name": "attachedTextTraversesImporterAndProducesGroundedReply",
+        "class_name": "com.onndetect.ChatSessionInstrumentationTest",
+        "test_duration_seconds": 2.337
+      },
+      {
+        "name": "busySendIsIgnoredAndNewConversationClearsAttachmentsAndContext",
+        "class_name": "com.onndetect.ChatSessionInstrumentationTest",
+        "test_duration_seconds": 1.801
+      },
+      {
+        "name": "severalReportsStageWithoutProviderUrisAndNormalChatClearsSources",
+        "class_name": "com.onndetect.ChatReportFlowInstrumentationTest",
+        "test_duration_seconds": 2.13
+      },
+      {
+        "name": "reportPickerAddsActualHistoryRowsToComposer",
+        "class_name": "com.onndetect.ChatReportFlowInstrumentationTest",
+        "test_duration_seconds": 4.12
+      },
+      {
+        "name": "explicitSavedReportKeepsRecordedUncertainty",
+        "class_name": "com.onndetect.ChatReportFlowInstrumentationTest",
+        "test_duration_seconds": 1.47
+      },
+      {
+        "name": "importedModelStopsAndReleasesItsInferenceLease",
+        "class_name": "com.onndetect.ChatModelRoutingInstrumentationTest",
+        "test_duration_seconds": 5.335
+      },
+      {
+        "name": "videoQuestionUsesRealDecodedSamplesAndProjector",
+        "class_name": "com.onndetect.ChatModelRoutingInstrumentationTest",
+        "test_duration_seconds": 21.693
+      },
+      {
+        "name": "savedForensicReportUsesModelWithoutInventingAValidatedVerdict",
+        "class_name": "com.onndetect.ChatModelRoutingInstrumentationTest",
+        "test_duration_seconds": 17.494
+      },
+      {
+        "name": "imageQuestionsActuallyUseProjectorAndPixels",
+        "class_name": "com.onndetect.ChatModelRoutingInstrumentationTest",
+        "test_duration_seconds": 34.933
+      },
+      {
+        "name": "normalConversationUsesActualWeightsWithoutAnyMedia",
+        "class_name": "com.onndetect.ChatModelRoutingInstrumentationTest",
+        "test_duration_seconds": 9.775
+      }
+    ]
+  },
+  "python_packaging_tests": {
+    "tests": 5,
+    "failures": 0,
+    "command": "python -m pytest scripts/tests/test_chat_model_pack.py -q"
+  },
+  "lint": {
+    "Fatal": 0,
+    "Error": 0,
+    "Warning": 83,
+    "Information": 0
+  },
+  "checks": {
+    "apk": {
+      "exit_code": 0,
+      "evidence": "Observed final release CLI invocation after assembleRelease; recorded without re-executing the passed check.",
+      "command": "python scripts/verify_android_artifact.py --apk android/app/build/outputs/apk/release/app-release.apk",
+      "stdout": "WARNING: Release is desktop-validated only: the device evaluation is outstanding, so the app reports the release as unverified on device\nAPK permissions, artifact contracts and 64-bit 16KiB alignment verified."
+    },
+    "android_contract": {
+      "exit_code": 0,
+      "stdout": "Kotlin sources found: 100\nFeature contract: python features=['srm_score', 'fft_score', 'kl_score', 'flatness_score', 'resolution_norm', 'is_compressed', 'semantic_probe_score', 'c2pa_present', 'lip_sync_corr', 'landmark_jitter']\nKotlin export documents all 10 features in order: True\nGrayscale convention: integer BT.601 truncation shared across both platforms\nAssets: models + constants all non-empty\n\n=== WARNINGS ===\nW: Release is desktop-validated only: the device evaluation is outstanding, so the app reports the release as unverified on device\n\nNo errors found.",
+      "stderr": ""
+    },
+    "documentation": {
+      "exit_code": 0,
+      "stdout": "Docs consistency: OK",
+      "stderr": ""
+    }
+  },
+  "artifacts": [
+    {
+      "path": "android/app/build/outputs/apk/debug/app-debug.apk",
+      "bytes": 170858429,
+      "sha256": "93a5ca5bba311c7ccf1f72356628b9c4a38ef331523b3f7115b2d35d2d6b4058"
+    },
+    {
+      "path": "android/app/build/outputs/apk/release/app-release.apk",
+      "bytes": 146434422,
+      "sha256": "bc474be44174214394c9b2277de1c6e57c1118e3439d85a5b87fc409102d9736"
+    },
+    {
+      "path": "outputs/chat-models/qwen35-0.8b-base-chat.zip",
+      "bytes": 678961164,
+      "sha256": "6578bfe68731ed9e43bfac8c2aba9e086490dc36c52db8211df028706b63481f"
+    },
+    {
+      "path": "downloaded_models/Qwen3.5-0.8B-Q4_0.gguf",
+      "bytes": 563036064,
+      "sha256": "57d1997790d1744fba5b40a7317df71ea5e2acee28c47e78f0cce39c0703f8cf"
+    },
+    {
+      "path": "downloaded_models/base-qwen35-0.8b-mmproj-Q8_0.gguf",
+      "bytes": 115923680,
+      "sha256": "5a6b15da0f483b9e320a5b86b787ad1831953dfaa706e2c5d91de830ea70d784"
+    }
+  ],
+  "projector_source": {
+    "repository": "mradermacher/Qwen3.5-0.8B-GGUF",
+    "revision": "78fc4c891ff7dee2e8286c3f4cdc8a26f7544a07",
+    "filename": "Qwen3.5-0.8B.mmproj-Q8_0.gguf",
+    "download_url": "https://huggingface.co/mradermacher/Qwen3.5-0.8B-GGUF/resolve/78fc4c891ff7dee2e8286c3f4cdc8a26f7544a07/Qwen3.5-0.8B.mmproj-Q8_0.gguf",
+    "bytes": 115923680,
+    "sha256": "5a6b15da0f483b9e320a5b86b787ad1831953dfaa706e2c5d91de830ea70d784",
+    "local_path": "C:\\Users\\PLEXTEK\\Desktop\\Onn-Detect-\\downloaded_models\\base-qwen35-0.8b-mmproj-Q8_0.gguf",
+    "source_api": "https://huggingface.co/api/models/mradermacher/Qwen3.5-0.8B-GGUF?blobs=true",
+    "publisher_declared_base_model": "Qwen/Qwen3.5-0.8B",
+    "publisher_declared_license": "apache-2.0",
+    "purpose": "Matching unmodified Qwen3.5-0.8B vision projector, replacing OCR-finetuned research pairing for evaluation",
+    "verification": "Exact full-revision URL; LFS SHA-256 and size independently checked after download",
+    "limits": "Publisher license and ancestry declarations recorded; task accuracy and model-pair behavior require actual runtime tests. No claim of forensic calibration.",
+    "preservation": "Existing OCR projector and all prior packs retained unchanged."
+  },
+  "evidence_scope": [
+    "Actual language weights answer normal chat without evidence attachments.",
+    "Neutral-filename red and blue images require different correct answers and actual projector pixel input.",
+    "Real encoded blue AVC/MP4 is decoded by production sampling and sent as visual context.",
+    "Saved report preserves INCONCLUSIVE and true media duration; records device-validation limits.",
+    "Cancellation after actual native token output releases the exclusive inference lease.",
+    "Compose checks cover composer, attachment actions, stop/retry, large text, report picker and rendered preview fixtures."
+  ],
+  "rejected_candidate": {
+    "pack": "outputs/chat-models/qwen35-0.8b-chat.zip",
+    "projector_sha256": "4754476e9527e121650de789550682287611597b4c0761db97230f614a2dc320",
+    "finding": "OCR-finetuned projector paired with base language answered Blue for a neutral-filename red image; earlier filename hints were inadequate evidence.",
+    "replacement": "Pinned base-model projector; original artifacts preserved."
+  },
+  "limits": [
+    "Synthetic routing fixtures do not establish general VLM quality or forensic detector accuracy.",
+    "No independent physical-phone accuracy, memory, thermal or speed validation was performed.",
+    "Release detector has desktop validation only; strict validated forensic distribution is not established.",
+    "Video uses up to four sampled visual frames; audio attachments are detector evidence, not transcription.",
+    "PDF covers up to three pages; selectable text requires API35+; visual reading is not certified OCR.",
+    "Cancellation is verified during decoding; native initial loading and vision encoding may delay interruption.",
+    "Local release signing may use the configured debug-key fallback; this is a local test build."
+  ]
+}

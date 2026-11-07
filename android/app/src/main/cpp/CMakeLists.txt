@@ -78,6 +78,15 @@ target_include_directories(
 
 target_compile_options(llama_forensic_jni PRIVATE -Wno-cast-qual)
 
+# Keep debug symbols and the Android debug build while making numerical
+# inference kernels usable. An unoptimized ggml build can spend minutes on a
+# short prompt. Do not use fast-math: missing-value/finite checks are contracts.
+foreach(inference_target ggml-base ggml-cpu llama llama_forensic_jni)
+    if(TARGET ${inference_target})
+        target_compile_options(${inference_target} PRIVATE $<$<CONFIG:Debug>:-O2>)
+    endif()
+endforeach()
+
 find_library(log-lib log)
 
 target_link_libraries(

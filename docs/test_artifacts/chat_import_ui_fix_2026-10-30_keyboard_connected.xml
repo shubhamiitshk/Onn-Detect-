@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<testsuite name="com.onndetect.ChatKeyboardInstrumentationTest" tests="1" failures="0" errors="0" skipped="0" time="19.768" timestamp="2026-10-30T05:52:55" hostname="localhost">
+  <properties>
+    <property name="device" value="onn_api36(AVD) - 16" />
+    <property name="flavor" value="" />
+    <property name="project" value=":app" />
+  </properties>
+  <testcase name="realKeyboardKeepsComposerAboveItAndHidesTheBottomDock" classname="com.onndetect.ChatKeyboardInstrumentationTest" time="16.533" />
+</testsuite>

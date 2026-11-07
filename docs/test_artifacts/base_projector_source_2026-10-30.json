@@ -1,0 +1,16 @@
+{
+  "repository": "mradermacher/Qwen3.5-0.8B-GGUF",
+  "revision": "78fc4c891ff7dee2e8286c3f4cdc8a26f7544a07",
+  "filename": "Qwen3.5-0.8B.mmproj-Q8_0.gguf",
+  "download_url": "https://huggingface.co/mradermacher/Qwen3.5-0.8B-GGUF/resolve/78fc4c891ff7dee2e8286c3f4cdc8a26f7544a07/Qwen3.5-0.8B.mmproj-Q8_0.gguf",
+  "bytes": 115923680,
+  "sha256": "5a6b15da0f483b9e320a5b86b787ad1831953dfaa706e2c5d91de830ea70d784",
+  "local_path": "C:\\Users\\PLEXTEK\\Desktop\\Onn-Detect-\\downloaded_models\\base-qwen35-0.8b-mmproj-Q8_0.gguf",
+  "source_api": "https://huggingface.co/api/models/mradermacher/Qwen3.5-0.8B-GGUF?blobs=true",
+  "publisher_declared_base_model": "Qwen/Qwen3.5-0.8B",
+  "publisher_declared_license": "apache-2.0",
+  "purpose": "Matching unmodified Qwen3.5-0.8B vision projector, replacing OCR-finetuned research pairing for evaluation",
+  "verification": "Exact full-revision URL; LFS SHA-256 and size independently checked after download",
+  "limits": "Publisher license and ancestry declarations recorded; task accuracy and model-pair behavior require actual runtime tests. No claim of forensic calibration.",
+  "preservation": "Existing OCR projector and all prior packs retained unchanged."
+}

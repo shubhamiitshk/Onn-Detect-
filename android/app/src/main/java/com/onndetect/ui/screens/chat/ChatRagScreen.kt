@@ -27,6 +27,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -49,6 +50,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -59,6 +61,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -200,28 +203,38 @@ fun ChatRagContent(
     Box(modifier = modifier.statusBarsPadding().imePadding()) {
         Column(Modifier.widthIn(max = 840.dp).fillMaxSize().align(Alignment.TopCenter)) {
             ChatHeader(
+                state = uiState,
                 hasMessages = uiState.messages.isNotEmpty() || staged.isNotEmpty() || uiState.knowledgeBase != null,
                 onNew = { input = ""; contextExpanded = false; followLatest = true; onNewConversation() },
                 onOpenModels = onOpenModels,
             )
             ChatModeBar(uiState.intent, busy, onIntentSelected, onAttach, onOpenReports)
-            ChatModelStatus(uiState, onOpenModels)
-            uiState.knowledgeBase?.let { kb ->
-                SourceContext(kb, uiState.selectedChunkIndex, contextExpanded, { contextExpanded = !contextExpanded }, onSelectChunk)
-            }
-            Box(Modifier.weight(1f).fillMaxWidth()) {
+            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+                val emptyHeight = maxOf(0.dp, maxHeight - 34.dp)
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize().testTag("chat_messages"),
-                    contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 28.dp),
-                    verticalArrangement = Arrangement.spacedBy(26.dp),
+                    contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 20.dp),
+                    verticalArrangement = Arrangement.spacedBy(24.dp),
                 ) {
+                    uiState.knowledgeBase?.let { kb ->
+                        item(key = "sources") {
+                            SourceContext(kb, uiState.selectedChunkIndex, contextExpanded, { contextExpanded = !contextExpanded }, onSelectChunk)
+                        }
+                    }
                     if (uiState.messages.isEmpty()) item(key = "welcome") {
-                        WelcomeState(onAttach, onOpenReports, uiState.intent) { input = it }
+                        Box(Modifier.heightIn(min = emptyHeight).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            WelcomeState(onAttach, onOpenReports, onOpenModels, uiState.intent, uiState.modelReady) { input = it }
+                        }
                     }
                     items(uiState.messages, key = { it.id }) { message ->
                         MessageRow(message, !busy && uiState.canRetry && message.id == lastMessage?.id,
-                            onRetry, onCopy, { contextExpanded = true; onSelectTimestamp(it) })
+                            onRetry, onCopy, {
+                                followLatest = false
+                                contextExpanded = true
+                                onSelectTimestamp(it)
+                                scope.launch { listState.animateScrollToItem(0) }
+                            })
                     }
                     if (busy) item(key = "working") {
                         WorkingIndicator(uiState.streamingStatus ?: if (uiState.isIndexing) "Reading your files" else "Thinking")
@@ -230,7 +243,7 @@ fun ChatRagContent(
                 if (!nearBottom && uiState.messages.isNotEmpty()) {
                     IconButton(
                         onClick = { followLatest = true; scope.launch { listState.animateScrollToItem((listState.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)) } },
-                        modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp).size(44.dp).glassSurface(22.dp)
+                        modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp).size(48.dp).glassSurface(24.dp)
                             .semantics { contentDescription = "Jump to latest message" },
                     ) { ChatIcon(Symbol.DOWN, ChatInk) }
                 }
@@ -257,47 +270,47 @@ fun ChatRagContent(
 
 @Composable
 private fun ChatModeBar(intent: ChatIntent, busy: Boolean, onSelect: (ChatIntent) -> Unit, onAttach: () -> Unit, onReports: () -> Unit) {
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 18.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        listOf(ChatIntent.NORMAL to "Chat", ChatIntent.MEDIA to "Media", ChatIntent.REPORT to "Scan reports").forEach { (mode, label) ->
-            FilterChip(selected = intent == mode, enabled = !busy,
-                onClick = { onSelect(mode); if (mode == ChatIntent.MEDIA) onAttach() else if (mode == ChatIntent.REPORT) onReports() },
-                label = { Text(label, fontSize = 12.sp) },
-                modifier = Modifier.testTag("chat_mode_${mode.name.lowercase(Locale.ROOT)}"),
-                colors = FilterChipDefaults.filterChipColors(containerColor = Color.Transparent,
-                    labelColor = ChatMuted, selectedContainerColor = ChatAccent.copy(alpha = 0.12f), selectedLabelColor = ChatAccent))
+    Row(Modifier.padding(horizontal = 18.dp, vertical = 3.dp).fillMaxWidth()
+        .clip(RoundedCornerShape(15.dp)).background(Color.White.copy(alpha = 0.025f))
+        .border(1.dp, Color.White.copy(alpha = 0.055f), RoundedCornerShape(15.dp)).padding(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+        listOf(ChatIntent.NORMAL to "Chat", ChatIntent.MEDIA to "Media", ChatIntent.REPORT to "Reports").forEach { (mode, label) ->
+            val selected = intent == mode
+            Row(Modifier.weight(1f).heightIn(min = 48.dp).clip(RoundedCornerShape(12.dp))
+                .background(if (selected) ChatAccent.copy(alpha = 0.11f) else Color.Transparent)
+                .selectable(selected = selected, enabled = !busy, role = Role.Tab,
+                    onClick = { onSelect(mode); if (mode == ChatIntent.MEDIA) onAttach() else if (mode == ChatIntent.REPORT) onReports() })
+                .padding(horizontal = 5.dp, vertical = 8.dp)
+                .testTag("chat_mode_${mode.name.lowercase(Locale.ROOT)}")
+                .semantics { contentDescription = if (mode == ChatIntent.REPORT) "Scan reports" else label },
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+                Text(label, color = if (selected) ChatAccent else if (busy) ChatFaint else ChatMuted,
+                    fontSize = 12.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
         }
     }
 }
 
 @Composable
-private fun ChatModelStatus(state: ChatRagUiState, onOpenModels: () -> Unit) {
-    Row(Modifier.padding(horizontal = 18.dp, vertical = 4.dp).fillMaxWidth().glassSurface(14.dp)
-        .clickable(onClick = onOpenModels).padding(horizontal = 12.dp, vertical = 9.dp)
-        .testTag("chat_model_status").semantics { contentDescription = "Chat model: ${state.modelName}. ${state.modelStatusMessage}" },
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-        Box(Modifier.size(6.dp).background(if (state.modelReady) Color(0xFF92D5BD) else Color(0xFFE3BB78), CircleShape))
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(if (state.modelReady) state.modelName else "Set up a local chat model", color = ChatInk, fontSize = 11.sp,
-                fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(if (state.modelReady) "Ready for conversation${if (state.modelSupportsVision) " and image questions" else " · text only"}"
-                else state.modelStatusMessage.ifBlank { "Without a model, replies use built-in evidence summaries." }, color = ChatMuted, fontSize = 10.sp,
-                maxLines = 2, overflow = TextOverflow.Ellipsis)
-        }
-        ChatIcon(Symbol.ARROW, ChatMuted, 16.dp)
-    }
-}
-
-@Composable
-private fun ChatHeader(hasMessages: Boolean, onNew: () -> Unit, onOpenModels: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(start = 22.dp, end = 14.dp, top = 6.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(38.dp).glassSurface(13.dp), contentAlignment = Alignment.Center) { ChatIcon(Symbol.SPARK, ChatAccent, 21.dp) }
-        Spacer(Modifier.width(11.dp))
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text("ONN Chat", color = ChatInk, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+private fun ChatHeader(state: ChatRagUiState, hasMessages: Boolean, onNew: () -> Unit, onOpenModels: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 2.dp, bottom = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+        ChatIcon(Symbol.SPARK, ChatAccent, 24.dp)
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f).heightIn(min = 52.dp).clip(RoundedCornerShape(10.dp)).clickable(onClick = onOpenModels)
+            .padding(vertical = 6.dp).testTag("chat_model_status")
+            .semantics { contentDescription = "Chat model: ${state.modelName}. ${state.modelStatusMessage}" },
+            verticalArrangement = Arrangement.Center) {
+            Text("ONN", color = ChatInk, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                Box(Modifier.size(5.dp).background(Color(0xFF92D5BD), CircleShape))
-                Text("On your device", color = ChatMuted, fontSize = 11.sp)
+                Box(Modifier.size(5.dp).background(if (state.modelReady) Color(0xFF92D5BD) else Color(0xFFE3BB78), CircleShape))
+                val modelLabel = when {
+                    state.modelReady -> state.modelName
+                    state.modelName !in setOf("Built-in evidence replies", "No chat model selected") -> "${state.modelName} · needs attention"
+                    else -> "Choose a model"
+                }
+                Text(modelLabel, color = ChatMuted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                ChatIcon(Symbol.DOWN, ChatFaint, 12.dp)
             }
         }
         IconButton(onClick = onNew, modifier = Modifier.testTag("chat_new").semantics { contentDescription = "New conversation" }, enabled = hasMessages) {
@@ -308,32 +321,40 @@ private fun ChatHeader(hasMessages: Boolean, onNew: () -> Unit, onOpenModels: ()
 }
 
 @Composable
-private fun WelcomeState(onAttach: () -> Unit, onOpenReports: () -> Unit, intent: ChatIntent, onPrompt: (String) -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
-        Box(Modifier.size(64.dp).glassSurface(22.dp), contentAlignment = Alignment.Center) { ChatIcon(Symbol.SPARK, ChatAccent, 34.dp) }
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(when (intent) { ChatIntent.NORMAL -> "What's on\nyour mind?"; ChatIntent.MEDIA -> "A clearer look\nat your media."; ChatIntent.REPORT -> "Understand\nyour scan." }, color = ChatInk, fontSize = 32.sp, lineHeight = 38.sp, fontWeight = FontWeight.SemiBold)
-            Text(when (intent) { ChatIntent.NORMAL -> "Just type to start a conversation. You can also add media or a saved scan report."; ChatIntent.MEDIA -> "Add a photo, video, audio clip or document, then ask about it."; ChatIntent.REPORT -> "Bring an image, audio or video scan report into chat and explore its evidence." }, color = ChatMuted, fontSize = 15.sp, lineHeight = 23.sp)
-        }
-        Column(Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-            StarterCard(Symbol.IMAGE, "Take a closer look", "Add an image or video", onAttach)
-            StarterCard(Symbol.FILE, "Read something together", "Add a PDF or text file", onAttach)
-            StarterCard(Symbol.FILE, "Explain a scan report", "Choose from your saved image, audio or video scans", onOpenReports)
-            if (intent == ChatIntent.NORMAL) TextButton(onClick = { onPrompt("Hello! Let's chat.") }) { Text("Start with a hello", color = ChatAccent) }
+private fun WelcomeState(onAttach: () -> Unit, onOpenReports: () -> Unit, onOpenModels: () -> Unit,
+    intent: ChatIntent, modelReady: Boolean, onPrompt: (String) -> Unit) {
+    Column(Modifier.widthIn(max = 390.dp).fillMaxWidth().padding(vertical = 20.dp),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(13.dp)) {
+        Box(Modifier.size(52.dp).glassSurface(18.dp), contentAlignment = Alignment.Center) { ChatIcon(Symbol.SPARK, ChatAccent, 27.dp) }
+        Text(when (intent) { ChatIntent.NORMAL -> "How can I help?"; ChatIntent.MEDIA -> "A closer look."; ChatIntent.REPORT -> "Explore your scan." },
+            color = ChatInk, fontSize = 26.sp, lineHeight = 33.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+        Text(when (intent) { ChatIntent.NORMAL -> "Ask a question, or bring something to explore."; ChatIntent.MEDIA -> "Add an image, video, audio clip or document."; ChatIntent.REPORT -> "Choose a saved report to discuss its findings." },
+            color = ChatMuted, fontSize = 13.sp, lineHeight = 20.sp, textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 12.dp))
+        if (!modelReady) {
+            TextButton(onClick = onOpenModels, modifier = Modifier.testTag("chat_setup_model")) {
+                ChatIcon(Symbol.PLUS, ChatAccent, 16.dp)
+                Spacer(Modifier.width(6.dp))
+                Text("Add a model to start chatting", color = ChatAccent, fontSize = 12.sp)
+            }
+        } else Spacer(Modifier.height(2.dp))
+        Column(Modifier.widthIn(max = 300.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            StarterCard(Symbol.IMAGE, "Add media or a file", onAttach)
+            StarterCard(Symbol.FILE, "Use a scan report", onOpenReports)
+            if (intent == ChatIntent.NORMAL && modelReady) StarterCard(Symbol.SPARK, "Start a conversation") { onPrompt("Hello! Let's chat.") }
         }
     }
 }
 
 @Composable
-private fun StarterCard(symbol: Symbol, title: String, subtitle: String, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().glassSurface(18.dp).clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-        ChatIcon(symbol, ChatAccent, 21.dp)
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(title, color = ChatInk, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-            Text(subtitle, color = ChatMuted, fontSize = 12.sp)
-        }
-        ChatIcon(Symbol.ARROW, ChatFaint, 17.dp)
+private fun StarterCard(symbol: Symbol, title: String, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(16.dp))
+        .background(Color.White.copy(alpha = 0.025f)).border(1.dp, Color.White.copy(alpha = 0.07f), RoundedCornerShape(16.dp))
+        .clickable(onClick = onClick).padding(horizontal = 15.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
+        ChatIcon(symbol, ChatMuted, 17.dp)
+        Text(title, color = ChatMuted, fontSize = 12.sp, modifier = Modifier.weight(1f))
+        ChatIcon(Symbol.PLUS, ChatFaint, 14.dp)
     }
 }
 
@@ -348,8 +369,7 @@ private fun MessageRow(message: ChatMessage, canRetry: Boolean, onRetry: () -> U
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ChatIcon(Symbol.SPARK, ChatAccent, 17.dp)
                 Text("ONN", color = ChatInk, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                if (message.isStreaming) Text("· Writing", color = ChatFaint, fontSize = 11.sp)
-                else if (message.wasStopped) Text("· Stopped", color = ChatFaint, fontSize = 11.sp)
+                if (message.wasStopped) Text("· Stopped", color = ChatFaint, fontSize = 11.sp)
                 else if (message.isError) Text("· Couldn't finish", color = Color(0xFFF4B9B5), fontSize = 11.sp)
             }
         }
@@ -367,19 +387,19 @@ private fun MessageRow(message: ChatMessage, canRetry: Boolean, onRetry: () -> U
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 message.citedTimestamps.distinct().forEach { time ->
                     Text("↗ $time", color = ChatAccent, fontSize = 11.sp,
-                        modifier = Modifier.glassSurface(10.dp).clickable { onTimestamp(time) }.padding(horizontal = 10.dp, vertical = 8.dp)
+                        modifier = Modifier.heightIn(min = 48.dp).glassSurface(10.dp).clickable { onTimestamp(time) }.padding(horizontal = 10.dp, vertical = 14.dp)
                             .semantics { contentDescription = "Open source at $time" })
                 }
             }
         }
         if (!message.isUser && !message.isStreaming && message.text.isNotBlank()) {
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { onCopy(message.text); copied = true }, modifier = Modifier.size(40.dp)
+                IconButton(onClick = { onCopy(message.text); copied = true }, modifier = Modifier.size(48.dp)
                     .semantics { contentDescription = if (copied) "Response copied" else "Copy response" }) {
                     ChatIcon(if (copied) Symbol.CHECK else Symbol.COPY, if (copied) ChatAccent else ChatFaint, 17.dp)
                 }
                 if (copied) Text("Copied", color = ChatMuted, fontSize = 11.sp)
-                if (canRetry) IconButton(onClick = onRetry, modifier = Modifier.size(40.dp).testTag("chat_retry").semantics { contentDescription = "Retry response" }) {
+                if (canRetry) IconButton(onClick = onRetry, modifier = Modifier.size(48.dp).testTag("chat_retry").semantics { contentDescription = "Retry response" }) {
                     ChatIcon(Symbol.RETRY, ChatFaint, 18.dp)
                 }
                 message.engineBadge?.let { badge ->
@@ -444,10 +464,10 @@ internal fun chatMarkdown(text: String): AnnotatedString = buildAnnotatedString 
 
 @Composable
 private fun WorkingIndicator(status: String) {
-    Row(Modifier.padding(vertical = 4.dp).semantics { liveRegion = LiveRegionMode.Polite }, horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.padding(vertical = 2.dp).semantics { liveRegion = LiveRegionMode.Polite }, horizontalArrangement = Arrangement.spacedBy(9.dp), verticalAlignment = Alignment.CenterVertically) {
         val transition = rememberInfiniteTransition(label = "working-circle")
         val angle by transition.animateFloat(0f, 360f, infiniteRepeatable(tween(1000, easing = LinearEasing)), label = "orbit-angle")
-        Canvas(Modifier.size(20.dp).semantics { contentDescription = "Response in progress" }.testTag("chat_working")) {
+        Canvas(Modifier.size(16.dp).semantics { contentDescription = "Response in progress" }.testTag("chat_working")) {
             drawCircle(ChatAccent.copy(alpha = 0.15f), style = Stroke(2.dp.toPx()))
             rotate(angle) { drawArc(ChatAccent, -90f, 90f, false, style = Stroke(2.dp.toPx(), cap = StrokeCap.Round)) }
         }
@@ -459,29 +479,29 @@ private fun WorkingIndicator(status: String) {
 private fun ChatComposer(input: String, onInput: (String) -> Unit, attachments: List<AttachedMedia>, busy: Boolean,
     onAttach: () -> Unit, onRemoveAttachment: (Uri) -> Unit, onStop: () -> Unit, onSend: () -> Unit) {
     val canSend = !busy && (input.isNotBlank() || attachments.isNotEmpty())
-    Column(Modifier.padding(start = 14.dp, end = 14.dp, top = 6.dp, bottom = 8.dp)) {
-        Column(Modifier.fillMaxWidth().glassSurface(28.dp).animateContentSize().padding(horizontal = 7.dp, vertical = 7.dp)) {
+    Column(Modifier.padding(start = 14.dp, end = 14.dp, top = 4.dp, bottom = 6.dp)) {
+        Column(Modifier.fillMaxWidth().glassSurface(24.dp).animateContentSize().padding(5.dp)) {
             AnimatedVisibility(attachments.isNotEmpty()) {
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(5.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    attachments.forEach { attachment -> Box(Modifier.width(230.dp)) { AttachmentCard(attachment) { onRemoveAttachment(attachment.uri) } } }
+                    attachments.forEach { attachment -> StagedAttachmentChip(attachment, !busy) { onRemoveAttachment(attachment.uri) } }
                 }
             }
             Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.fillMaxWidth()) {
                 IconButton(onClick = onAttach, enabled = !busy && attachments.size < 4,
-                    modifier = Modifier.size(44.dp).testTag("chat_attach").semantics { contentDescription = "Add photos, videos or files" }) {
+                    modifier = Modifier.size(48.dp).testTag("chat_attach").semantics { contentDescription = "Add photos, videos or files" }) {
                     ChatIcon(Symbol.PLUS, if (!busy && attachments.size < 4) ChatMuted else ChatFaint)
                 }
                 BasicTextField(
                     value = input, onValueChange = { onInput(it.take(ChatRagViewModel.MAX_MESSAGE_LENGTH)) },
-                    modifier = Modifier.weight(1f).heightIn(min = 44.dp, max = 160.dp).padding(top = 11.dp, bottom = 9.dp, end = 7.dp)
+                    modifier = Modifier.weight(1f).heightIn(min = 48.dp, max = 160.dp).padding(top = 13.dp, bottom = 11.dp, end = 7.dp)
                         .testTag("chat_input").semantics { contentDescription = "Message" },
                     textStyle = MaterialTheme.typography.bodyLarge.copy(color = ChatInk, fontSize = 15.sp, lineHeight = 22.sp),
                     cursorBrush = SolidColor(ChatAccent), maxLines = 6,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send), keyboardActions = KeyboardActions(onSend = { if (canSend) onSend() }),
-                    decorationBox = { inner -> Box { if (input.isEmpty()) Text("Message ONN…", color = ChatFaint, fontSize = 15.sp); inner() } },
+                    decorationBox = { inner -> Box { if (input.isEmpty()) Text("Message…", color = ChatFaint, fontSize = 15.sp); inner() } },
                 )
                 IconButton(onClick = if (busy) onStop else onSend, enabled = busy || canSend,
-                    modifier = Modifier.size(44.dp).padding(3.dp).background(if (busy || canSend) ChatAccent else Color.White.copy(alpha = 0.08f), CircleShape)
+                    modifier = Modifier.size(48.dp).padding(4.dp).background(if (busy || canSend) ChatAccent else Color.White.copy(alpha = 0.08f), CircleShape)
                         .testTag(if (busy) "chat_stop" else "chat_send").semantics { contentDescription = if (busy) "Stop response" else "Send message" }) {
                     ChatIcon(if (busy) Symbol.STOP else Symbol.UP, if (busy || canSend) Color(0xFF14232A) else ChatFaint, 20.dp)
                 }
@@ -489,9 +509,22 @@ private fun ChatComposer(input: String, onInput: (String) -> Unit, attachments: 
         }
         Text(
             if (input.length >= ChatRagViewModel.MAX_MESSAGE_LENGTH - 200) "${input.length} / ${ChatRagViewModel.MAX_MESSAGE_LENGTH} characters"
-            else "Images, video, audio, PDF and text · Up to 4 files",
-            modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 8.dp), color = ChatFaint, fontSize = 10.sp,
+            else "Private · stays on your device",
+            modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 6.dp), color = ChatFaint, fontSize = 10.sp,
         )
+    }
+}
+
+@Composable
+private fun StagedAttachmentChip(attachment: AttachedMedia, enabled: Boolean, onRemove: () -> Unit) {
+    Row(Modifier.width(210.dp).clip(RoundedCornerShape(13.dp)).background(Color.White.copy(alpha = 0.035f))
+        .border(1.dp, Color.White.copy(alpha = 0.07f), RoundedCornerShape(13.dp)).padding(start = 8.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        AttachmentThumbnail(attachment, 30.dp)
+        Text(attachment.fileName, color = ChatInk, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f))
+        IconButton(onClick = onRemove, enabled = enabled, modifier = Modifier.size(48.dp)
+            .semantics { contentDescription = "Remove ${attachment.fileName}" }) { ChatIcon(Symbol.CLOSE, ChatMuted, 14.dp) }
     }
 }
 
@@ -504,19 +537,19 @@ private fun AttachmentCard(attachment: AttachedMedia, onRemove: (() -> Unit)?) {
             val kind = when (attachment.kind) { ForensicRagEngine.RagMediaKind.IMAGE -> "Image"; ForensicRagEngine.RagMediaKind.VIDEO -> "Video"; ForensicRagEngine.RagMediaKind.AUDIO -> "Audio"; ForensicRagEngine.RagMediaKind.SCAN_HISTORY_RECORD -> "Scan report"; else -> "Document" }
             Text(listOfNotNull(kind, attachment.fileSizeFormatted).joinToString(" · "), color = ChatMuted, fontSize = 10.sp)
         }
-        if (onRemove != null) IconButton(onClick = onRemove, modifier = Modifier.size(40.dp).semantics { contentDescription = "Remove ${attachment.fileName}" }) { ChatIcon(Symbol.CLOSE, ChatMuted, 15.dp) }
+        if (onRemove != null) IconButton(onClick = onRemove, modifier = Modifier.size(48.dp).semantics { contentDescription = "Remove ${attachment.fileName}" }) { ChatIcon(Symbol.CLOSE, ChatMuted, 15.dp) }
     }
 }
 
 @Composable
-private fun AttachmentThumbnail(attachment: AttachedMedia) {
+private fun AttachmentThumbnail(attachment: AttachedMedia, size: Dp = 44.dp) {
     val context = LocalContext.current
     val thumbnail by produceState<Bitmap?>(null, attachment.uri, attachment.kind) {
         if (attachment.kind == ForensicRagEngine.RagMediaKind.IMAGE) value = loadThumbnail(context, attachment.uri)
     }
     val image = thumbnail
     DisposableEffect(image) { onDispose { image?.recycle() } }
-    Box(Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).background(Color.White.copy(alpha = 0.045f)), contentAlignment = Alignment.Center) {
+    Box(Modifier.size(size).clip(RoundedCornerShape(9.dp)).background(Color.White.copy(alpha = 0.045f)), contentAlignment = Alignment.Center) {
         if (image != null && !image.isRecycled) Image(image.asImageBitmap(), "Preview of ${attachment.fileName}", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         else ChatIcon(when (attachment.kind) {
             ForensicRagEngine.RagMediaKind.IMAGE -> Symbol.IMAGE; ForensicRagEngine.RagMediaKind.VIDEO -> Symbol.VIDEO
@@ -528,7 +561,7 @@ private fun AttachmentThumbnail(attachment: AttachedMedia) {
 @Composable
 private fun SourceContext(kb: ForensicRagEngine.IndexedMediaKnowledgeBase, selectedChunkIndex: Int?, expanded: Boolean, onToggle: () -> Unit, onSelectChunk: (Int) -> Unit) {
     val chunk = kb.chunks.firstOrNull { it.index == selectedChunkIndex } ?: kb.chunks.firstOrNull()
-    Column(Modifier.padding(horizontal = 16.dp, vertical = 2.dp).fillMaxWidth().glassSurface(18.dp).animateContentSize()) {
+    Column(Modifier.fillMaxWidth().glassSurface(16.dp).animateContentSize()) {
         Row(Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(horizontal = 13.dp, vertical = 11.dp).testTag("chat_context")
             .semantics { contentDescription = if (expanded) "Collapse source details" else "Expand source details" }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             ChatIcon(Symbol.FILE, ChatAccent, 17.dp)
@@ -543,7 +576,7 @@ private fun SourceContext(kb: ForensicRagEngine.IndexedMediaKnowledgeBase, selec
                 if (kb.mediaKind == ForensicRagEngine.RagMediaKind.VIDEO && kb.sourceUri != null) SourceVideo(kb.sourceUri, chunk?.startTimeMs ?: 0L)
                 if (kb.chunks.size > 1) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     kb.chunks.forEach { entry -> Text(entry.formattedTimeRange, color = if (entry.index == chunk?.index) ChatInk else ChatMuted, fontSize = 11.sp,
-                        modifier = Modifier.clip(RoundedCornerShape(9.dp)).background(if (entry.index == chunk?.index) ChatAccent.copy(alpha = 0.13f) else Color.Transparent)
+                        modifier = Modifier.heightIn(min = 48.dp).clip(RoundedCornerShape(9.dp)).background(if (entry.index == chunk?.index) ChatAccent.copy(alpha = 0.13f) else Color.Transparent)
                             .clickable { onSelectChunk(entry.index) }.padding(horizontal = 10.dp, vertical = 9.dp)) }
                 }
                 Text(kb.headlineVerdict, color = ChatAccent, fontSize = 12.sp)

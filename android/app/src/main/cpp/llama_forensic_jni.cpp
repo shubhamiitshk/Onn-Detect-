@@ -7,6 +7,8 @@
 #include <cstring>
 #include <algorithm>
 #include <atomic>
+#include <chrono>
+#include <thread>
 
 #include "llama.h"
 #include "mtmd.h"
@@ -153,6 +155,7 @@ struct GenerationCallbacks {
     jmethodID should_cancel = nullptr;
     llama_context* context;
     std::atomic<bool> stopped{false};
+    std::atomic<int64_t> last_poll_ms{0};
 
     GenerationCallbacks(JNIEnv* env, jobject callback, llama_context* ctx) : caller_env(env), context(ctx) {
         env->GetJavaVM(&vm);
@@ -172,6 +175,13 @@ struct GenerationCallbacks {
 
     bool is_cancelled() {
         if (stopped.load()) return true;
+        // ggml polls between many small kernels. Attaching a Java worker on
+        // every poll is extremely expensive; sample the Job at most every
+        // 50ms while token delivery still checks cancellation synchronously.
+        const int64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+        int64_t previous = last_poll_ms.load(std::memory_order_relaxed);
+        if (now - previous < 50 || !last_poll_ms.compare_exchange_strong(previous, now, std::memory_order_relaxed)) return false;
         JNIEnv* env = nullptr;
         bool attached = false;
         const jint state = vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
@@ -232,7 +242,8 @@ Java_com_onndetect_detection_visual_LlamaCppVlmPrefillBackend_nativeInitContext(
     jobject /* thiz */,
     jstring modelPath,
     jstring mmprojPath,
-    jint hiddenDim
+    jint hiddenDim,
+    jint maxImageTokens
 ) {
     std::lock_guard<std::recursive_mutex> lock(g_native_mutex);
 
@@ -284,7 +295,10 @@ Java_com_onndetect_detection_visual_LlamaCppVlmPrefillBackend_nativeInitContext(
     llama_context_params cparams = llama_context_default_params();
     cparams.n_ctx = 4096;
     cparams.n_batch = 512;
-    cparams.n_threads = 4;
+    const unsigned int available_threads = std::thread::hardware_concurrency();
+    const int cpu_threads = static_cast<int>(std::min(4u, std::max(1u, available_threads == 0 ? 2u : available_threads)));
+    cparams.n_threads = cpu_threads;
+    cparams.n_threads_batch = cpu_threads;
     cparams.embeddings = true;
     ctx->ctx = llama_init_from_model(ctx->model, cparams);
     if (!ctx->ctx) {
@@ -298,7 +312,11 @@ Java_com_onndetect_detection_visual_LlamaCppVlmPrefillBackend_nativeInitContext(
     if (!ctx->mmproj_path.empty()) {
         struct mtmd_context_params mtmd_params = mtmd_context_params_default();
         mtmd_params.use_gpu = false;
-        mtmd_params.n_threads = 4;
+        mtmd_params.n_threads = cpu_threads;
+        if (maxImageTokens >= 16 && maxImageTokens <= 1024) {
+            mtmd_params.image_min_tokens = 16;
+            mtmd_params.image_max_tokens = maxImageTokens;
+        }
         ctx->mtmd = mtmd_init_from_file(ctx->mmproj_path.c_str(), ctx->model, mtmd_params);
         if (!ctx->mtmd) {
             std::string err = "Failed to load multimodal mmproj projector from: " + ctx->mmproj_path;
@@ -513,6 +531,10 @@ Java_com_onndetect_detection_visual_LlamaCppVlmPrefillBackend_nativeGenerateMult
         throw_java_exception(env, "java/lang/IllegalStateException", "Native response context is unavailable");
         return;
     }
+    const auto generation_started = std::chrono::steady_clock::now();
+    const auto elapsed_ms = [&]() -> long long {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - generation_started).count();
+    };
     GenerationCallbacks callbacks(env, receiver, ctx->ctx);
     if (env->ExceptionCheck() || !callbacks.on_token || !callbacks.should_cancel) return;
     llama_set_abort_callback(ctx->ctx, abort_generation, &callbacks);
@@ -609,6 +631,7 @@ Java_com_onndetect_detection_visual_LlamaCppVlmPrefillBackend_nativeGenerateMult
         throw_java_exception(env, "java/lang/IllegalArgumentException", "Prompt exceeds the local model context");
         return;
     }
+    LOGI("Response prefill complete: positions=%d, visual=%d, elapsed_ms=%lld", n_past, imageRgb != nullptr, elapsed_ms());
     std::unique_ptr<llama_sampler, decltype(&llama_sampler_free)> sampler(llama_sampler_init_greedy(), llama_sampler_free);
     const int max_steps = std::min(std::max(8, std::min(static_cast<int>(maxNewTokens), 512)), static_cast<int>(llama_n_ctx(ctx->ctx)) - n_past - 1);
     for (int step = 0; step < max_steps; ++step) {
@@ -626,6 +649,9 @@ Java_com_onndetect_detection_visual_LlamaCppVlmPrefillBackend_nativeGenerateMult
             callbacks.throw_if_cancelled();
             return;
         }
+        if (step == 0) LOGI("Response first token: elapsed_ms=%lld", elapsed_ms());
+        // No next-token logits are needed after the requested output budget.
+        if (step + 1 == max_steps) break;
         llama_batch batch = llama_batch_init(1, 0, 1);
         batch.token[0] = token;
         batch.pos[0] = n_past++;
@@ -641,6 +667,7 @@ Java_com_onndetect_detection_visual_LlamaCppVlmPrefillBackend_nativeGenerateMult
             return;
         }
     }
+    LOGI("Response decode complete: positions=%d, elapsed_ms=%lld", n_past, elapsed_ms());
 }
 
 JNIEXPORT void JNICALL

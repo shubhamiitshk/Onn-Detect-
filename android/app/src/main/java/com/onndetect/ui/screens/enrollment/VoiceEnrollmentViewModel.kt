@@ -32,6 +32,7 @@ data class QuickVoiceVerifyResult(
     val spoofThreshold: Float,
     val matchReport: VoiceMatchReport,
     val headlineSummary: String,
+    val isInconclusive: Boolean = false,
 )
 
 data class VoiceEnrollmentUiState(
@@ -181,9 +182,11 @@ class VoiceEnrollmentViewModel @Inject constructor(
                     require(pcm.size >= 3_200) { "Audio clip too short to verify" }
 
                     val verdict = audioClassifier.analyze(uri)
-                    val spoofScore = verdict.score.takeIf { it.isFinite() } ?: 0.2f
+                    val isModelUsable = verdict.status == com.onndetect.domain.models.AnalysisStatus.SUCCESS && verdict.modelValidated
+                    val spoofScore = verdict.score
                     val threshold = verdict.threshold ?: AudioClassifier.DEFAULT_THRESHOLD
-                    val isClone = spoofScore >= threshold
+                    val isClone = isModelUsable && spoofScore.isFinite() && spoofScore >= threshold
+                    val isInconclusive = !isModelUsable || !spoofScore.isFinite()
 
                     val allProfiles = repository.getAllProfilesList()
                     val matchReport = speakerVerifier.matchAgainstVault(
@@ -193,6 +196,10 @@ class VoiceEnrollmentViewModel @Inject constructor(
                     )
 
                     val summary = when {
+                        isInconclusive -> {
+                            val reason = verdict.reason ?: "Speech detector is unvalidated or analysis was inconclusive"
+                            "⚠️ ANALYSIS INCONCLUSIVE: Anti-spoofing countermeasure could not verify audio authenticity ($reason). Cannot verify as genuine family speech."
+                        }
                         isClone && matchReport.maxSimilarity >= 0.65f ->
                             "⚠️ AI VOICE CLONE ALERT: Clip mimics '${matchReport.matchedContactName ?: "family member"}' " +
                                 "(${(matchReport.maxSimilarity * 100f).toInt()}% acoustic match) but LCNN-MFM detected synthetic vocoder artifacts (${(spoofScore * 100f).toInt()}%)!"
@@ -206,10 +213,11 @@ class VoiceEnrollmentViewModel @Inject constructor(
 
                     QuickVoiceVerifyResult(
                         isSyntheticClone = isClone,
-                        spoofScore = spoofScore,
+                        spoofScore = if (spoofScore.isFinite()) spoofScore else Float.NaN,
                         spoofThreshold = threshold,
                         matchReport = matchReport,
                         headlineSummary = summary,
+                        isInconclusive = isInconclusive,
                     )
                 }
                 _uiState.update {

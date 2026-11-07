@@ -89,7 +89,7 @@ def build_pack(language: Path, projector: Path | None, destination: Path, *, mod
         'display_name': display_name, 'architecture': architecture, 'hidden_dim': dimension,
         'language': file_contract(language, 'language.gguf'),
         'projector': file_contract(projector, 'vision.gguf') if projector else None,
-        'provenance': {'source_kind': 'existing_user_provided_local_files',
+        'provenance': {'source_kind': 'local_files',
                        'identity': 'sha256_of_exact_input_bytes',
                        'upstream_revision': None,
                        'note': 'Upstream revision is not established by a local file hash; this pack does not grant forensic validation or publisher authentication.'},

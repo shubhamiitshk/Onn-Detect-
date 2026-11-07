@@ -183,9 +183,11 @@ fun VoiceEnrollmentScreen(
             uiState.verifyResult?.let { vr ->
                 val cardAccent = when {
                     vr.isSyntheticClone -> SyntheticRed
+                    vr.isInconclusive -> WarningAmber
                     vr.matchReport.isMatch -> AuthenticGreen
                     else -> WarningAmber
                 }
+                val spoofDesc = if (vr.spoofScore.isFinite()) "${(vr.spoofScore * 100f).toInt()}%" else "Unavailable"
                 LiquidGlassCard(
                     accentColor = cardAccent,
                     cornerRadius = 14.dp,
@@ -203,7 +205,7 @@ fun VoiceEnrollmentScreen(
                             lineHeight = 17.sp
                         )
                         Text(
-                            text = "LCNN Spoof Score: ${(vr.spoofScore * 100f).toInt()}% (thr ${(vr.spoofThreshold * 100f).toInt()}%) • Max Vault Match: ${(vr.matchReport.maxSimilarity * 100f).toInt()}%",
+                            text = "LCNN Spoof Score: $spoofDesc (thr ${(vr.spoofThreshold * 100f).toInt()}%) • Max Vault Match: ${(vr.matchReport.maxSimilarity * 100f).toInt()}%",
                             style = MaterialTheme.typography.labelSmall,
                             color = cardAccent
                         )

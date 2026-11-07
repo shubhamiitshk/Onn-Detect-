@@ -1,0 +1,39 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<testsuite name="com.onndetect.ChatExperienceTest" tests="25" failures="1" errors="0" skipped="0" time="255.743" timestamp="2026-10-29T21:23:41" hostname="localhost">
+  <properties>
+    <property name="device" value="onn_api36(AVD) - 16" />
+    <property name="flavor" value="" />
+    <property name="project" value=":app" />
+  </properties>
+  <testcase name="saveEmptyChatDesignPreview" classname="com.onndetect.ChatExperienceTest" time="8.76" />
+  <testcase name="composerDisablesEmptySendAndSubmitsTypedMessage" classname="com.onndetect.ChatExperienceTest" time="4.849" />
+  <testcase name="saveStreamingConversationDesignPreview" classname="com.onndetect.ChatExperienceTest" time="4.436" />
+  <testcase name="streamingShowsRunningIndicatorAndStopControl" classname="com.onndetect.ChatExperienceTest" time="4.11" />
+  <testcase name="failedResponseProvidesRetryAction" classname="com.onndetect.ChatExperienceTest" time="4.073" />
+  <testcase name="attachmentOnlyMessageCanSendAndAttachmentCanBeRemoved" classname="com.onndetect.ChatExperienceTest" time="4.038" />
+  <testcase name="composerControlsRemainReachableWithLargeText" classname="com.onndetect.ChatExperienceTest" time="4.321" />
+  <testcase name="keyboardLeavesComposerVisibleAndHidesTheBottomDock" classname="com.onndetect.ChatExperienceTest" time="14.2">
+    <failure>androidx.compose.ui.test.ComposeTimeoutException: Condition still not satisfied after 10000 ms
+at androidx.compose.ui.test.AndroidComposeUiTestEnvironment$AndroidComposeUiTestImpl.waitUntil(ComposeUiTest.android.kt:755)
+at androidx.compose.ui.test.junit4.AndroidComposeTestRule.waitUntil(AndroidComposeTestRule.android.kt:362)
+at com.onndetect.ChatExperienceTest.keyboardLeavesComposerVisibleAndHidesTheBottomDock(ChatExperienceTest.kt:130)
+</failure>
+  </testcase>
+  <testcase name="installedModelOffersChatDirectly" classname="com.onndetect.ModelManagerExperienceTest" time="5.019" />
+  <testcase name="failureNamesTheFileAndOffersAnotherSelection" classname="com.onndetect.ModelManagerExperienceTest" time="4.899" />
+  <testcase name="importingHasVisibleProgressAndAStopAction" classname="com.onndetect.ModelManagerExperienceTest" time="3.573" />
+  <testcase name="setupRemainsUsableWithTwiceTheTextSize" classname="com.onndetect.ModelManagerExperienceTest" time="4.369" />
+  <testcase name="emptySetupShowsTheImportActionWithoutExpandedTechnicalCards" classname="com.onndetect.ModelManagerExperienceTest" time="4.272" />
+  <testcase name="attachedTextTraversesImporterAndProducesGroundedReply" classname="com.onndetect.ChatSessionInstrumentationTest" time="3.818" />
+  <testcase name="busySendIsIgnoredAndNewConversationClearsAttachmentsAndContext" classname="com.onndetect.ChatSessionInstrumentationTest" time="2.936" />
+  <testcase name="severalReportsStageWithoutProviderUrisAndNormalChatClearsSources" classname="com.onndetect.ChatReportFlowInstrumentationTest" time="4.214" />
+  <testcase name="reportPickerAddsActualHistoryRowsToComposer" classname="com.onndetect.ChatReportFlowInstrumentationTest" time="7.53" />
+  <testcase name="explicitSavedReportKeepsRecordedUncertainty" classname="com.onndetect.ChatReportFlowInstrumentationTest" time="3.492" />
+  <testcase name="fiveFileQwenArchiveImportsAndAnswersWithoutReplacingItOnFailure" classname="com.onndetect.ChatArchiveImportInstrumentationTest" time="56.331" />
+  <testcase name="cancellingAProviderImportStopsTheActualJob" classname="com.onndetect.ChatArchiveImportInstrumentationTest" time="3.571" />
+  <testcase name="importedModelStopsAndReleasesItsInferenceLease" classname="com.onndetect.ChatModelRoutingInstrumentationTest" time="5.794" />
+  <testcase name="videoQuestionUsesRealDecodedSamplesAndProjector" classname="com.onndetect.ChatModelRoutingInstrumentationTest" time="24.727" />
+  <testcase name="savedForensicReportUsesModelWithoutInventingAValidatedVerdict" classname="com.onndetect.ChatModelRoutingInstrumentationTest" time="15.834" />
+  <testcase name="imageQuestionsActuallyUseProjectorAndPixels" classname="com.onndetect.ChatModelRoutingInstrumentationTest" time="28.894" />
+  <testcase name="normalConversationUsesActualWeightsWithoutAnyMedia" classname="com.onndetect.ChatModelRoutingInstrumentationTest" time="10.554" />
+</testsuite>

@@ -131,6 +131,8 @@ class ChatExperienceTest {
         val attachment = AttachedMedia(Uri.parse("content://preview/photo"), ForensicRagEngine.RagMediaKind.IMAGE, "street-photo.jpg", "image/jpeg", "2.4 MB")
         show(ChatRagUiState(
             isGenerating = true,
+            modelReady = true, modelName = "Qwen 3.5 · 0.8B", modelSupportsVision = true,
+            modelStatusMessage = "Ready on this device",
             streamingStatus = "Writing response…",
             messages = listOf(
                 ChatMessage("question", true, "Does this look AI generated?", attachment = attachment, attachments = listOf(attachment)),

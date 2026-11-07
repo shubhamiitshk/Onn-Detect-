@@ -6,6 +6,19 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ForensicRagEngineTest {
+    @Test fun explicitShortAnswersUseABoundedMobileDecodeBudget() {
+        assertEquals(12, ForensicRagEngine.responseTokenBudget("What is six plus seven? Reply only with the number."))
+        assertEquals(12, ForensicRagEngine.responseTokenBudget("Name the dominant color. Reply with one color word only."))
+        assertEquals(12, ForensicRagEngine.responseTokenBudget("Repeat the assessment label only."))
+        assertEquals(128, ForensicRagEngine.responseTokenBudget("Explain these observations and their limitations."))
+    }
+
+    @Test fun ordinaryVisualQuestionsDoNotUnnecessarilyInvokeForensicModels() {
+        assertFalse(ForensicRagEngine.requestsForensicAnalysis("What color is the wall?"))
+        assertTrue(ForensicRagEngine.requestsForensicAnalysis("Is this AI generated or tampered?"))
+        assertFalse(ForensicRagEngine.requestsForensicAnalysis("Explain the painted sign."))
+    }
+
     private fun chunk(index: Int, text: String, score: Float = Float.NaN, tags: List<String> = listOf("document", "text")) =
         ForensicRagEngine.TimelineChunk(index, 0, 0, "Section ${index + 1}", tags, text,
             "Not applicable.", "Speaker identity is not verified.", score, Float.NaN)

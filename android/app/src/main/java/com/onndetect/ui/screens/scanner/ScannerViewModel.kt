@@ -111,12 +111,13 @@ class ScannerViewModel @Inject constructor(
             _state.value = UiState(error = message(R.string.save_failed), unsavedResult = result)
         }
     }
-    private fun computeFileSha256(file: File): String {
+    private suspend fun computeFileSha256(file: File): String = withContext(Dispatchers.IO) {
         val md = MessageDigest.getInstance("SHA-256")
         file.inputStream().use { inStream ->
-            val buf = ByteArray(32 * 1024)
+            val buf = ByteArray(64 * 1024)
             var n: Int
             while (inStream.read(buf).also { n = it } > 0) {
+                currentCoroutineContext().ensureActive()
                 md.update(buf, 0, n)
             }
         }
@@ -124,7 +125,7 @@ class ScannerViewModel @Inject constructor(
         check(digest.length == 64 && !digest.all { it == '0' }) {
             "Failed to compute valid media SHA-256 digest"
         }
-        return digest
+        digest
     }
 
     private suspend fun scanImage(file: File, mediaSha256: String) {
@@ -145,26 +146,28 @@ class ScannerViewModel @Inject constructor(
     private suspend fun scanAudio(uri: Uri, mediaSha256: String) {
         val started = SystemClock.elapsedRealtime()
         val v = runInterruptible(Dispatchers.Default) { audioClassifier.analyze(uri) { stage -> _state.update { it.copy(stage = stage) } } }
-        val voiceMatch = runCatching {
-            val profiles = voiceVaultRepository.getAllProfilesList()
-            if (profiles.isNotEmpty()) {
-                val pcm = com.onndetect.detection.audio.AudioDecoder(appContext).decodeMono16k(uri)
-                // F3: enrolled embeddings are sealed; the matching path decodes
-                // them through the repository (AndroidKeyStore AES-GCM), and a
-                // row that fails authentication is skipped loudly, never
-                // silently treated as a non-match.
-                speakerVerifier.matchAgainstVault(pcm, profiles, decoder = { p ->
-                    runCatching { voiceVaultRepository.unsealedEmbedding(p) }.getOrNull()
-                })
-            } else {
-                com.onndetect.detection.audio.VoiceMatchReport(
-                    hasEnrolledProfiles = false,
-                    isMatch = false,
-                    confidence = com.onndetect.detection.audio.VoiceMatchConfidence.NO_PROFILES_ENROLLED,
-                    flags = listOf("No family voiceprints currently enrolled in Safe-Voice Vault")
-                )
-            }
-        }.getOrNull()
+        val voiceMatch = withContext(Dispatchers.IO) {
+            runCatching {
+                val profiles = voiceVaultRepository.getAllProfilesList()
+                if (profiles.isNotEmpty()) {
+                    val pcm = com.onndetect.detection.audio.AudioDecoder(appContext).decodeMono16k(uri)
+                    // F3: enrolled embeddings are sealed; the matching path decodes
+                    // them through the repository (AndroidKeyStore AES-GCM), and a
+                    // row that fails authentication is skipped loudly, never
+                    // silently treated as a non-match.
+                    speakerVerifier.matchAgainstVault(pcm, profiles, decoder = { p ->
+                        runCatching { voiceVaultRepository.unsealedEmbedding(p) }.getOrNull()
+                    })
+                } else {
+                    com.onndetect.detection.audio.VoiceMatchReport(
+                        hasEnrolledProfiles = false,
+                        isMatch = false,
+                        confidence = com.onndetect.detection.audio.VoiceMatchConfidence.NO_PROFILES_ENROLLED,
+                        flags = listOf("No family voiceprints currently enrolled in Safe-Voice Vault")
+                    )
+                }
+            }.getOrNull()
+        }
         finish(ScanResult(UUID.randomUUID().toString(), ScanMode.AUDIO_ONLY, System.currentTimeMillis(),
             v.score, v.isAiGenerated, 0f, SignalBreakdown(audioModelScore = v.score.takeIf { it.isFinite() && it in 0f..1f } ?: Float.NaN),
             null, null, QualityInfo(0,false,null,false,false), SystemClock.elapsedRealtime() - started,
@@ -181,9 +184,11 @@ class ScannerViewModel @Inject constructor(
         val started = SystemClock.elapsedRealtime()
         val o = runInterruptible(Dispatchers.Default) { videoAnalyzer.analyze(uri) { stage -> _state.update { it.copy(stage = stage) } } }
         val verdict = VerdictPolicy.decide(o.overallScore, o.status, o.modelValidated, o.decisionThreshold)
-        val kycReport = runCatching {
-            com.onndetect.detection.kyc.VirtualCameraDetector().inspect(appContext, o.temporalScore)
-        }.getOrNull()
+        val kycReport = withContext(Dispatchers.Default) {
+            runCatching {
+                com.onndetect.detection.kyc.VirtualCameraDetector().inspect(appContext, o.temporalScore)
+            }.getOrNull()
+        }
         finish(ScanResult(UUID.randomUUID().toString(), ScanMode.VIDEO_ONLY, System.currentTimeMillis(), o.overallScore,
             verdict == DetectionVerdict.SYNTHETIC, 0f, SignalBreakdown(
                 vfmProbeScore = o.semanticScore,

@@ -1,0 +1,286 @@
+{
+  "recorded_at_utc": "2026-10-30T06:05:19.328465+00:00",
+  "git_head": "ca39074e19b3c81cfffa478c538451daf58e8ff8",
+  "source_state": "Existing working-tree changes preserved; this verification did not create a commit.",
+  "confirmed_user_filename": "qwen35-0.8b-v1.zip",
+  "reproduced_archive_entries": [
+    {
+      "name": "forensic_vlm_policy.json",
+      "bytes": 10473
+    },
+    {
+      "name": "publisher_key.hex",
+      "bytes": 64
+    },
+    {
+      "name": "qwen35-0.8b-v1-mmproj.gguf",
+      "bytes": 113563968
+    },
+    {
+      "name": "qwen35-0.8b-v1-model.gguf",
+      "bytes": 563036064
+    },
+    {
+      "name": "signed_manifest.json",
+      "bytes": 937
+    }
+  ],
+  "root_cause": "The old importer rejected the five-file archive at MAX_ENTRIES=4 before loading any language weights.",
+  "unit_tests": {
+    "tests": 432,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "android": {
+    "passed_checks": 25,
+    "cases": [
+      {
+        "name": "saveEmptyChatDesignPreview",
+        "class_name": "com.onndetect.ChatExperienceTest",
+        "seconds": 8.76
+      },
+      {
+        "name": "composerDisablesEmptySendAndSubmitsTypedMessage",
+        "class_name": "com.onndetect.ChatExperienceTest",
+        "seconds": 4.849
+      },
+      {
+        "name": "saveStreamingConversationDesignPreview",
+        "class_name": "com.onndetect.ChatExperienceTest",
+        "seconds": 4.436
+      },
+      {
+        "name": "streamingShowsRunningIndicatorAndStopControl",
+        "class_name": "com.onndetect.ChatExperienceTest",
+        "seconds": 4.11
+      },
+      {
+        "name": "failedResponseProvidesRetryAction",
+        "class_name": "com.onndetect.ChatExperienceTest",
+        "seconds": 4.073
+      },
+      {
+        "name": "attachmentOnlyMessageCanSendAndAttachmentCanBeRemoved",
+        "class_name": "com.onndetect.ChatExperienceTest",
+        "seconds": 4.038
+      },
+      {
+        "name": "composerControlsRemainReachableWithLargeText",
+        "class_name": "com.onndetect.ChatExperienceTest",
+        "seconds": 4.321
+      },
+      {
+        "name": "installedModelOffersChatDirectly",
+        "class_name": "com.onndetect.ModelManagerExperienceTest",
+        "seconds": 5.019
+      },
+      {
+        "name": "failureNamesTheFileAndOffersAnotherSelection",
+        "class_name": "com.onndetect.ModelManagerExperienceTest",
+        "seconds": 4.899
+      },
+      {
+        "name": "importingHasVisibleProgressAndAStopAction",
+        "class_name": "com.onndetect.ModelManagerExperienceTest",
+        "seconds": 3.573
+      },
+      {
+        "name": "setupRemainsUsableWithTwiceTheTextSize",
+        "class_name": "com.onndetect.ModelManagerExperienceTest",
+        "seconds": 4.369
+      },
+      {
+        "name": "emptySetupShowsTheImportActionWithoutExpandedTechnicalCards",
+        "class_name": "com.onndetect.ModelManagerExperienceTest",
+        "seconds": 4.272
+      },
+      {
+        "name": "attachedTextTraversesImporterAndProducesGroundedReply",
+        "class_name": "com.onndetect.ChatSessionInstrumentationTest",
+        "seconds": 3.818
+      },
+      {
+        "name": "busySendIsIgnoredAndNewConversationClearsAttachmentsAndContext",
+        "class_name": "com.onndetect.ChatSessionInstrumentationTest",
+        "seconds": 2.936
+      },
+      {
+        "name": "severalReportsStageWithoutProviderUrisAndNormalChatClearsSources",
+        "class_name": "com.onndetect.ChatReportFlowInstrumentationTest",
+        "seconds": 4.214
+      },
+      {
+        "name": "reportPickerAddsActualHistoryRowsToComposer",
+        "class_name": "com.onndetect.ChatReportFlowInstrumentationTest",
+        "seconds": 7.53
+      },
+      {
+        "name": "explicitSavedReportKeepsRecordedUncertainty",
+        "class_name": "com.onndetect.ChatReportFlowInstrumentationTest",
+        "seconds": 3.492
+      },
+      {
+        "name": "fiveFileQwenArchiveImportsAndAnswersWithoutReplacingItOnFailure",
+        "class_name": "com.onndetect.ChatArchiveImportInstrumentationTest",
+        "seconds": 56.331
+      },
+      {
+        "name": "cancellingAProviderImportStopsTheActualJob",
+        "class_name": "com.onndetect.ChatArchiveImportInstrumentationTest",
+        "seconds": 3.571
+      },
+      {
+        "name": "importedModelStopsAndReleasesItsInferenceLease",
+        "class_name": "com.onndetect.ChatModelRoutingInstrumentationTest",
+        "seconds": 5.794
+      },
+      {
+        "name": "videoQuestionUsesRealDecodedSamplesAndProjector",
+        "class_name": "com.onndetect.ChatModelRoutingInstrumentationTest",
+        "seconds": 24.727
+      },
+      {
+        "name": "savedForensicReportUsesModelWithoutInventingAValidatedVerdict",
+        "class_name": "com.onndetect.ChatModelRoutingInstrumentationTest",
+        "seconds": 15.834
+      },
+      {
+        "name": "imageQuestionsActuallyUseProjectorAndPixels",
+        "class_name": "com.onndetect.ChatModelRoutingInstrumentationTest",
+        "seconds": 28.894
+      },
+      {
+        "name": "normalConversationUsesActualWeightsWithoutAnyMedia",
+        "class_name": "com.onndetect.ChatModelRoutingInstrumentationTest",
+        "seconds": 10.554
+      },
+      {
+        "name": "realKeyboardKeepsComposerAboveItAndHidesTheBottomDock",
+        "class_name": "com.onndetect.ChatKeyboardInstrumentationTest",
+        "seconds": 16.533
+      }
+    ],
+    "original_run": {
+      "tests": 25,
+      "passed": 24,
+      "failed": 1,
+      "obsolete_case": "keyboardLeavesComposerVisibleAndHidesTheBottomDock",
+      "note": "Compose semantics harness intercepts native IME sessions; replaced by an Android-input test rather than weakening the assertion."
+    },
+    "final_focused_run": {
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "environment_recovery": "Native test attempts were blocked by an observed SystemUI ANR overlay. Closed only the disposable emulator dialog and reduced framebuffer, then passed actual typing/IME/bounds checks.",
+    "runtime": {
+      "api": 36,
+      "abi": "x86_64",
+      "guest_ram_mb": 3072,
+      "virtual_cpus": 2,
+      "original_display": "1080x2400 density420",
+      "keyboard_display": "720x1600 density280",
+      "logical_dimensions_preserved": true,
+      "emulator_closed": true
+    }
+  },
+  "lint": {
+    "Fatal": 0,
+    "Error": 0,
+    "Warning": 74,
+    "Information": 0
+  },
+  "checks": {
+    "apk": {
+      "exit_code": 0,
+      "stdout": "WARNING: Release is desktop-validated only: the device evaluation is outstanding, so the app reports the release as unverified on device\nAPK permissions, artifact contracts and 64-bit 16KiB alignment verified.",
+      "stderr": ""
+    },
+    "android_contract": {
+      "exit_code": 0,
+      "stdout": "Kotlin sources found: 101\nFeature contract: python features=['srm_score', 'fft_score', 'kl_score', 'flatness_score', 'resolution_norm', 'is_compressed', 'semantic_probe_score', 'c2pa_present', 'lip_sync_corr', 'landmark_jitter']\nKotlin export documents all 10 features in order: True\nGrayscale convention: integer BT.601 truncation shared across both platforms\nAssets: models + constants all non-empty\n\n=== WARNINGS ===\nW: Release is desktop-validated only: the device evaluation is outstanding, so the app reports the release as unverified on device\n\nNo errors found.",
+      "stderr": ""
+    },
+    "documentation": {
+      "exit_code": 0,
+      "stdout": "Docs consistency: OK",
+      "stderr": ""
+    },
+    "apk_signature": {
+      "exit_code": 0,
+      "stdout": "Signer #1 certificate DN: C=US, O=Android, CN=Android Debug\nSigner #1 certificate SHA-256 digest: 67f76b1529c6155267ce027c8aa1ff43aaf673f262a262f0e241c4179ea34f7e\nSigner #1 certificate SHA-1 digest: 312e32d3965aea819d254c0f21f1043feb452828\nSigner #1 certificate MD5 digest: 35df5c769f77211b26f6921b91842a42",
+      "stderr": ""
+    }
+  },
+  "acceptance": [
+    "Actual five-file legacy ZIP imports through Android provider and produces a genuine Qwen reply of 13 for six plus seven.",
+    "Reply records actual runtime language hash; mismatched OCR projector does not enable vision.",
+    "A failed replacement preserves the installed working model.",
+    "Cancelling a provider import stops the actual ViewModel job and does not install a model.",
+    "Wrapper folders, sidecars, raw GGUF, duplicate/traversal/ambiguity failures and supplied-manifest integrity are covered by archive unit tests.",
+    "Existing matched-projector red/blue images, decoded video, reports and native cancellation continue to pass.",
+    "Model setup empty/error/importing/ready states and twice-size text are rendered and tested.",
+    "Real Android input reaches the chat composer; Send and input remain above the native keyboard and the app dock hides."
+  ],
+  "artifacts": [
+    {
+      "path": "android/app/build/outputs/apk/debug/app-debug.apk",
+      "bytes": 170858429,
+      "sha256": "b9368e9d04c2834cf991849f51b98cf959cb891bd78e6732772231ef8107b1ce"
+    },
+    {
+      "path": "android/app/build/outputs/apk/release/app-release.apk",
+      "bytes": 146434422,
+      "sha256": "cddc65fea61241865ddb5bae129f7c6f46875bda99166ae56c00c5f1c38de5a3"
+    },
+    {
+      "path": "outputs/apk/ONN-Detect-chat-import-ui-fix-2026-10-30.apk",
+      "bytes": 146434422,
+      "sha256": "cddc65fea61241865ddb5bae129f7c6f46875bda99166ae56c00c5f1c38de5a3"
+    },
+    {
+      "path": "outputs/qwen35-0.8b-v1.zip",
+      "bytes": 633229308,
+      "sha256": "cce5909ae18d41f1bec4bd501ee2eea5e7ba81b5415d591c4a787e56f74d8f1c"
+    },
+    {
+      "path": "outputs/chat-models/qwen35-0.8b-base-chat.zip",
+      "bytes": 678961164,
+      "sha256": "6578bfe68731ed9e43bfac8c2aba9e086490dc36c52db8211df028706b63481f"
+    },
+    {
+      "path": "outputs/import-ui-fix/chat-empty.png",
+      "bytes": 384843,
+      "sha256": "d398c5544fcb58a7e9aa98d24fb37161f5dd72544d929ae25d0e6f1e852af914"
+    },
+    {
+      "path": "outputs/import-ui-fix/chat-streaming.png",
+      "bytes": 435137,
+      "sha256": "3ec2219ef0b7bc3a787c99a94463eb301a4242e650756015041319e3b8a0400e"
+    },
+    {
+      "path": "outputs/import-ui-fix/ONN-Import-UI-Preview/models-empty.png",
+      "bytes": 145636,
+      "sha256": "ba119c9fccd612abd97333ebe623e0a9e28b1fe97a1cbc5f0ef95211a69b1c2c"
+    },
+    {
+      "path": "outputs/import-ui-fix/ONN-Import-UI-Preview/models-ready.png",
+      "bytes": 117843,
+      "sha256": "9ced6cfcfc78cb56ec98753f2665e08464a2e534902ec4d2d289fa0f69048e53"
+    },
+    {
+      "path": "outputs/import-ui-fix/ONN-Import-UI-Preview/chat-keyboard.png",
+      "bytes": 180779,
+      "sha256": "8f0cb14ee3f795e1f1ce06095785c99ba992d117917e9ce5c55bbce46c7106de"
+    }
+  ],
+  "limits": [
+    "Emulator routing/layout fixtures are not independent physical-phone performance or forensic accuracy validation.",
+    "Legacy OCR projector remains disabled for vision; the tested matching base pack is the supported visual pairing.",
+    "Unknown vision pairings are labelled text-only until compatible execution is established.",
+    "Safetensors/source-code archives are not native GGUF models and receive an actionable rejection.",
+    "Detector release remains desktop-validated only; local debug-key signing is not a production forensic release."
+  ]
+}
